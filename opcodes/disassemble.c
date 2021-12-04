@@ -103,6 +103,7 @@
 #define ARCH_xtensa
 #define ARCH_z80
 #define ARCH_z8k
+#define ARCH_brew
 #endif
 
 #ifdef ARCH_m32c
@@ -558,6 +559,11 @@ disassembler (enum bfd_architecture a,
 #ifdef ARCH_loongarch
     case bfd_arch_loongarch:
       disassemble = print_insn_loongarch;
+      break;
+#endif
+#ifdef ARCH_brew
+    case bfd_arch_brew:
+      disassemble = print_insn_brew;
       break;
 #endif
     default:

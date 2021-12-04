@@ -1128,6 +1128,7 @@ guess_is_rela (unsigned int e_machine)
     case EM_MICROBLAZE:
     case EM_MICROBLAZE_OLD:
     case EM_WEBASSEMBLY:
+	case EM_BREW:
       return true;
 
     case EM_68HC05:

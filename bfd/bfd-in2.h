@@ -1933,6 +1933,8 @@ enum bfd_architecture
   bfd_arch_loongarch,       /* LoongArch */
 #define bfd_mach_loongarch32   1
 #define bfd_mach_loongarch64   2
+  bfd_arch_brew,            /* Brew core */
+#define bfd_mach_brew          1
   bfd_arch_last
   };
 

@@ -1473,6 +1473,11 @@ case "${targ}" in
     ;;
 #endif
 
+  brew-*-elf | brew-*-rtems* | brew-*-uclinux)
+    targ_defvec=brew_elf32_vec
+    targ_underscore=yes
+    ;;
+
 # END OF targmatch.h
   bpf-*-*)
     echo "*** Configuration $targ is not fully supported." >&2

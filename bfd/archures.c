@@ -559,6 +559,8 @@ DESCRIPTION
 .  bfd_arch_loongarch,       {* LoongArch *}
 .#define bfd_mach_loongarch32	1
 .#define bfd_mach_loongarch64	2
+.  bfd_arch_brew,            {* Brew core *}
+.#define bfd_mach_brew          1
 .  bfd_arch_last
 .  };
 */
@@ -696,6 +698,7 @@ extern const bfd_arch_info_type bfd_xc16x_arch;
 extern const bfd_arch_info_type bfd_xgate_arch;
 extern const bfd_arch_info_type bfd_z80_arch;
 extern const bfd_arch_info_type bfd_z8k_arch;
+extern const bfd_arch_info_type bfd_brew_arch;
 
 static const bfd_arch_info_type * const bfd_archures_list[] =
   {
@@ -784,6 +787,7 @@ static const bfd_arch_info_type * const bfd_archures_list[] =
     &bfd_xgate_arch,
     &bfd_z80_arch,
     &bfd_z8k_arch,
+    &bfd_brew_arch,
 #endif
   0
 };

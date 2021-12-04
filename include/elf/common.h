@@ -446,6 +446,8 @@
 
 #define EM_ADAPTEVA_EPIPHANY	0x1223  /* Adapteva's Epiphany architecture.  */
 
+#define EM_BREW                0xb0a1  /* FINALIZE AFTER MERGE: BREW number */
+
 /* Old constant that might be in use by some software. */
 #define EM_OPENRISC		EM_OR1K
 
