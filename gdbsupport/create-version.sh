@@ -27,6 +27,13 @@ host_alias="$2"
 target_alias="$3"
 output="$4"
 
+if [ -z "$output" ]
+then
+    output=$target_alias
+    target_alias=$host_alias
+    host_alias=""
+fi
+
 rm -f version.c-tmp "$output" version.tmp
 date=$(sed -n -e 's/^.* BFD_VERSION_DATE \(.*\)$/\1/p' "$srcdir/../bfd/version.h")
 sed -e "s/DATE/$date/" < "$srcdir/version.in" > version.tmp
