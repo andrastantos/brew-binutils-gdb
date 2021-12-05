@@ -255,6 +255,9 @@ the native maintainer when resolving ABI issues.
 	bpf		--target=bpf-unknown-none
 			Jose E. Marchesi	jose.marchesi@oracle.com
 
+	brew		--target=brew-elf ,-Werror
+			Andras Tantos		andras@tantosonline.com
+
 	cris		--target=cris-elf ,-Werror ,
 			(sim does not build with -Werror)
 

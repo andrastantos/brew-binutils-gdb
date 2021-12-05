@@ -123,6 +123,7 @@ if test "${enable_sim}" != no; then
     SIM_TARGET([avr*-*-*], [avr])
     SIM_TARGET([bfin-*-*], [bfin])
     SIM_TARGET([bpf-*-*], [bpf], [true])
+    SIM_TARGET([brew-*-*], [brew])
     SIM_TARGET([cr16*-*-*], [cr16])
     SIM_TARGET([cris-*-* | crisv32-*-*], [cris])
     SIM_TARGET([d10v-*-*], [d10v])

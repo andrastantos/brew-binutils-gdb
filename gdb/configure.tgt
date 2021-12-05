@@ -216,6 +216,10 @@ bpf-*-*)
 	gdb_target_obs="bpf-tdep.o"
 	;;
 
+brew-*-elf)
+	gdb_target_obs="brew-tdep.o"
+	;;
+
 cris*)
 	# Target: CRIS
 	gdb_target_obs="cris-tdep.o cris-linux-tdep.o linux-tdep.o solib-svr4.o"
@@ -748,6 +752,7 @@ arm*-*-*)		gdb_sim=arm ;;
 avr*-*-*)		gdb_sim=avr ;;
 bfin-*-*)		gdb_sim=bfin ;;
 bpf-*-*)		gdb_sim=bpf ;;
+brew-*-*)		gdb_sim=brew ;;
 cris-*-*|cris32-*-*)	gdb_sim=cris ;;
 frv-*-*)		gdb_sim=frv ;;
 ft32-*-*)		gdb_sim=ft32 ;;

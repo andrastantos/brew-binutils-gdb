@@ -284,6 +284,7 @@ NOT_FSF_LIST = (
     "sim/common/cgen-accfp.c",
     "sim/mips/m16run.c",
     "sim/mips/sim-main.c",
+    "sim/brew/brew-gdb.dts",
     "sim/moxie/moxie-gdb.dts",
     # Not a single file in sim/ppc/ appears to be copyright FSF :-(.
     "sim/ppc/filter.h",
