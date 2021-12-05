@@ -94,8 +94,26 @@ parse_exp_save_ilp (char *s, expressionS *op)
   return s;
 }
 
+static int hex_digit(char a)
+{
+  if (a >= '0' && a <= '9') return a - '0';
+  if (a >= 'a' && a <= 'f') return a - 'a' + 10;
+  if (a >= 'A' && a <= 'F') return a - 'A' + 10;
+  return -1;
+}
+
+/*
+   Registers are named as:
+   $r0...$re or $R0...$Re for all the registers
+   $pc or $PC is also recognized and is an alias to $r0
+   $tpc or $TPC is also recognized, but handled differently.
+
+   Return value:
+      register index, or BREW_REG_TPC for $tpc
+      -1 in case of failure.
+*/
 static int
-parse_register_operand (char **ptr)
+parse_register_operand (char **ptr, int allow_tpc)
 {
   int reg;
   char *s = *ptr;
@@ -106,45 +124,34 @@ parse_register_operand (char **ptr)
       ignore_rest_of_line ();
       return -1;
     }
-  if (s[1] == 'f' && s[2] == 'p')
+  /* Handle PC */
+  if ((s[1] == 'p' && s[2] == 'c') || (s[1] == 'P' && s[2] == 'C'))
     {
       *ptr += 3;
-      return 0;
+      return BREW_REG_PC;
     }
-  if (s[1] == 's' && s[2] == 'p')
+  /* Handle TPC */
+  if (allow_tpc && ((s[1] == 't' && s[2] == 'p' && s[3] == 'c') || (s[1] == 'T' && s[2] == 'P' && s[3] == 'C')))
     {
-      *ptr += 3;
-      return 1;
+      *ptr += 4;
+      return BREW_REG_TPC;
     }
-  if (s[1] == 'r')
+  /* Regular registers */
+  if (s[1] == 'r' || s[1] == 'R')
     {
-      reg = s[2] - '0';
-      if ((reg < 0) || (reg > 9))
-	{
+      reg = hex_digit(s[2]);
+      if (reg == -1)
+        {
 	  as_bad (_("illegal register number"));
 	  ignore_rest_of_line ();
 	  return -1;
 	}
-      if (reg == 1)
-	{
-	  int r2 = s[3] - '0';
-	  if ((r2 >= 0) && (r2 <= 3))
-	    {
-	      reg = 10 + r2;
-	      *ptr += 1;
-	    }
-	}
+      *ptr += 2;
+      return reg;
     }
-  else
-    {
-      as_bad (_("illegal register number"));
-      ignore_rest_of_line ();
-      return -1;
-    }
-
-  *ptr += 3;
-
-  return reg + 2;
+  as_bad (_("illegal register number"));
+  ignore_rest_of_line ();
+  return -1;
 }
 
 /* This is the guts of the machine-dependent assembler.  STR points to
@@ -161,7 +168,8 @@ md_assemble (char *str)
   char *p;
   char pend;
 
-  unsigned short iword = 0;
+  u_int16_t inst_code = 0;
+  /*u_int32_t field_e = 0;*/
 
   int nlen = 0;
 
@@ -176,12 +184,14 @@ md_assemble (char *str)
        op_end++)
     nlen++;
 
+  /* Temporarily 0-terminate the string after the opcode so the hash lookup works */
   pend = *op_end;
   *op_end = 0;
-
+  /* Look up the opcode, if there is one */
   if (nlen == 0)
     as_bad (_("can't find opcode "));
   opcode = (brew_opc_info_t *) str_hash_find (opcode_hash_control, op_start);
+  /* Restore original string (remove 0-termination) */
   *op_end = pend;
 
   if (opcode == NULL)
@@ -190,19 +200,46 @@ md_assemble (char *str)
       return;
     }
 
-  p = frag_more (2);
+  p = frag_more (4);
 
   switch (opcode->itype)
     {
+    case BREW_ABD:
+      inst_code = opcode->opcode;
+      while (ISSPACE (*op_end))
+	op_end++;
+      {
+	int dest, src_a, src_b;
+	dest = parse_register_operand (&op_end, BREW_NO_TPC);
+	inst_code |= dest;
+	if (*op_end != ',')
+	  as_warn (_("expecting comma delimited register operands"));
+	op_end++;
+	src_a  = parse_register_operand (&op_end, BREW_NO_TPC);
+	inst_code |= src_a << 4;
+	if (*op_end != ',')
+	  as_warn (_("expecting comma delimited register operands"));
+	op_end++;
+	src_b  = parse_register_operand (&op_end, BREW_NO_TPC);
+	inst_code |= src_b << 8;
+	while (ISSPACE (*op_end))
+	  op_end++;
+	if (*op_end != 0)
+	  as_warn (_("extra stuff on line ignored"));
+      }
+      break;
+      /****************************************************
+       * LEGACY CODE STARTS HERE
+       ***************************************************/
     case BREW_F2_A8V:
-      iword = (1<<15) | (opcode->opcode << 12);
+      inst_code = (1<<15) | (opcode->opcode << 12);
       while (ISSPACE (*op_end))
 	op_end++;
       {
 	expressionS arg;
 	int reg;
-	reg = parse_register_operand (&op_end);
-	iword += (reg << 8);
+	reg = parse_register_operand (&op_end, BREW_NO_TPC);
+	inst_code += (reg << 8);
 	if (*op_end != ',')
 	  as_warn (_("expecting comma delimited register operands"));
 	op_end++;
@@ -216,17 +253,17 @@ md_assemble (char *str)
       }
       break;
     case BREW_F1_AB:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       {
 	int dest, src;
-	dest = parse_register_operand (&op_end);
+	dest = parse_register_operand (&op_end, BREW_NO_TPC);
 	if (*op_end != ',')
 	  as_warn (_("expecting comma delimited register operands"));
 	op_end++;
-	src  = parse_register_operand (&op_end);
-	iword += (dest << 4) + src;
+	src  = parse_register_operand (&op_end, BREW_NO_TPC);
+	inst_code += (dest << 4) + src;
 	while (ISSPACE (*op_end))
 	  op_end++;
 	if (*op_end != 0)
@@ -234,7 +271,7 @@ md_assemble (char *str)
       }
       break;
     case BREW_F1_A4:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       {
@@ -242,11 +279,11 @@ md_assemble (char *str)
 	char *where;
 	int regnum;
 
- 	regnum = parse_register_operand (&op_end);
+ 	regnum = parse_register_operand (&op_end, BREW_NO_TPC);
 	while (ISSPACE (*op_end))
 	  op_end++;
 
-	iword += (regnum << 4);
+	inst_code += (regnum << 4);
 
 	if (*op_end != ',')
 	  {
@@ -268,7 +305,7 @@ md_assemble (char *str)
       break;
     case BREW_F1_M:
     case BREW_F1_4:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       {
@@ -286,33 +323,33 @@ md_assemble (char *str)
       }
       break;
     case BREW_F1_NARG:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       if (*op_end != 0)
 	as_warn (_("extra stuff on line ignored"));
       break;
     case BREW_F1_A:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       {
 	int reg;
-	reg = parse_register_operand (&op_end);
+	reg = parse_register_operand (&op_end, BREW_NO_TPC);
 	while (ISSPACE (*op_end))
 	  op_end++;
 	if (*op_end != 0)
 	  as_warn (_("extra stuff on line ignored"));
-	iword += (reg << 4);
+	inst_code += (reg << 4);
       }
       break;
     case BREW_F1_ABi:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       {
 	int a, b;
-	a = parse_register_operand (&op_end);
+	a = parse_register_operand (&op_end, BREW_NO_TPC);
 	if (*op_end != ',')
 	  as_warn (_("expecting comma delimited register operands"));
 	op_end++;
@@ -323,7 +360,7 @@ md_assemble (char *str)
 	    return;
 	  }
 	op_end++;
-	b = parse_register_operand (&op_end);
+	b = parse_register_operand (&op_end, BREW_NO_TPC);
 	if (*op_end != ')')
 	  {
 	    as_bad (_("missing closing parenthesis"));
@@ -331,7 +368,7 @@ md_assemble (char *str)
 	    return;
 	  }
 	op_end++;
-	iword += (a << 4) + b;
+	inst_code += (a << 4) + b;
 	while (ISSPACE (*op_end))
 	  op_end++;
 	if (*op_end != 0)
@@ -339,7 +376,7 @@ md_assemble (char *str)
       }
       break;
     case BREW_F1_AiB:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       {
@@ -351,7 +388,7 @@ md_assemble (char *str)
 	    return;
 	  }
 	op_end++;
-	a = parse_register_operand (&op_end);
+	a = parse_register_operand (&op_end, BREW_NO_TPC);
 	if (*op_end != ')')
 	  {
 	    as_bad (_("missing closing parenthesis"));
@@ -362,8 +399,8 @@ md_assemble (char *str)
 	if (*op_end != ',')
 	  as_warn (_("expecting comma delimited register operands"));
 	op_end++;
-	b = parse_register_operand (&op_end);
-	iword += (a << 4) + b;
+	b = parse_register_operand (&op_end, BREW_NO_TPC);
+	inst_code += (a << 4) + b;
 	while (ISSPACE (*op_end))
 	  op_end++;
 	if (*op_end != 0)
@@ -371,7 +408,7 @@ md_assemble (char *str)
       }
       break;
     case BREW_F1_4A:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       {
@@ -396,17 +433,17 @@ md_assemble (char *str)
 	  }
 	op_end++;
 
- 	a = parse_register_operand (&op_end);
+ 	a = parse_register_operand (&op_end, BREW_NO_TPC);
 	while (ISSPACE (*op_end))
 	  op_end++;
 	if (*op_end != 0)
 	  as_warn (_("extra stuff on line ignored"));
 
-	iword += (a << 4);
+	inst_code += (a << 4);
       }
       break;
     case BREW_F1_ABi2:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       {
@@ -414,7 +451,7 @@ md_assemble (char *str)
 	char *offset;
 	int a, b;
 
- 	a = parse_register_operand (&op_end);
+ 	a = parse_register_operand (&op_end, BREW_NO_TPC);
 	while (ISSPACE (*op_end))
 	  op_end++;
 
@@ -442,7 +479,7 @@ md_assemble (char *str)
 	    return;
 	  }
 	op_end++;
-	b = parse_register_operand (&op_end);
+	b = parse_register_operand (&op_end, BREW_NO_TPC);
 	if (*op_end != ')')
 	  {
 	    as_bad (_("missing closing parenthesis"));
@@ -456,11 +493,11 @@ md_assemble (char *str)
 	if (*op_end != 0)
 	  as_warn (_("extra stuff on line ignored"));
 
-	iword += (a << 4) + b;
+	inst_code += (a << 4) + b;
       }
       break;
     case BREW_F1_AiB2:
-      iword = opcode->opcode << 8;
+      inst_code = opcode->opcode << 8;
       while (ISSPACE (*op_end))
 	op_end++;
       {
@@ -484,7 +521,7 @@ md_assemble (char *str)
 	    return;
 	  }
 	op_end++;
-	a = parse_register_operand (&op_end);
+	a = parse_register_operand (&op_end, BREW_NO_TPC);
 	if (*op_end != ')')
 	  {
 	    as_bad (_("missing closing parenthesis"));
@@ -501,7 +538,7 @@ md_assemble (char *str)
 	  }
 	op_end++;
 
- 	b = parse_register_operand (&op_end);
+ 	b = parse_register_operand (&op_end, BREW_NO_TPC);
 	while (ISSPACE (*op_end))
 	  op_end++;
 
@@ -510,18 +547,18 @@ md_assemble (char *str)
 	if (*op_end != 0)
 	  as_warn (_("extra stuff on line ignored"));
 
-	iword += (a << 4) + b;
+	inst_code += (a << 4) + b;
       }
       break;
     case BREW_F2_NARG:
-      iword = opcode->opcode << 12;
+      inst_code = opcode->opcode << 12;
       while (ISSPACE (*op_end))
 	op_end++;
       if (*op_end != 0)
 	as_warn (_("extra stuff on line ignored"));
       break;
     case BREW_F3_PCREL:
-      iword = (3<<14) | (opcode->opcode << 10);
+      inst_code = (3<<14) | (opcode->opcode << 10);
       while (ISSPACE (*op_end))
 	op_end++;
       {
@@ -538,7 +575,7 @@ md_assemble (char *str)
       }
       break;
     case BREW_BAD:
-      iword = 0;
+      inst_code = 0;
       while (ISSPACE (*op_end))
 	op_end++;
       if (*op_end != 0)
@@ -548,7 +585,7 @@ md_assemble (char *str)
       abort ();
     }
 
-  md_number_to_chars (p, iword, 2);
+  md_number_to_chars (p, inst_code, 2);
   dwarf2_emit_insn (2);
 
   while (ISSPACE (*op_end))

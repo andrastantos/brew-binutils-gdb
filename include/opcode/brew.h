@@ -64,9 +64,29 @@
 
 #define BREW_BAD     0x400
 
+#define BREW_NARG               0x500 /* Instructions with no arguments */
+#define BREW_ABD                0x501 /* Binary Instructions */
+#define BREW_ABD_NO_D_PC        0x502 /* Binary Instructions that can't target PC */
+#define BREW_ABD_NO_A_PC        0x503 /* Binary Instructions that can't use PC as the first source */
+#define BREW_ABD_NO_B_PC        0x504 /* Binary Instructions that can't use PC as the second source */
+#define BREW_ABD_NO_SAME_AB     0x505 /* Binary Instructions where A and B must be different */
+#define BREW_AD                 0x506 /* Unary Instructions with only A as the source */
+#define BREW_BD                 0x507 /* Unary Instructions with only B as the source */
+#define BREW_AiD                0x508 /* Binary Insturctions with immediate and A */
+#define BREW_iBD                0x509 /* Binary Insturctions with immediate and B */
+#define BREW_iD                 0x50a /* Unary Instructions with immediate source */
+
+#define BREW_REG_PC 0x0
+#define BREW_REG_R(x) (x)
+
+#define BREW_NO_TPC 0
+#define BREW_ALLOW_TPC 1
+
+#define BREW_REG_TPC 0x1000 /* Special register index for TPC. Not used in encoding of course, but returned by the register name parser. */
+
 typedef struct brew_opc_info_t
 {
-  short         opcode;
+  u_int16_t     opcode;
   unsigned      itype;
   const char *  name;
 } brew_opc_info_t;
@@ -74,3 +94,5 @@ typedef struct brew_opc_info_t
 extern const brew_opc_info_t brew_form1_opc_info[128];
 extern const brew_opc_info_t brew_form2_opc_info[4];
 extern const brew_opc_info_t brew_form3_opc_info[16];
+
+extern const brew_opc_info_t brew_raw_opc_info[];
