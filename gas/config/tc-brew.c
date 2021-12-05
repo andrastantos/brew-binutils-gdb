@@ -44,7 +44,8 @@ const pseudo_typeS md_pseudo_table[] =
 const char FLT_CHARS[] = "rRsSfFdDxXpP";
 const char EXP_CHARS[] = "eE";
 
-static valueT md_chars_to_number (char * buf, int n);
+/* TODO: this function is not used. That's because the MOXIE 10-bit relocation type is not used. */
+/*static valueT md_chars_to_number (char * buf, int n);*/
 
 /* Byte order.  */
 extern int target_big_endian;
@@ -654,7 +655,7 @@ md_apply_fix (fixS *fixP ATTRIBUTE_UNUSED,
 {
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
   long val = *valP;
-  long newval;
+  /*long newval;*/
   long max, min;
 
   max = min = 0;
@@ -735,7 +736,8 @@ md_number_to_chars (char * ptr, valueT use, int nbytes)
 }
 
 /* Convert from target byte order to host byte order.  */
-
+/* TODO: this function is not used. That's because the MOXIE 10-bit relocation type is not used. */
+/*
 static valueT
 md_chars_to_number (char * buf, int n)
 {
@@ -761,6 +763,7 @@ md_chars_to_number (char * buf, int n)
 
   return result;
 }
+*/
 
 /* Generate a machine-dependent relocation.  */
 arelent *
