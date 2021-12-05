@@ -42,6 +42,7 @@
 #define ARCH_arm
 #define ARCH_avr
 #define ARCH_bfin
+#define ARCH_brew
 #define ARCH_cr16
 #define ARCH_crx
 #define ARCH_csky

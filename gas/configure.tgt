@@ -172,6 +172,8 @@ case ${generic_target} in
   bfin-*-uclinux*)			fmt=elf em=linux ;;
   bfin-*elf)				fmt=elf ;;
 
+  brew-*-*)				fmt=elf ;;
+
   cr16-*-elf*)				fmt=elf ;;
 
   cris-*-linux-* | crisv32-*-linux-*)

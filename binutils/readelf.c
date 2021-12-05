@@ -104,6 +104,7 @@
 #include "elf/d30v.h"
 #include "elf/dlx.h"
 #include "elf/bpf.h"
+#include "elf/brew.h"
 #include "elf/epiphany.h"
 #include "elf/fr30.h"
 #include "elf/frv.h"
@@ -1128,7 +1129,7 @@ guess_is_rela (unsigned int e_machine)
     case EM_MICROBLAZE:
     case EM_MICROBLAZE_OLD:
     case EM_WEBASSEMBLY:
-	case EM_BREW:
+    case EM_BREW:
       return true;
 
     case EM_68HC05:
@@ -1923,6 +1924,10 @@ dump_relocations (Filedata *          filedata,
 
 	case EM_LOONGARCH:
 	  rtype = elf_loongarch_reloc_type (type);
+	  break;
+
+	case EM_BREW:
+	  rtype = elf_brew_reloc_type (type);
 	  break;
 
 	}
@@ -3000,6 +3005,8 @@ get_machine_name (unsigned e_machine)
     case EM_ADAPTEVA_EPIPHANY:	return "Adapteva EPIPHANY";
     case EM_CYGNUS_FRV:		return "Fujitsu FR-V";
     case EM_S12Z:               return "Freescale S12Z";
+
+    case EM_BREW:               return "Brew";
 
     default:
       snprintf (buff, sizeof (buff), _("<unknown>: 0x%x"), e_machine);
@@ -14160,6 +14167,8 @@ is_32bit_abs_reloc (Filedata * filedata, unsigned int reloc_type)
       return reloc_type == 1; /* R_XTENSA_32.  */
     case EM_Z80:
       return reloc_type == 6; /* R_Z80_32.  */
+    case EM_BREW:
+      return reloc_type == 1; /* R_BREW_32.  */
     default:
       {
 	static unsigned int prev_warn = 0;
@@ -14645,6 +14654,7 @@ is_none_reloc (Filedata * filedata, unsigned int reloc_type)
     case EM_XC16X:
     case EM_Z80:     /* R_Z80_NONE. */
     case EM_WEBASSEMBLY: /* R_WASM32_NONE.  */
+    case EM_BREW:    /* R_BREW_NONE */
       return reloc_type == 0;
 
     case EM_AARCH64:

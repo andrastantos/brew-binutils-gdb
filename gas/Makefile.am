@@ -138,6 +138,7 @@ TARGET_CPU_CFILES = \
 	config/tc-avr.c \
 	config/tc-bfin.c \
 	config/tc-bpf.c \
+	config/tc-brew.c \
 	config/tc-cr16.c \
 	config/tc-cris.c \
 	config/tc-crx.c \

@@ -97,6 +97,7 @@ eelf32btsmip.c
 eelf32btsmip_fbsd.c
 eelf32btsmipn32.c
 eelf32btsmipn32_fbsd.c
+eelf32brew.c
 eelf32cr16.c
 eelf32crx.c
 eelf32ebmip.c

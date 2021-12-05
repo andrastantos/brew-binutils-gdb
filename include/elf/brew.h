@@ -23,6 +23,15 @@
 
 #include "elf/reloc-macros.h"
 
+/* NOTE: if these types are changed, the corresponding case in readelf.c  */
+/*       (around line 14170) needs to change as well.                     */
+/*       Right now, the only relocation we have is a 32-bit absolute one, */
+/*       which is type 1. Later we might have a 32-bit                    */
+/*       Later we might have a 32-bit PC-relative relocation as well.     */
+/*       Let's make sure that that one gets type 2 or something.          */
+/*       If NONE moves around, the case around line 14657 in readelf.c    */
+/*       needs to change too.                                             */
+
 /* Relocation types.  */
 START_RELOC_NUMBERS (elf_brew_reloc_type)
   RELOC_NUMBER (R_BREW_NONE, 0)
