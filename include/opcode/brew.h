@@ -86,7 +86,7 @@
 
 typedef struct brew_opc_info_t
 {
-  u_int16_t     opcode;
+  uint16_t      opcode;
   unsigned      itype;
   const char *  name;
 } brew_opc_info_t;

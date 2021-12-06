@@ -22,6 +22,7 @@
 
 /* TODO: right now this is not changed from the moxie baseline at all. It should be!!!! */
 
+#include <stdint.h>
 #include "as.h"
 #include "safe-ctype.h"
 #include "opcode/brew.h"
@@ -168,7 +169,7 @@ md_assemble (char *str)
   char *p;
   char pend;
 
-  u_int16_t inst_code = 0;
+  uint16_t inst_code = 0;
   /*u_int32_t field_e = 0;*/
 
   int nlen = 0;

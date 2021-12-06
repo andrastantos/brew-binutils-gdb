@@ -22,6 +22,7 @@
 
 #include "sysdep.h"
 #include <stdio.h>
+#include <stdint.h>
 
 #define STATIC_TABLE
 #define DEFINE_TABLE
