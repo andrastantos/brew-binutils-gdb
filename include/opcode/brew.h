@@ -84,6 +84,9 @@
 
 #define BREW_REG_TPC 0x1000 /* Special register index for TPC. Not used in encoding of course, but returned by the register name parser. */
 
+#define BREW_REG_FLAG_FLOAT 0x2000 /* Userd to mark register operands for F0...FE. These are aliases for R0...RE for floating point operations */
+#define BREW_REG_FLAG_SIGNED 0x4000 /* Used to mark register operatds for S0...SE. These are aliases for R0...RE for signed operations */
+
 typedef struct brew_opc_info_t
 {
   uint16_t      opcode;

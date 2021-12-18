@@ -95,17 +95,23 @@ parse_exp_save_ilp (char *s, expressionS *op)
   return s;
 }
 
-static int hex_digit(char a)
+static int
+parse_reg_index(char *str)
 {
-  if (a >= '0' && a <= '9') return a - '0';
-  if (a >= 'a' && a <= 'f') return a - 'a' + 10;
-  if (a >= 'A' && a <= 'F') return a - 'A' + 10;
+  /* Single-digit hex (or decimal) numbers */
+  if (str[0] >= '0' && str[0] <= '9' && str[1] == 0) return str[0] - '0';
+  if (str[0] >= 'a' && str[0] <= 'f' && str[1] == 0) return str[0] - 'a' + 10;
+  if (str[0] >= 'A' && str[0] <= 'F' && str[1] == 0) return str[0] - 'A' + 10;
+  /* double-digit decimal numbers */
+  if (str[0] == '1' && str[1] >= '0' && str[1] <= '4' && str[2] == 0) return str[1] - '0' + 10;
   return -1;
 }
 
 /*
    Registers are named as:
-   $r0...$re or $R0...$Re for all the registers
+   $r0...$re (case insensitive) for unsigned scalar registers
+   $s0...$se (case insensitive) for signed scalar register (aliases)
+   $f0...$fe (case insensitive) for floating point register (aliases)
    $pc or $PC is also recognized and is an alias to $r0
    $tpc or $TPC is also recognized, but handled differently.
 
@@ -114,46 +120,154 @@ static int hex_digit(char a)
       -1 in case of failure.
 */
 static int
-parse_register_operand (char **ptr, int allow_tpc)
+parse_register_operand (char *token, bool allow_tpc)
 {
   int reg;
-  char *s = *ptr;
+  int raw_reg;
+  bool valid;
 
-  if (*s != '$')
+  if (token[0] != '$')
     {
       as_bad (_("expecting register"));
-      ignore_rest_of_line ();
       return -1;
     }
-  /* Handle PC */
-  if ((s[1] == 'p' && s[2] == 'c') || (s[1] == 'P' && s[2] == 'C'))
+  if (strcasecmp(token, "$PC") == 0)
     {
-      *ptr += 3;
       return BREW_REG_PC;
     }
-  /* Handle TPC */
-  if (allow_tpc && ((s[1] == 't' && s[2] == 'p' && s[3] == 'c') || (s[1] == 'T' && s[2] == 'P' && s[3] == 'C')))
+  if (allow_tpc && strcasecmp(token, "$TPC") == 0)
     {
-      *ptr += 4;
       return BREW_REG_TPC;
     }
   /* Regular registers */
-  if (s[1] == 'r' || s[1] == 'R')
+  valid = false;
+  if (token[1] == 'r' || token[1] == 'R')
     {
-      reg = hex_digit(s[2]);
-      if (reg == -1)
-        {
-	  as_bad (_("illegal register number"));
-	  ignore_rest_of_line ();
-	  return -1;
-	}
-      *ptr += 2;
-      return reg;
+      valid = True;
     }
-  as_bad (_("illegal register number"));
-  ignore_rest_of_line ();
-  return -1;
+  if (token[1] == 's' || token[1] == 'S')
+    {
+      valid = True;
+      reg = BREW_REG_FLAG_SIGNED;
+    }
+  if (token[1] == 'f' || token[1] == 'F')
+    {
+      valid = True;
+      reg = BREW_REG_FLAG_FLOAT;
+    }
+  if (!valid)
+    {
+      as_bad (_("illegal register number"));
+      return -1;
+    }
+  raw_reg = parse_reg_index(token+2);
+  if (raw_reg == -1)
+    {
+      as_bad (_("illegal register number"));
+      return -1;
+    }
+  reg |= raw_reg;
+  return reg;
 }
+
+static bool
+char_in(char a, char *list)
+{
+  while (*list != 0)
+    {
+      if (a == *list)
+        return true;
+      ++list;
+    }
+  return false;
+}
+
+/* Returns the pointer to the begining (tok_start) and the end (tok_end)
+   of the next token within str. Sets *tok_start to NULL if no more
+   tokens are found. The string is in-place modified by putting a
+   zero-termination into the token delimiter. The original character
+   at the place of the end of the token is saved in tok_end_holder */
+static void
+get_next_token(char **tok_start, char **tok_end, char *tok_end_holder)
+{
+  /* Drop leading whitespace.  */
+  while (**tok_start == ' ')
+        *tok_start++;
+
+  /* Find the end of the token */
+  for (*toke_end = *tok_start;
+       **tok_end && !is_end_of_line[**tok_end & 0xff] && !char_in(**tok_end, " []=,");
+       *tok_end++);
+
+  if (*tok_end == *tok_start)
+    *tok_start = NULL;
+    return;
+  *tok_end_holder = **tok_end;
+  **tok_end = 0;
+}
+
+#define GET_NEXT_TOKEN(err_msg) { \
+  *tok_end = tok_end_holder; \
+  tok_start = tok_end; \
+  get_next_token(&tok_start, &tok_end, &tok_end_holder); \
+  if (tok_start == NULL)\
+    { \
+      as_bad(_(err_msg)); \
+      ignore_rest_of_line(); \
+      return; \
+    } \
+}
+#define GET_NEXT_TOKEN_OPT  { \
+  *tok_end = tok_end_holder; \
+  tok_start = tok_end; \
+  get_next_token(&tok_start, &tok_end, &tok_end_holder);
+#define IS_NEXT_TOKEN(expected_tok, err_msg) { \
+  *tok_end = tok_end_holder; \
+  tok_start = tok_end; \
+  get_next_token(&tok_start, &tok_end, &tok_end_holder); \
+  if (tok_start == NULL)\
+    { \
+      as_bad(_(err_msg)); \
+      ignore_rest_of_line(); \
+      return; \
+    } \
+  if (strcasecmp(tok_start, expected_tok) != 0)\
+    { \
+      as_bad(_(err_msg)); \
+      ignore_rest_of_line(); \
+      return; \
+    } \
+}
+#define ERR_RETURN { if (tok_end != NULL) *tok_end = tok_end_holder; ignore_rest_of_line(); return; }
+#define RETURN_16BIT(inst_code) { \
+  if (tok_end != NULL) *tok_end = tok_end_holder; \
+  md_number_to_chars (emit_strm, inst_code, 2); \
+  dwarf2_emit_insn (2); \
+ \
+  get_next_token(str, &tok_start, &tok_end, &tok_end_holder); \
+  if (tok_start != NULL) \
+    as_warn (_("extra stuff on line ignored")); \
+ \
+  if (pending_reloc) \
+    as_bad (_("Something forgot to clean up\n")); \
+     return; \
+}
+#define RETURN_48BIT(inst_code, field_e) { \
+  if (tok_end != NULL) *tok_end = tok_end_holder; \
+  md_number_to_chars (emit_strm, inst_code, 2); \
+  md_number_to_chars (emit_strm+2, field_e, 4); \
+  dwarf2_emit_insn (6); \
+ \
+  get_next_token(str, &tok_start, &tok_end, &tok_end_holder); \
+  if (tok_start != NULL) \
+    as_warn (_("extra stuff on line ignored")); \
+ \
+  if (pending_reloc) \
+    as_bad (_("Something forgot to clean up\n")); \
+     return; \
+}
+
+
 
 /* This is the guts of the machine-dependent assembler.  STR points to
    a machine dependent instruction.  This function is supposed to emit
@@ -162,21 +276,165 @@ parse_register_operand (char **ptr, int allow_tpc)
 void
 md_assemble (char *str)
 {
-  char *op_start;
-  char *op_end;
+  char *tok_start;
+  int reg_d;
+  int reg_b;
+  int reg_a;
 
-  brew_opc_info_t *opcode;
-  char *p;
+  /* GET_NEXT_TOKEN and co. macros start by restoring the termination
+     of the previous token and start searching from tok_end. So, we
+     pretend there was something that just ended where our string starts. */
+  char *tok_end = str;
+  char tok_end_holder = str[0];
+
+  char *emit_strm;
   char pend;
 
   uint16_t inst_code = 0;
   /*u_int32_t field_e = 0;*/
 
-  int nlen = 0;
+  /* Reserve 6 bytes for output */
+  emit_strm = frag_more (6);
 
-  /* Drop leading whitespace.  */
-  while (*str == ' ')
-    str++;
+  GET_NEXT_TOKEN("Invalid instruction: not a single token is found ");
+  /* Deal with simple instructions */
+  if (strcasecmp(tok_start, "FILL") == 0)
+    RETURN_16BIT(0x0000);
+  if (strcasecmp(tok_start, "BREAK") == 0)
+    RETURN_16BIT(0x0110);
+  if (strcasecmp(tok_start, "SYSCALL") == 0)
+    RETURN_16BIT(0x0220);
+  if (strcasecmp(tok_start, "STU") == 0)
+    RETURN_16BIT(0x0330);
+  if (strcasecmp(tok_start, "SII") == 0)
+    RETURN_16BIT(0x0440);
+  if (strcasecmp(tok_start, "FENCE") == 0)
+    RETURN_16BIT(0x0dd0);
+  if (strcasecmp(tok_start, "WFENCE") == 0)
+    RETURN_16BIT(0x0ee0);
+  if (strcasecmp(tok_start, "WOI") == 0)
+    RETURN_16BIT(0x1000);
+
+  /* Store operations */
+  do {
+    if (strcasecmp(tok_start, "MEM") == 0)
+      inst_code = 0xf700;
+    else if (strcasecmp(tok_start, "MEM32") == 0)
+      inst_code = 0xf700;
+    else if (strcasecmp(tok_start, "MEM8") == 0)
+      inst_code = 0xf500;
+    else if (strcasecmp(tok_start, "MEM16") == 0)
+      inst_code = 0xf600;
+    else
+      break;
+    IS_NEXT_TOKEN("[", "invalid store operation syntax ");
+     /* At this point we either have a register or an expression in the next token */
+     // TODO: figure out how to deal with expressions and fixups!
+    GET_NEXT_TOKEN("invalid store operation syntax ");
+    reg_a = parse_register_operand(tok_start, false);
+    if (reg_a == -1)
+      {
+        as_bad(_("Invalid base register for store "));
+        ERR_RETURN;
+      }
+    IS_NEXT_TOKEN("]", "invalid store operation syntax ");
+    IS_NEXT_TOKEN("=", "invalid store operation syntax ");
+    GET_NEXT_TOKEN("invalid store operation syntax ");
+    reg_d = parse_register_operand(tok_start, false);
+    if (reg_d == -1)
+      {
+        as_bad(_("Invalid source register for store "));
+        ERR_RETURN;
+      }
+    inst_code |= (reg_a & 0xf) << 4;
+    /* special-case TPC stores: these only have a 48-bit variant */
+    if (reg_d == BREW_REG_TPC)
+      {
+        inst_code |= 0x0800;
+        inst_code |= 0x000f; 
+        RETURN_48BIT(inst_code, 0);
+      }
+    inst_code |= (reg_d & 0xf) << 0;
+    RETURN_16BIT(inst_code);
+    // TODO: we need the 48-bit versions of the stores too!!
+  } while (false);
+
+  /* All other operations have the form of R_D = ... */
+  reg_d = parse_register_operand(tok_start, true);
+  IS_NEXT_TOKEN("=", "Invalid operation ");
+
+  GET_NEXT_TOKEN("invalid operation syntax ");
+  /* Loads */
+  do {
+    if (strcasecmp(tok_start, "MEM") == 0 || strcasecmp(tok_start, "MEM32") == 0)
+      {
+        inst_code = 0xf400;
+      }
+    else if (strcasecmp(tok_start, "MEM8") == 0)
+      {
+        if (reg_d & BREW_REG_FLAG_FLOAT != 0)
+          ERR_RETURN("8-bit loads into float register is not supported")
+        if (reg_d & BREW_REG_FLAG_SIGNED != 0)
+          inst_code = 0xf000;
+        else
+          inst_code = 0xf100;
+      }
+    else if (strcasecmp(tok_start, "MEM16") == 0)
+      {
+        if (reg_d & BREW_REG_FLAG_FLOAT != 0)
+          ERR_RETURN("16-bit loads into float register is not supported")
+        if (reg_d & BREW_REG_FLAG_SIGNED != 0)
+          inst_code = 0xf200;
+        else
+          inst_code = 0xf300;
+      }
+    else
+      break;
+    IS_NEXT_TOKEN("[", "invalid load operation syntax ");
+     /* At this point we either have a register or an expression in the next token */
+     // TODO: figure out how to deal with expressions and fixups!
+    GET_NEXT_TOKEN("invalid load operation syntax ");
+    reg_a = parse_register_operand(tok_start, false);
+    if (reg_a == -1)
+      {
+        as_bad(_("Invalid base register for load "));
+        ERR_RETURN;
+      }
+    IS_NEXT_TOKEN("]", "invalid load operation syntax ");
+    inst_code |= (reg_a & 0xf) << 4;
+    /* special-case TPC stores: these only have a 48-bit variant */
+    if (reg_d == BREW_REG_TPC)
+      {
+        inst_code |= 0x0800;
+        inst_code |= 0x000f; 
+        RETURN_48BIT(inst_code, 0);
+      }
+    inst_code |= (reg_d & 0xf) << 0;
+    RETURN_16BIT(inst_code);
+    // TODO: we need the 48-bit versions of the stores too!!
+  } while (false);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   /* Find the op code end.  */
   op_start = str;
@@ -201,7 +459,6 @@ md_assemble (char *str)
       return;
     }
 
-  p = frag_more (4);
 
   switch (opcode->itype)
     {
