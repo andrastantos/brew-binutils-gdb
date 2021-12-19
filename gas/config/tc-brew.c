@@ -108,6 +108,18 @@ end_token_strm(void)
   tok_start = NULL;
 }
 
+const char *special_tokens[] = {
+  "<-",
+  "==",
+  "!=",
+  "<=",
+  ">=",
+  ">>",
+  "<<",
+  NULL
+};
+
+
 /* Advances tok_start and tok_end to the next token. Sets tok_start to 
    NULL if no more tokens are found. The string is in-place modified by
    putting a zero-termination into the token delimiter. The original
@@ -122,6 +134,8 @@ get_optional_next_token(void)
 
   *tok_end = tok_end_holder;
   tok_start = tok_end;
+  const char **special_token;
+
   /* Drop leading whitespace.  */
   while (ISSPACE(*tok_start))
     tok_start++;
@@ -129,6 +143,18 @@ get_optional_next_token(void)
   /* Find the end of the token */
   tok_end = tok_start;
   //DEBUG(("get_optional_next_token %s", tok_end));
+  /* special 2-char tokens */
+  for (special_token = special_tokens; *special_token != NULL; ++special_token)
+    {
+      if (strncmp(*special_token, tok_start, 2) == 0)
+        {
+          tok_end = tok_start+2;
+          tok_end_holder = *tok_end;
+          *tok_end = 0;
+          DEBUG(("                 returning %s", tok_start));
+          return;
+        }
+    }
   do {
     if (*tok_end == 0)
       break;
@@ -137,7 +163,7 @@ get_optional_next_token(void)
     if (ISSPACE(*tok_end))
       break;
     /* These are tokens on their own right */
-    if (strchr("[]=,", *tok_end) != NULL)
+    if (strchr("<>![]=,", *tok_end) != NULL)
       {
         if (tok_end == tok_start)
           {
@@ -237,6 +263,7 @@ undo_last_token(void)
   *tok_end = tok_end_holder;
   tok_end = tok_start;
   tok_end_holder = *tok_end;
+  DEBUG(("                 undo"));
 }
 
 /* Makes sure the token stream is completely parsed
@@ -504,6 +531,72 @@ md_assemble (char *str)
     inst_code |= (reg_d & 0xf) << 0;
     RETURN(inst_code);
   } while (false);
+
+
+  /* branches */
+  if (strcasecmp(tok_start, "if") == 0)
+    {
+      int reg1;
+      //int reg2;
+
+      GET_NEXT_TOKEN((_("invalid instruction syntax")));
+      reg1 = parse_register_operand(tok_start, true);
+      if (reg1 == -1)
+        {
+          as_bad(_("Invalid branch instruction: expected test register"));
+          ERR_RETURN;
+        }
+      if (reg1 == BREW_REG_TPC)
+        {
+          as_bad(_("Invalid branch instruction: can't test $TPC"));
+          ERR_RETURN;
+        }
+      GET_NEXT_TOKEN((_("invalid instruction syntax")));
+      if (strcmp(tok_start, "[") == 0)
+        {
+          int bit_idx;
+          /* This is a bit-test branch */
+          GET_NEXT_TOKEN((_("invalid instruction syntax")));
+          bit_idx = parse_reg_index(tok_start);
+          if (bit_idx == -1)
+            {
+              as_bad(_("Invalid bit-test branch instruction: bit-index must be between 0 and 14"));
+              ERR_RETURN;
+            }
+          IS_NEXT_TOKEN(("]", _("invalid bit-test branch instruction: expected ']'")));
+          IS_NEXT_TOKEN(("==", _("invalid bit-test branch instruction: expected '=='")));
+          GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected condition")));
+          if (strcmp(tok_start, "0") == 0)
+            {
+              inst_code = 0x00ff;
+              inst_code |= bit_idx << 12;
+              inst_code |= (reg1 & 0xf) << 8;
+            }
+          else if (strcmp(tok_start, "1") == 0)
+            {
+              inst_code = 0x0f0f;
+              inst_code |= bit_idx << 12;
+              inst_code |= (reg1 & 0xf) << 4;
+            }
+          else
+            {
+              as_bad(_("invalid bit-test branch instruction: condition must be 0 or 1. Got: %s"), tok_start);
+            }
+          IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
+          IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
+          GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected branch target")));
+          if (!parse_expression(tok_start))
+            {
+              as_bad(_("invalid bit-test branch instruction: expected branch target"));
+              ERR_RETURN;
+            }
+          RETURN(inst_code);
+        }
+      else
+        {
+          /* This is a comparison branch */
+        }
+    }
 
   /* All other operations have the form of {reg} = ... */
   reg_d = parse_register_operand(tok_start, true);

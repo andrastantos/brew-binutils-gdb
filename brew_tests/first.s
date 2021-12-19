@@ -21,5 +21,7 @@ _start:
   $sr0 <- MEM8[$r1,message]
   $tpc <- MEM8[$r1]
   $r13 <- MEM16[$pc]
+  if $r3[12] == 1 $pc <- 0
+  if $r3[12] == 0 $pc <- message
 message:
         .ascii  "Hello, world\n"
