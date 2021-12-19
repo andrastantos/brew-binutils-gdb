@@ -13,5 +13,7 @@
 
         .text
 _start:
+	FENCE
+  SII
 message:
         .ascii  "Hello, world\n"

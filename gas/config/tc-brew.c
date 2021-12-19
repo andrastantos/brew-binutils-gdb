@@ -28,6 +28,7 @@
 #include "opcode/brew.h"
 #include "elf/brew.h"
 
+#define DEBUG(msg) { printf msg; printf("\n"); }
 
 extern const brew_opc_info_t brew_opc_info[128];
 
@@ -94,7 +95,7 @@ start_token_strm(char *str)
 {
   tok_end = str;
   tok_end_holder = str[0];
-  tok_start = NULL;
+  tok_start = str;
 }
 
 /* Stops parsing by restoring the original character stream */
@@ -114,6 +115,8 @@ end_token_strm(void)
 static void
 get_optional_next_token(void)
 {
+  //DEBUG(("get_optional_next_token with tok_start: %8p, tok_end: %8p, tok_end_holder: '%c'", tok_start, tok_end, tok_end_holder));
+
   if (tok_start == NULL)
     return;
 
@@ -153,7 +156,7 @@ get_optional_next_token(void)
    Returns true on success, false on failure.
 */
 static bool
-vget_next_token(char *err_msg, va_list args)
+vget_next_token(const char *err_msg, va_list args)
 {
   get_optional_next_token();
   if (tok_start == NULL)
@@ -165,7 +168,7 @@ vget_next_token(char *err_msg, va_list args)
   return true;
 }
 static bool
-get_next_token(char *err_msg, ...)
+get_next_token(const char *err_msg, ...)
 {
   va_list args;
   bool ret_val;
@@ -213,7 +216,7 @@ static void close_token_strm(void)
 {
   get_optional_next_token();
   if (tok_start != NULL)
-    as_warn (_("extra stuff on line ignored"));
+    as_warn (_("extra stuff on line ignored '%s'"), tok_start);
   end_token_strm();
 }
 
@@ -334,7 +337,7 @@ parse_expression(char *token)
 
 
 
-#define GET_NEXT_TOKEN(err_msg) { if (!get_next_token err_msg) {close_token_strm(); ignore_rest_of_line(); return;}}
+#define GET_NEXT_TOKEN(err_msg) { bool x; x = get_next_token err_msg; if (!x) {close_token_strm(); ignore_rest_of_line(); return;}}
 #define IS_NEXT_TOKEN(params) { if (!is_next_token params) {close_token_strm(); ignore_rest_of_line(); return;}}
 #define ERR_RETURN { close_token_strm(); ignore_rest_of_line(); return; }
 #define RETURN(inst_code) { \
@@ -364,6 +367,8 @@ md_assemble (char *str)
 
   inst_code_frag = frag_more (2); /* Let's start a new fragment for the 16-bit instruction code */
   field_e_frag = NULL; /* We initially don't have field_e. If, during parsing we encouter an expression, we'll allocate a fragment here */
+
+  DEBUG(("md_assemble: %s", str))
 
   GET_NEXT_TOKEN((_("Invalid instruction: not a single token is found ")));
   /* Deal with simple instructions */
