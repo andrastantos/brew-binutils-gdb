@@ -128,6 +128,7 @@ get_optional_next_token(void)
 
   /* Find the end of the token */
   tok_end = tok_start;
+  //DEBUG(("get_optional_next_token %s", tok_end));
   do {
     if (*tok_end == 0)
       break;
@@ -136,12 +137,16 @@ get_optional_next_token(void)
     if (ISSPACE(*tok_end))
       break;
     if (strchr("[]=,", *tok_end) != NULL)
-      break;
+      {
+        if (tok_end == tok_start)
+          ++tok_end;
+        break;
+      }
     tok_end++;
   } while (true);
 
   tok_end_holder = *tok_end;
-  if (*tok_end == *tok_start)
+  if (tok_end == tok_start)
     {
       tok_start = NULL;
       return;
@@ -190,7 +195,9 @@ is_next_token(const char *expected_tok, char *err_msg, ...)
   bool ret_val;
 
   va_start(args, err_msg);
+  //DEBUG(("is_next_token %s enters with %s", expected_tok, tok_start));
   ret_val = vget_next_token(err_msg, args);
+  //DEBUG(("is_next_token %s compares to %s with ret_val %s", expected_tok, tok_start, ret_val ? "true":"false"));
   if (!ret_val)
     {
     va_end(args);
@@ -207,6 +214,19 @@ is_next_token(const char *expected_tok, char *err_msg, ...)
     }
   va_end(args);
   return true;
+}
+
+/* Undoes the grabbing of the last token
+   NOTE: this can only be done ONCE. It can't
+   be used to walk the tokenstream backwards */
+static void
+undo_last_token(void)
+{
+  if (tok_start == NULL)
+    return;
+  *tok_end = tok_end_holder;
+  tok_end = tok_start;
+  tok_end_holder = *tok_end;
 }
 
 /* Makes sure the token stream is completely parsed
@@ -259,7 +279,7 @@ parse_register_operand (char *token, bool allow_tpc)
 
   if (token[0] != '$')
     {
-      as_bad (_("expecting register"));
+      as_bad (_("expecting register, got %s"), token);
       return -1;
     }
   token++;
@@ -315,6 +335,10 @@ parse_exp_save_ilp (char *s, expressionS *op)
 static bool
 parse_expression(char *token)
 {
+  /* The GAS expression parser happily accepts register names (such as $r0) as expressions. We don't want that. */
+  if (token[0] == '$')
+    return false;
+
   expressionS arg;
   char *end_expr;
   end_expr = parse_exp_save_ilp (token, &arg);
@@ -337,9 +361,9 @@ parse_expression(char *token)
 
 
 
-#define GET_NEXT_TOKEN(err_msg) { bool x; x = get_next_token err_msg; if (!x) {close_token_strm(); ignore_rest_of_line(); return;}}
-#define IS_NEXT_TOKEN(params) { if (!is_next_token params) {close_token_strm(); ignore_rest_of_line(); return;}}
-#define ERR_RETURN { close_token_strm(); ignore_rest_of_line(); return; }
+#define GET_NEXT_TOKEN(err_msg) { bool x; x = get_next_token err_msg; if (!x) { DEBUG(("GET_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str)); close_token_strm(); ignore_rest_of_line(); return;}}
+#define IS_NEXT_TOKEN(params) { if (!is_next_token params) { DEBUG(("IS_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str)); close_token_strm(); ignore_rest_of_line(); return;}}
+#define ERR_RETURN { DEBUG(("ERR RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str)); close_token_strm(); ignore_rest_of_line(); return; }
 #define RETURN(inst_code) { \
   md_number_to_chars (inst_code_frag, inst_code, 2); \
   if (field_e_frag != NULL) \
@@ -400,7 +424,7 @@ md_assemble (char *str)
       {
         inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
         GET_NEXT_TOKEN((_("invalid store offset syntax")));
-        if (strcmp(tok_start, ","))
+        if (strcmp(tok_start, ",") == 0)
           {
             /* We have the format of MEM[{expr},{reg}] = {reg} */
             GET_NEXT_TOKEN((_("invalid store offset syntax")));
@@ -415,6 +439,7 @@ md_assemble (char *str)
           {
             /* We have the format of MEM[{expr}] = {reg} */
             reg_a = 0xf;
+            undo_last_token();
           }
       }
     else
@@ -426,7 +451,7 @@ md_assemble (char *str)
             ERR_RETURN;
           }
         GET_NEXT_TOKEN((_("invalid store offset syntax")));
-        if (strcmp(tok_start, ","))
+        if (strcmp(tok_start, ",") == 0)
           {
             GET_NEXT_TOKEN((_("invalid store offset syntax")));
             if (!parse_expression(tok_start))
@@ -440,12 +465,13 @@ md_assemble (char *str)
         else
           {
             /* We have the format of MEM[{reg}] = {reg} */
+            undo_last_token();
           }
       }
     IS_NEXT_TOKEN(("]", _("invalid store operation syntax ")));
     IS_NEXT_TOKEN(("=", _("invalid store operation syntax ")));
     GET_NEXT_TOKEN((_("invalid store operation syntax ")));
-    reg_d = parse_register_operand(tok_start, false);
+    reg_d = parse_register_operand(tok_start, true);
     if (reg_d == -1)
       {
         as_bad(_("Invalid source register for store "));
@@ -457,8 +483,11 @@ md_assemble (char *str)
       {
         inst_code |= 0x0800;
         inst_code |= 0x000f;
-        field_e_frag = frag_more(4);
-        md_number_to_chars (field_e_frag, 0, 4);
+        if (field_e_frag == NULL)
+          {
+            field_e_frag = frag_more(4);
+            md_number_to_chars (field_e_frag, 0, 4);
+          }
         RETURN(inst_code);
       }
     inst_code |= (reg_d & 0xf) << 0;

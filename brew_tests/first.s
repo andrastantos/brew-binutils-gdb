@@ -13,7 +13,8 @@
 
         .text
 _start:
-	FENCE
-  SII
+	#FENCE sdf
+  #SII
+  MEM[$r0] = $tpc
 message:
         .ascii  "Hello, world\n"
