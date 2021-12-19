@@ -51,14 +51,14 @@ typedef struct
 
 static inst_tableS inst_table[] =
 {
-  { "FILL",    0x0000 },
-  { "BREAK",   0x0110 },
-  { "SYSCALL", 0x0220 },
-  { "STU",     0x0330 },
-  { "SII",     0x0440 },
-  { "FENCE",   0x0dd0 },
-  { "WFENCE",  0x0ee0 },
-  { "WOI",     0x1000 },
+  { "fill",    0x0000 },
+  { "break",   0x0110 },
+  { "syscall", 0x0220 },
+  { "stu",     0x0330 },
+  { "sii",     0x0440 },
+  { "fence",   0x0dd0 },
+  { "wfence",  0x0ee0 },
+  { "woi",     0x1000 },
   { NULL,      0x0000 }
 };
 
@@ -136,10 +136,19 @@ get_optional_next_token(void)
       break;
     if (ISSPACE(*tok_end))
       break;
+    /* These are tokens on their own right */
     if (strchr("[]=,", *tok_end) != NULL)
       {
         if (tok_end == tok_start)
-          ++tok_end;
+          {
+            ++tok_end;
+          }
+        break;
+      }
+    /* These are token terminators, but part of the token */
+    if (strchr("-", *tok_end) != NULL)
+      {
+        ++tok_end;
         break;
       }
     tok_end++;
@@ -152,6 +161,7 @@ get_optional_next_token(void)
       return;
     }
   *tok_end = 0;
+  DEBUG(("                 returning %s", tok_start));
 }
 
 /* Same as get_optional_next_token, but requires next token to be valid.
@@ -283,22 +293,22 @@ parse_register_operand (char *token, bool allow_tpc)
       return -1;
     }
   token++;
-  if (token[0] == 's' || token[0] == 'S')
+  if (token[0] == 's')
     {
       flags = BREW_REG_FLAG_SIGNED;
       token++;
     }
-  else if (float_support && (token[0] == 'f' || token[0] == 'F'))
+  else if (float_support && (token[0] == 'f'))
     {
       flags = BREW_REG_FLAG_FLOAT;
       token++;
     }
   
-  if (strcasecmp(token, "PC") == 0)
+  if (strcasecmp(token, "pc") == 0)
     reg_idx = BREW_REG_PC;
-  else if (allow_tpc && strcasecmp(token, "TPC") == 0)
+  else if (allow_tpc && strcasecmp(token, "tpc") == 0)
     reg_idx = BREW_REG_TPC;
-  else if (token[0] == 'r' || token[0] == 'R')
+  else if (token[0] == 'r')
     {
       reg_idx = parse_reg_index(token+1);
     }
@@ -373,6 +383,7 @@ parse_expression(char *token)
   close_token_strm(); \
   return; \
 }
+#define ASSIGNMENT_STR "<-"
 
 /* This is the guts of the machine-dependent assembler.  STR points to
    a machine dependent instruction.  This function is supposed to emit
@@ -407,13 +418,13 @@ md_assemble (char *str)
 
   /* Store operations */
   do {
-    if (strcasecmp(tok_start, "MEM") == 0)
+    if (strcasecmp(tok_start, "mem") == 0)
       inst_code = 0xf700;
-    else if (strcasecmp(tok_start, "MEM32") == 0)
+    else if (strcasecmp(tok_start, "mem32") == 0)
       inst_code = 0xf700;
-    else if (strcasecmp(tok_start, "MEM8") == 0)
+    else if (strcasecmp(tok_start, "mem8") == 0)
       inst_code = 0xf500;
-    else if (strcasecmp(tok_start, "MEM16") == 0)
+    else if (strcasecmp(tok_start, "mem16") == 0)
       inst_code = 0xf600;
     else
       break;
@@ -469,7 +480,7 @@ md_assemble (char *str)
           }
       }
     IS_NEXT_TOKEN(("]", _("invalid store operation syntax ")));
-    IS_NEXT_TOKEN(("=", _("invalid store operation syntax ")));
+    IS_NEXT_TOKEN((ASSIGNMENT_STR, _("invalid store instruction syntax: expecting " ASSIGNMENT_STR ", got %s"), tok_start));
     GET_NEXT_TOKEN((_("invalid store operation syntax ")));
     reg_d = parse_register_operand(tok_start, true);
     if (reg_d == -1)
@@ -494,9 +505,109 @@ md_assemble (char *str)
     RETURN(inst_code);
   } while (false);
 
-  /* All other operations have the form of R_D = ... */
-  //reg_d = parse_register_operand(tok_start, true);
-  //IS_NEXT_TOKEN("=", "Invalid operation ");
+  /* All other operations have the form of {reg} = ... */
+  reg_d = parse_register_operand(tok_start, true);
+  if (reg_d == -1)
+    {
+      as_bad(_("Invalid target register for instruction"));
+      ERR_RETURN;
+    }
+  IS_NEXT_TOKEN((ASSIGNMENT_STR, _("Invalid operation ")));
+  GET_NEXT_TOKEN((_("Incomplete instructions")));
+
+
+  /* Load operations */
+  do {
+    if (strcasecmp(tok_start, "mem") == 0 || strcasecmp(tok_start, "mem32") == 0)
+      inst_code = 0xf400;
+    else if (strcasecmp(tok_start, "mem8") == 0)
+      {
+        if ((reg_d & BREW_REG_FLAG_SIGNED) != 0)
+          inst_code = 0xf000;
+        else
+          inst_code = 0xf100;
+      }
+    else if (strcasecmp(tok_start, "mem16") == 0)
+      {
+        if ((reg_d & BREW_REG_FLAG_SIGNED) != 0)
+          inst_code = 0xf200;
+        else
+          inst_code = 0xf300;
+      }
+    else
+      break;
+    IS_NEXT_TOKEN(("[", _("invalid load operation syntax ")));
+    GET_NEXT_TOKEN((_("invalid load operation syntax ")));
+    /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
+    if (parse_expression(tok_start))
+      {
+        inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
+        GET_NEXT_TOKEN((_("invalid load offset syntax")));
+        if (strcmp(tok_start, ",") == 0)
+          {
+            /* We have the format of {reg} = MEM[{expr},{reg}]*/
+            GET_NEXT_TOKEN((_("invalid load offset syntax")));
+            reg_a = parse_register_operand(tok_start, false);
+            if (reg_a == -1)
+              {
+                as_bad(_("Invlid register offset in load"));
+                ERR_RETURN;
+              }
+          }
+        else
+          {
+            /* We have the format of {reg} = MEM[{expr}] */
+            reg_a = 0xf;
+            undo_last_token();
+          }
+      }
+    else
+      {
+        reg_a = parse_register_operand(tok_start, false);
+        if (reg_a == -1)
+          {
+            as_bad(_("Invlid register offset in load"));
+            ERR_RETURN;
+          }
+        GET_NEXT_TOKEN((_("invalid load offset syntax")));
+        if (strcmp(tok_start, ",") == 0)
+          {
+            GET_NEXT_TOKEN((_("invalid load offset syntax")));
+            if (!parse_expression(tok_start))
+              {
+                as_bad(_("Invalid load offset syntax: expecting expression"));
+                ERR_RETURN;
+              }
+            /* We have the format of {reg} = MEM[{reg},{expr}] */
+            inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
+          }
+        else
+          {
+            /* We have the format of {reg} = MEM[{reg}] */
+            undo_last_token();
+          }
+      }
+    IS_NEXT_TOKEN(("]", _("invalid load operation syntax ")));
+    inst_code |= (reg_a & 0xf) << 4;
+    /* special-case TPC stores: these only have a 48-bit variant */
+    if (reg_d == BREW_REG_TPC)
+      {
+        inst_code |= 0x0800;
+        inst_code |= 0x000f;
+        if (field_e_frag == NULL)
+          {
+            field_e_frag = frag_more(4);
+            md_number_to_chars (field_e_frag, 0, 4);
+          }
+        RETURN(inst_code);
+      }
+    inst_code |= (reg_d & 0xf) << 0;
+    RETURN(inst_code);
+  } while (false);
+
+  as_bad(_("Unrecognized instruction"));
+  ERR_RETURN;
+
 }
 
 /* Turn a string in input_line_pointer into a floating point constant
@@ -556,7 +667,7 @@ struct option md_longopts[] =
 };
 
 size_t md_longopts_size = sizeof (md_longopts);
-
+
 const char *md_shortopts = "";
 
 int
