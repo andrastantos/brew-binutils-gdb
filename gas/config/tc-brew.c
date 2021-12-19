@@ -62,6 +62,46 @@ static inst_tableS inst_table[] =
   { NULL,      0x0000 }
 };
 
+typedef struct
+{
+  const char *inst_name;
+  uint16_t two_op_inst_code;
+  bool swap_ops;
+  uint16_t zero_inst_code;
+  bool complete;
+
+  int flags;
+} branch_tableS;
+
+
+static branch_tableS branch_table[] =
+{
+/*  inst_name  two_op_inst_code   swap_ops     zero_isnt_code   complete   flags */
+  { "<",       0x500f,            false,       0x200f,          true,      0                      },
+  { ">",       0x500f,            true,        0x001f,          false,     0                      },
+  { "<=",      0x600f,            true,        0x000f,          false,     0                      },
+  { ">=",      0x600f,            false,       0x100f,          true,      0                      },
+  { "==",      0x100f,            false,       0x000f,          false,     0                      },
+  { "!=",      0x200f,            false,       0x001f,          false,     0                      },
+
+  { "<",       0x300f,            false,       0x002f,          false,     BREW_REG_FLAG_SIGNED   },
+  { ">",       0x300f,            true,        0x004f,          false,     BREW_REG_FLAG_SIGNED   },
+  { "<=",      0x400f,            true,        0x005f,          false,     BREW_REG_FLAG_SIGNED   },
+  { ">=",      0x400f,            false,       0x003f,          false,     BREW_REG_FLAG_SIGNED   },
+  { "==",      0x100f,            false,       0x000f,          false,     BREW_REG_FLAG_SIGNED   },
+  { "!=",      0x200f,            false,       0x001f,          false,     BREW_REG_FLAG_SIGNED   },
+
+  { "<",       0xd00f,            false,       0x00bf,          false,     BREW_REG_FLAG_FLOAT    },
+  { ">",       0xd00f,            true,        0x00df,          false,     BREW_REG_FLAG_FLOAT    },
+  { "<=",      0xe00f,            true,        0x00ef,          false,     BREW_REG_FLAG_FLOAT    },
+  { ">=",      0xe00f,            false,       0x00cf,          false,     BREW_REG_FLAG_FLOAT    },
+  { "==",      0x100f,            false,       0x000f,          false,     BREW_REG_FLAG_FLOAT    },
+  { "!=",      0x200f,            false,       0x001f,          false,     BREW_REG_FLAG_FLOAT    },
+
+  { NULL,      0x0000,            false,       0x0000,          false,     0                      }
+};
+
+
 /* This is really unfortunate that as doesn't provide a 'v' version of these routines */
 static void
 as_vbad (const char *format, va_list args)
@@ -420,7 +460,7 @@ void
 md_assemble (char *str)
 {
   int reg_d;
-  //int reg_b;
+  int reg_b;
   int reg_a;
 
   start_token_strm(str);
@@ -537,18 +577,13 @@ md_assemble (char *str)
   if (strcasecmp(tok_start, "if") == 0)
     {
       int reg1;
-      //int reg2;
+      int reg2;
 
       GET_NEXT_TOKEN((_("invalid instruction syntax")));
-      reg1 = parse_register_operand(tok_start, true);
+      reg1 = parse_register_operand(tok_start, false);
       if (reg1 == -1)
         {
           as_bad(_("Invalid branch instruction: expected test register"));
-          ERR_RETURN;
-        }
-      if (reg1 == BREW_REG_TPC)
-        {
-          as_bad(_("Invalid branch instruction: can't test $TPC"));
           ERR_RETURN;
         }
       GET_NEXT_TOKEN((_("invalid instruction syntax")));
@@ -595,6 +630,94 @@ md_assemble (char *str)
       else
         {
           /* This is a comparison branch */
+          char branch_op[3];
+          if (strlen(tok_start) > 2)
+            {
+              as_bad(_("invalid branch instruction: unrecognized condition: %s"), tok_start);
+              ERR_RETURN;
+            }
+          strcpy(branch_op, tok_start);
+          GET_NEXT_TOKEN((_("invlid branch instruction: expected second comparison argument")));
+          if (strcmp(tok_start, "0") == 0)
+            {
+              /* comparison with 0 */
+              branch_tableS *branch_table_entry;
+
+              for (branch_table_entry = branch_table; branch_table_entry->inst_name != NULL; ++branch_table_entry)
+                {
+                  if (strcmp(branch_op, branch_table_entry->inst_name) == 0 && branch_table_entry->flags == (reg1 & BREW_REG_FLAG_MASK))
+                    break;
+                }
+              if (branch_table_entry->inst_name == NULL)
+                {
+                  as_bad(_("invalid branch instruction: unrecognized condition: %s"), branch_op);
+                  ERR_RETURN;
+                }
+              inst_code = branch_table_entry->zero_inst_code;
+              if (!branch_table_entry->complete)
+                {
+                  inst_code |= (reg1 & 0xf) << 8;
+                }
+              IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
+              IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
+              GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected branch target")));
+              if (!parse_expression(tok_start))
+                {
+                  as_bad(_("invalid bit-test branch instruction: expected branch target"));
+                  ERR_RETURN;
+                }
+              RETURN(inst_code);
+            }
+          else
+            {
+              branch_tableS *branch_table_entry;
+
+              reg2 = parse_register_operand(tok_start, false);
+              if (reg2 == -1)
+                {
+                  as_bad(_("invalid branch instruction: second comparison argument must be 0 or a register"));
+                  ERR_RETURN;
+                }
+              /* comparison between two registers */
+              if ((reg1 & BREW_REG_FLAG_MASK) != (reg2 & BREW_REG_FLAG_MASK))
+                {
+                  as_bad(_("invalid branch instruction: comparison must be between registers of the same type"));
+                  ERR_RETURN;
+                }
+              for (branch_table_entry = branch_table; branch_table_entry->inst_name != NULL; ++branch_table_entry)
+                {
+                  if (strcmp(branch_op, branch_table_entry->inst_name) == 0 && branch_table_entry->flags == (reg1 & BREW_REG_FLAG_MASK))
+                    break;
+                }
+              if (branch_table_entry->inst_name == NULL)
+                {
+                  as_bad(_("invalid branch instruction: unrecognized condition: %s"), branch_op);
+                  ERR_RETURN;
+                }
+
+              inst_code = branch_table_entry->two_op_inst_code;
+              if (branch_table_entry->swap_ops)
+                {
+                  reg_a = reg1 & 0xf;
+                  reg_b = reg2 & 0xf;
+                }
+              else
+                {
+                  reg_a = reg2 & 0xf;
+                  reg_b = reg1 & 0xf;
+                }
+              inst_code |= reg_b << 8;
+              inst_code |= reg_a << 4;
+              IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
+              IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
+              GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected branch target")));
+              if (!parse_expression(tok_start))
+                {
+                  as_bad(_("invalid bit-test branch instruction: expected branch target"));
+                  ERR_RETURN;
+                }
+              RETURN(inst_code);
+            }
         }
     }
 
