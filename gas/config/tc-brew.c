@@ -641,75 +641,29 @@ md_number_to_chars (char * ptr, valueT use, int nbytes)
 arelent *
 tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixP)
 {
-  arelent *relP;
-  bfd_reloc_code_real_type code;
+  arelent *reloc;
 
-  switch (fixP->fx_r_type)
+  reloc = XNEW (arelent);
+  reloc->sym_ptr_ptr = XNEW (asymbol *);
+  *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
+  reloc->address = fixP->fx_frag->fr_address + fixP->fx_where;
+
+  reloc->addend = fixP->fx_offset;
+  reloc->howto = bfd_reloc_type_lookup (stdoutput, fixP->fx_r_type);
+
+  if (reloc->howto == (reloc_howto_type *) NULL)
     {
-    case BFD_RELOC_32:
-      code = fixP->fx_r_type;
-      break;
-    /* We don't have this type of relocation */
-    /*
-    case BFD_RELOC_MOXIE_10_PCREL:
-      code = fixP->fx_r_type;
-      break;
-    */
-    default:
-      as_bad_where (fixP->fx_file, fixP->fx_line,
-                    _("Semantics error.  This type of operand can not be relocated, it must be an assembly-time constant"));
-      return 0;
+      as_bad_where(fixP->fx_file, fixP->fx_line,
+                   /* xgettext:c-format.  */
+                   _("reloc %d not supported by object file format"),
+                   (int) fixP->fx_r_type);
+      xfree (reloc->sym_ptr_ptr);
+      xfree (reloc);
+
+      return NULL;
     }
 
-  relP = XNEW (arelent);
-  relP->sym_ptr_ptr = XNEW (asymbol *);
-  *relP->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
-  relP->address = fixP->fx_frag->fr_address + fixP->fx_where;
-
-  relP->addend = fixP->fx_offset;
-
-  /* This is the standard place for KLUDGEs to work around bugs in
-     bfd_install_relocation (first such note in the documentation
-     appears with binutils-2.8).
-
-     That function bfd_install_relocation does the wrong thing with
-     putting stuff into the addend of a reloc (it should stay out) for a
-     weak symbol.  The really bad thing is that it adds the
-     "segment-relative offset" of the symbol into the reloc.  In this
-     case, the reloc should instead be relative to the symbol with no
-     other offset than the assembly code shows; and since the symbol is
-     weak, any local definition should be ignored until link time (or
-     thereafter).
-     To wit:  weaksym+42  should be weaksym+42 in the reloc,
-     not weaksym+(offset_from_segment_of_local_weaksym_definition)
-
-     To "work around" this, we subtract the segment-relative offset of
-     "known" weak symbols.  This evens out the extra offset.
-
-     That happens for a.out but not for ELF, since for ELF,
-     bfd_install_relocation uses the "special function" field of the
-     howto, and does not execute the code that needs to be undone.  */
-
-  if (OUTPUT_FLAVOR == bfd_target_aout_flavour
-      && fixP->fx_addsy && S_IS_WEAK (fixP->fx_addsy)
-      && ! bfd_is_und_section (S_GET_SEGMENT (fixP->fx_addsy)))
-    {
-      relP->addend -= S_GET_VALUE (fixP->fx_addsy);
-    }
-
-  relP->howto = bfd_reloc_type_lookup (stdoutput, code);
-  if (! relP->howto)
-    {
-      const char *name;
-
-      name = S_GET_NAME (fixP->fx_addsy);
-      if (name == NULL)
-        name = _("<unknown>");
-      as_fatal (_("Cannot generate relocation type for symbol %s, code %s"),
-                name, bfd_get_reloc_code_name (code));
-    }
-
-  return relP;
+  return reloc;
 }
 
 /* Decide from what point a pc-relative relocation is relative to,
