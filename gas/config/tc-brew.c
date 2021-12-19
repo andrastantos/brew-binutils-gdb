@@ -22,11 +22,12 @@
 
 /* TODO: right now this is not changed from the moxie baseline at all. It should be!!!! */
 
-#include <stdint.h>
 #include "as.h"
 #include "safe-ctype.h"
+#include <stdint.h>
 #include "opcode/brew.h"
 #include "elf/brew.h"
+
 
 extern const brew_opc_info_t brew_opc_info[128];
 
@@ -34,8 +35,44 @@ const char comment_chars[]        = "#";
 const char line_separator_chars[] = ";";
 const char line_comment_chars[]   = "#";
 
-static int pending_reloc;
-static htab_t opcode_hash_control;
+/* Global variables */
+static char *tok_start; /* Points to the beginning of the current token to be parsed */
+static char *tok_end; /* Points to the zero-termination character for the current token to be parsed */
+static char tok_end_holder; /* Hold the original character after the current token (that was replaced by zero-termination) */
+static char *inst_code_frag; /* The frag pointer that will (eventually) contain the instruction code */
+static char *field_e_frag; /* The frag pointer that optionally gets the 32-bit value from an expression for 48-bit instructions */
+
+typedef struct
+{
+  const char *inst_name;
+  uint16_t inst_code;
+} inst_tableS;
+
+static inst_tableS inst_table[] =
+{
+  { "FILL",    0x0000 },
+  { "BREAK",   0x0110 },
+  { "SYSCALL", 0x0220 },
+  { "STU",     0x0330 },
+  { "SII",     0x0440 },
+  { "FENCE",   0x0dd0 },
+  { "WFENCE",  0x0ee0 },
+  { "WOI",     0x1000 },
+  { NULL,      0x0000 }
+};
+
+/* This is really unfortunate that as doesn't provide a 'v' version of these routines */
+static void
+as_vbad (const char *format, va_list args)
+{
+  char buffer[2000];
+
+  vsnprintf (buffer, sizeof (buffer), format, args);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-security"
+  as_bad(buffer);
+#pragma GCC diagnostic pop
+}
 
 const pseudo_typeS md_pseudo_table[] =
 {
@@ -45,55 +82,145 @@ const pseudo_typeS md_pseudo_table[] =
 const char FLT_CHARS[] = "rRsSfFdDxXpP";
 const char EXP_CHARS[] = "eE";
 
-/* TODO: this function is not used. That's because the MOXIE 10-bit relocation type is not used. */
-/*static valueT md_chars_to_number (char * buf, int n);*/
+bool float_support = true;
 
-/* Byte order.  */
-extern int target_big_endian;
+/* TOKEN STREAM ROUTINES */
+/*************************/
 
-void
-md_operand (expressionS *op __attribute__((unused)))
+/* Starts a new token stream by initializing tok_start, tok_end and
+   tok_end_holder for get_next_token */
+static void
+start_token_strm(char *str)
 {
-  /* Empty for now. */
+  tok_end = str;
+  tok_end_holder = str[0];
+  tok_start = NULL;
 }
 
-/* This function is called once, at assembler startup time.  It sets
-   up the hash table with all the opcodes in it, and also initializes
-   some aliases for compatibility with other assemblers.  */
-
-void
-md_begin (void)
+/* Stops parsing by restoring the original character stream */
+static void 
+end_token_strm(void)
 {
-  int count;
-  const brew_opc_info_t *opcode;
-  opcode_hash_control = str_htab_create ();
-
-  /* Insert names into hash table.  */
-  for (count = 0, opcode = brew_form1_opc_info; count++ < 64; opcode++)
-    str_hash_insert (opcode_hash_control, opcode->name, opcode, 0);
-
-  for (count = 0, opcode = brew_form2_opc_info; count++ < 4; opcode++)
-    str_hash_insert (opcode_hash_control, opcode->name, opcode, 0);
-
-  for (count = 0, opcode = brew_form3_opc_info; count++ < 10; opcode++)
-    str_hash_insert (opcode_hash_control, opcode->name, opcode, 0);
-
-  bfd_set_arch_mach (stdoutput, TARGET_ARCH, 0);
+  if (tok_start == NULL)
+    return;
+  *tok_end = tok_end_holder;
+  tok_start = NULL;
 }
 
-/* Parse an expression and then restore the input line pointer.  */
-
-static char *
-parse_exp_save_ilp (char *s, expressionS *op)
+/* Advances tok_start and tok_end to the next token. Sets tok_start to 
+   NULL if no more tokens are found. The string is in-place modified by
+   putting a zero-termination into the token delimiter. The original
+   character is saved in tok_end_holder */
+static void
+get_optional_next_token(void)
 {
-  char *save = input_line_pointer;
+  if (tok_start == NULL)
+    return;
 
-  input_line_pointer = s;
-  expression (op);
-  s = input_line_pointer;
-  input_line_pointer = save;
-  return s;
+  *tok_end = tok_end_holder;
+  tok_start = tok_end;
+  /* Drop leading whitespace.  */
+  while (ISSPACE(*tok_start))
+    tok_start++;
+
+  /* Find the end of the token */
+  tok_end = tok_start;
+  do {
+    if (*tok_end == 0)
+      break;
+    if (is_end_of_line[*tok_end & 0xff])
+      break;
+    if (ISSPACE(*tok_end))
+      break;
+    if (strchr("[]=,", *tok_end) != NULL)
+      break;
+    tok_end++;
+  } while (true);
+
+  tok_end_holder = *tok_end;
+  if (*tok_end == *tok_start)
+    {
+      tok_start = NULL;
+      return;
+    }
+  *tok_end = 0;
 }
+
+/* Same as get_optional_next_token, but requires next token to be valid.
+   If not, the supplied error error message is emitted and parsing is
+   stopped.
+
+   Returns true on success, false on failure.
+*/
+static bool
+vget_next_token(char *err_msg, va_list args)
+{
+  get_optional_next_token();
+  if (tok_start == NULL)
+    {
+      as_vbad(err_msg, args);
+      end_token_strm();
+      return false;
+    }
+  return true;
+}
+static bool
+get_next_token(char *err_msg, ...)
+{
+  va_list args;
+  bool ret_val;
+
+  va_start(args, err_msg);
+  ret_val = vget_next_token(err_msg, args);
+  va_end(args);
+  return ret_val;
+}
+
+/* Same as get_next_token, but also tests if token is the supplied one.
+
+   Returns true on success, false on failure.
+*/
+static bool
+is_next_token(const char *expected_tok, char *err_msg, ...)
+{
+  va_list args;
+  bool ret_val;
+
+  va_start(args, err_msg);
+  ret_val = vget_next_token(err_msg, args);
+  if (!ret_val)
+    {
+    va_end(args);
+      return false;
+    }
+
+  if (strcasecmp(tok_start, expected_tok) != 0)
+    {
+      as_vbad(err_msg, args);
+      va_end(args);
+      end_token_strm();
+      return false;
+
+    }
+  va_end(args);
+  return true;
+}
+
+/* Makes sure the token stream is completely parsed
+   Outputs warkings and errors about this and ends the token stream.
+*/
+static void close_token_strm(void)
+{
+  get_optional_next_token();
+  if (tok_start != NULL)
+    as_warn (_("extra stuff on line ignored"));
+  end_token_strm();
+}
+
+
+
+/* TOKEN PARSERS */
+/*****************/
 
 static int
 parse_reg_index(char *str)
@@ -108,166 +235,117 @@ parse_reg_index(char *str)
 }
 
 /*
-   Registers are named as:
-   $r0...$re (case insensitive) for unsigned scalar registers
-   $s0...$se (case insensitive) for signed scalar register (aliases)
-   $f0...$fe (case insensitive) for floating point register (aliases)
-   $pc or $PC is also recognized and is an alias to $r0
-   $tpc or $TPC is also recognized, but handled differently.
+   registers are named (case insensitive) as:
+   $r0...$re or $r0...$r14 for unsigned scalar registers
+   $pc is an alias to $r0
+   $tpc is also recognized, but handled differently.
+
+   NOTE: any register can be prefixed by:
+     s: for signed scalar register - sets BREW_REG_FLAG_SIGNED in return value
+     f: for floating point register (aliases) - sets BREW_REG_FLAG_FLOAT in return value
 
    Return value:
-      register index, or BREW_REG_TPC for $tpc
+      register index, or BREW_REG_TPC for $tpc and flags set as appropriate
       -1 in case of failure.
 */
 static int
 parse_register_operand (char *token, bool allow_tpc)
 {
-  int reg;
-  int raw_reg;
-  bool valid;
+  int flags = 0;
+  int reg_idx;
 
   if (token[0] != '$')
     {
       as_bad (_("expecting register"));
       return -1;
     }
-  if (strcasecmp(token, "$PC") == 0)
+  token++;
+  if (token[0] == 's' || token[0] == 'S')
     {
-      return BREW_REG_PC;
+      flags = BREW_REG_FLAG_SIGNED;
+      token++;
     }
-  if (allow_tpc && strcasecmp(token, "$TPC") == 0)
+  else if (float_support && (token[0] == 'f' || token[0] == 'F'))
     {
-      return BREW_REG_TPC;
+      flags = BREW_REG_FLAG_FLOAT;
+      token++;
     }
-  /* Regular registers */
-  valid = false;
-  if (token[1] == 'r' || token[1] == 'R')
+  
+  if (strcasecmp(token, "PC") == 0)
+    reg_idx = BREW_REG_PC;
+  else if (allow_tpc && strcasecmp(token, "TPC") == 0)
+    reg_idx = BREW_REG_TPC;
+  else if (token[0] == 'r' || token[0] == 'R')
     {
-      valid = True;
+      reg_idx = parse_reg_index(token+1);
     }
-  if (token[1] == 's' || token[1] == 'S')
+  else
     {
-      valid = True;
-      reg = BREW_REG_FLAG_SIGNED;
-    }
-  if (token[1] == 'f' || token[1] == 'F')
-    {
-      valid = True;
-      reg = BREW_REG_FLAG_FLOAT;
-    }
-  if (!valid)
-    {
-      as_bad (_("illegal register number"));
+      as_bad (_("illegal register name"));
       return -1;
     }
-  raw_reg = parse_reg_index(token+2);
-  if (raw_reg == -1)
+  if (reg_idx == -1)
     {
-      as_bad (_("illegal register number"));
+      as_bad (_("illegal register index %s"), token);
       return -1;
     }
-  reg |= raw_reg;
-  return reg;
+  return flags | reg_idx;
 }
 
+/* Parse an expression and then restore the input line pointer.  */
+static char *
+parse_exp_save_ilp (char *s, expressionS *op)
+{
+  char *save = input_line_pointer;
+
+  input_line_pointer = s;
+  expression (op);
+  s = input_line_pointer;
+  input_line_pointer = save;
+  return s;
+}
+
+/* Parses a 32-bit expression and puts it in the last four bytes of the fragment buffer
+
+   Returns true if an expression is found, false if not.
+*/
 static bool
-char_in(char a, char *list)
+parse_expression(char *token)
 {
-  while (*list != 0)
-    {
-      if (a == *list)
-        return true;
-      ++list;
-    }
-  return false;
-}
-
-/* Returns the pointer to the begining (tok_start) and the end (tok_end)
-   of the next token within str. Sets *tok_start to NULL if no more
-   tokens are found. The string is in-place modified by putting a
-   zero-termination into the token delimiter. The original character
-   at the place of the end of the token is saved in tok_end_holder */
-static void
-get_next_token(char **tok_start, char **tok_end, char *tok_end_holder)
-{
-  /* Drop leading whitespace.  */
-  while (**tok_start == ' ')
-        *tok_start++;
-
-  /* Find the end of the token */
-  for (*toke_end = *tok_start;
-       **tok_end && !is_end_of_line[**tok_end & 0xff] && !char_in(**tok_end, " []=,");
-       *tok_end++);
-
-  if (*tok_end == *tok_start)
-    *tok_start = NULL;
-    return;
-  *tok_end_holder = **tok_end;
-  **tok_end = 0;
-}
-
-#define GET_NEXT_TOKEN(err_msg) { \
-  *tok_end = tok_end_holder; \
-  tok_start = tok_end; \
-  get_next_token(&tok_start, &tok_end, &tok_end_holder); \
-  if (tok_start == NULL)\
-    { \
-      as_bad(_(err_msg)); \
-      ignore_rest_of_line(); \
-      return; \
-    } \
-}
-#define GET_NEXT_TOKEN_OPT  { \
-  *tok_end = tok_end_holder; \
-  tok_start = tok_end; \
-  get_next_token(&tok_start, &tok_end, &tok_end_holder);
-#define IS_NEXT_TOKEN(expected_tok, err_msg) { \
-  *tok_end = tok_end_holder; \
-  tok_start = tok_end; \
-  get_next_token(&tok_start, &tok_end, &tok_end_holder); \
-  if (tok_start == NULL)\
-    { \
-      as_bad(_(err_msg)); \
-      ignore_rest_of_line(); \
-      return; \
-    } \
-  if (strcasecmp(tok_start, expected_tok) != 0)\
-    { \
-      as_bad(_(err_msg)); \
-      ignore_rest_of_line(); \
-      return; \
-    } \
-}
-#define ERR_RETURN { if (tok_end != NULL) *tok_end = tok_end_holder; ignore_rest_of_line(); return; }
-#define RETURN_16BIT(inst_code) { \
-  if (tok_end != NULL) *tok_end = tok_end_holder; \
-  md_number_to_chars (emit_strm, inst_code, 2); \
-  dwarf2_emit_insn (2); \
- \
-  get_next_token(str, &tok_start, &tok_end, &tok_end_holder); \
-  if (tok_start != NULL) \
-    as_warn (_("extra stuff on line ignored")); \
- \
-  if (pending_reloc) \
-    as_bad (_("Something forgot to clean up\n")); \
-     return; \
-}
-#define RETURN_48BIT(inst_code, field_e) { \
-  if (tok_end != NULL) *tok_end = tok_end_holder; \
-  md_number_to_chars (emit_strm, inst_code, 2); \
-  md_number_to_chars (emit_strm+2, field_e, 4); \
-  dwarf2_emit_insn (6); \
- \
-  get_next_token(str, &tok_start, &tok_end, &tok_end_holder); \
-  if (tok_start != NULL) \
-    as_warn (_("extra stuff on line ignored")); \
- \
-  if (pending_reloc) \
-    as_bad (_("Something forgot to clean up\n")); \
-     return; \
+  expressionS arg;
+  char *end_expr;
+  end_expr = parse_exp_save_ilp (token, &arg);
+  if (*end_expr != 0)
+  {
+    return false;
+  }
+  field_e_frag = frag_more (4);
+  fix_new_exp(
+    frag_now,
+    (field_e_frag - frag_now->fr_literal),
+    4,
+    &arg,
+    0,
+    BFD_RELOC_32);
+  return true;
 }
 
 
+
+
+
+#define GET_NEXT_TOKEN(err_msg) { if (!get_next_token err_msg) {close_token_strm(); ignore_rest_of_line(); return;}}
+#define IS_NEXT_TOKEN(params) { if (!is_next_token params) {close_token_strm(); ignore_rest_of_line(); return;}}
+#define ERR_RETURN { close_token_strm(); ignore_rest_of_line(); return; }
+#define RETURN(inst_code) { \
+  md_number_to_chars (inst_code_frag, inst_code, 2); \
+  if (field_e_frag != NULL) \
+    dwarf2_emit_insn(6); \
+  else \
+    dwarf2_emit_insn(2); \
+  close_token_strm(); \
+  return; \
+}
 
 /* This is the guts of the machine-dependent assembler.  STR points to
    a machine dependent instruction.  This function is supposed to emit
@@ -276,44 +354,27 @@ get_next_token(char **tok_start, char **tok_end, char *tok_end_holder)
 void
 md_assemble (char *str)
 {
-  char *tok_start;
   int reg_d;
-  int reg_b;
+  //int reg_b;
   int reg_a;
 
-  /* GET_NEXT_TOKEN and co. macros start by restoring the termination
-     of the previous token and start searching from tok_end. So, we
-     pretend there was something that just ended where our string starts. */
-  char *tok_end = str;
-  char tok_end_holder = str[0];
-
-  char *emit_strm;
-  char pend;
+  start_token_strm(str);
 
   uint16_t inst_code = 0;
-  /*u_int32_t field_e = 0;*/
 
-  /* Reserve 6 bytes for output */
-  emit_strm = frag_more (6);
+  inst_code_frag = frag_more (2); /* Let's start a new fragment for the 16-bit instruction code */
+  field_e_frag = NULL; /* We initially don't have field_e. If, during parsing we encouter an expression, we'll allocate a fragment here */
 
-  GET_NEXT_TOKEN("Invalid instruction: not a single token is found ");
+  GET_NEXT_TOKEN((_("Invalid instruction: not a single token is found ")));
   /* Deal with simple instructions */
-  if (strcasecmp(tok_start, "FILL") == 0)
-    RETURN_16BIT(0x0000);
-  if (strcasecmp(tok_start, "BREAK") == 0)
-    RETURN_16BIT(0x0110);
-  if (strcasecmp(tok_start, "SYSCALL") == 0)
-    RETURN_16BIT(0x0220);
-  if (strcasecmp(tok_start, "STU") == 0)
-    RETURN_16BIT(0x0330);
-  if (strcasecmp(tok_start, "SII") == 0)
-    RETURN_16BIT(0x0440);
-  if (strcasecmp(tok_start, "FENCE") == 0)
-    RETURN_16BIT(0x0dd0);
-  if (strcasecmp(tok_start, "WFENCE") == 0)
-    RETURN_16BIT(0x0ee0);
-  if (strcasecmp(tok_start, "WOI") == 0)
-    RETURN_16BIT(0x1000);
+  {
+    inst_tableS *inst_table_entry;
+    for (inst_table_entry = inst_table; inst_table_entry->inst_name != NULL; ++inst_table_entry)
+      {
+        if (strcasecmp(tok_start, inst_table_entry->inst_name) == 0)
+          RETURN(inst_table_entry->inst_code);
+      }
+  }
 
   /* Store operations */
   do {
@@ -327,19 +388,58 @@ md_assemble (char *str)
       inst_code = 0xf600;
     else
       break;
-    IS_NEXT_TOKEN("[", "invalid store operation syntax ");
-     /* At this point we either have a register or an expression in the next token */
-     // TODO: figure out how to deal with expressions and fixups!
-    GET_NEXT_TOKEN("invalid store operation syntax ");
-    reg_a = parse_register_operand(tok_start, false);
-    if (reg_a == -1)
+    IS_NEXT_TOKEN(("[", _("invalid store operation syntax ")));
+    GET_NEXT_TOKEN((_("invalid store operation syntax ")));
+    /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
+    if (parse_expression(tok_start))
       {
-        as_bad(_("Invalid base register for store "));
-        ERR_RETURN;
+        inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
+        GET_NEXT_TOKEN((_("invalid store offset syntax")));
+        if (strcmp(tok_start, ","))
+          {
+            /* We have the format of MEM[{expr},{reg}] = {reg} */
+            GET_NEXT_TOKEN((_("invalid store offset syntax")));
+            reg_a = parse_register_operand(tok_start, false);
+            if (reg_a == -1)
+              {
+                as_bad(_("Invlid register offset in store"));
+                ERR_RETURN;
+              }
+          }
+        else
+          {
+            /* We have the format of MEM[{expr}] = {reg} */
+            reg_a = 0xf;
+          }
       }
-    IS_NEXT_TOKEN("]", "invalid store operation syntax ");
-    IS_NEXT_TOKEN("=", "invalid store operation syntax ");
-    GET_NEXT_TOKEN("invalid store operation syntax ");
+    else
+      {
+        reg_a = parse_register_operand(tok_start, false);
+        if (reg_a == -1)
+          {
+            as_bad(_("Invlid register offset in store"));
+            ERR_RETURN;
+          }
+        GET_NEXT_TOKEN((_("invalid store offset syntax")));
+        if (strcmp(tok_start, ","))
+          {
+            GET_NEXT_TOKEN((_("invalid store offset syntax")));
+            if (!parse_expression(tok_start))
+              {
+                as_bad(_("Invalid store offset syntax: expecting expression"));
+                ERR_RETURN;
+              }
+            /* We have the format of MEM[{reg},{expr}] = {reg} */
+            inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
+          }
+        else
+          {
+            /* We have the format of MEM[{reg}] = {reg} */
+          }
+      }
+    IS_NEXT_TOKEN(("]", _("invalid store operation syntax ")));
+    IS_NEXT_TOKEN(("=", _("invalid store operation syntax ")));
+    GET_NEXT_TOKEN((_("invalid store operation syntax ")));
     reg_d = parse_register_operand(tok_start, false);
     if (reg_d == -1)
       {
@@ -351,509 +451,18 @@ md_assemble (char *str)
     if (reg_d == BREW_REG_TPC)
       {
         inst_code |= 0x0800;
-        inst_code |= 0x000f; 
-        RETURN_48BIT(inst_code, 0);
+        inst_code |= 0x000f;
+        field_e_frag = frag_more(4);
+        md_number_to_chars (field_e_frag, 0, 4);
+        RETURN(inst_code);
       }
     inst_code |= (reg_d & 0xf) << 0;
-    RETURN_16BIT(inst_code);
-    // TODO: we need the 48-bit versions of the stores too!!
+    RETURN(inst_code);
   } while (false);
 
   /* All other operations have the form of R_D = ... */
-  reg_d = parse_register_operand(tok_start, true);
-  IS_NEXT_TOKEN("=", "Invalid operation ");
-
-  GET_NEXT_TOKEN("invalid operation syntax ");
-  /* Loads */
-  do {
-    if (strcasecmp(tok_start, "MEM") == 0 || strcasecmp(tok_start, "MEM32") == 0)
-      {
-        inst_code = 0xf400;
-      }
-    else if (strcasecmp(tok_start, "MEM8") == 0)
-      {
-        if (reg_d & BREW_REG_FLAG_FLOAT != 0)
-          ERR_RETURN("8-bit loads into float register is not supported")
-        if (reg_d & BREW_REG_FLAG_SIGNED != 0)
-          inst_code = 0xf000;
-        else
-          inst_code = 0xf100;
-      }
-    else if (strcasecmp(tok_start, "MEM16") == 0)
-      {
-        if (reg_d & BREW_REG_FLAG_FLOAT != 0)
-          ERR_RETURN("16-bit loads into float register is not supported")
-        if (reg_d & BREW_REG_FLAG_SIGNED != 0)
-          inst_code = 0xf200;
-        else
-          inst_code = 0xf300;
-      }
-    else
-      break;
-    IS_NEXT_TOKEN("[", "invalid load operation syntax ");
-     /* At this point we either have a register or an expression in the next token */
-     // TODO: figure out how to deal with expressions and fixups!
-    GET_NEXT_TOKEN("invalid load operation syntax ");
-    reg_a = parse_register_operand(tok_start, false);
-    if (reg_a == -1)
-      {
-        as_bad(_("Invalid base register for load "));
-        ERR_RETURN;
-      }
-    IS_NEXT_TOKEN("]", "invalid load operation syntax ");
-    inst_code |= (reg_a & 0xf) << 4;
-    /* special-case TPC stores: these only have a 48-bit variant */
-    if (reg_d == BREW_REG_TPC)
-      {
-        inst_code |= 0x0800;
-        inst_code |= 0x000f; 
-        RETURN_48BIT(inst_code, 0);
-      }
-    inst_code |= (reg_d & 0xf) << 0;
-    RETURN_16BIT(inst_code);
-    // TODO: we need the 48-bit versions of the stores too!!
-  } while (false);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  /* Find the op code end.  */
-  op_start = str;
-  for (op_end = str;
-       *op_end && !is_end_of_line[*op_end & 0xff] && *op_end != ' ';
-       op_end++)
-    nlen++;
-
-  /* Temporarily 0-terminate the string after the opcode so the hash lookup works */
-  pend = *op_end;
-  *op_end = 0;
-  /* Look up the opcode, if there is one */
-  if (nlen == 0)
-    as_bad (_("can't find opcode "));
-  opcode = (brew_opc_info_t *) str_hash_find (opcode_hash_control, op_start);
-  /* Restore original string (remove 0-termination) */
-  *op_end = pend;
-
-  if (opcode == NULL)
-    {
-      as_bad (_("unknown opcode %s"), op_start);
-      return;
-    }
-
-
-  switch (opcode->itype)
-    {
-    case BREW_ABD:
-      inst_code = opcode->opcode;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	int dest, src_a, src_b;
-	dest = parse_register_operand (&op_end, BREW_NO_TPC);
-	inst_code |= dest;
-	if (*op_end != ',')
-	  as_warn (_("expecting comma delimited register operands"));
-	op_end++;
-	src_a  = parse_register_operand (&op_end, BREW_NO_TPC);
-	inst_code |= src_a << 4;
-	if (*op_end != ',')
-	  as_warn (_("expecting comma delimited register operands"));
-	op_end++;
-	src_b  = parse_register_operand (&op_end, BREW_NO_TPC);
-	inst_code |= src_b << 8;
-	while (ISSPACE (*op_end))
-	  op_end++;
-	if (*op_end != 0)
-	  as_warn (_("extra stuff on line ignored"));
-      }
-      break;
-      /****************************************************
-       * LEGACY CODE STARTS HERE
-       ***************************************************/
-    case BREW_F2_A8V:
-      inst_code = (1<<15) | (opcode->opcode << 12);
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	expressionS arg;
-	int reg;
-	reg = parse_register_operand (&op_end, BREW_NO_TPC);
-	inst_code += (reg << 8);
-	if (*op_end != ',')
-	  as_warn (_("expecting comma delimited register operands"));
-	op_end++;
-	op_end = parse_exp_save_ilp (op_end, &arg);
-	fix_new_exp (frag_now,
-		     ((p + (target_big_endian ? 1 : 0)) - frag_now->fr_literal),
-		     1,
-		     &arg,
-		     0,
-		     BFD_RELOC_8);
-      }
-      break;
-    case BREW_F1_AB:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	int dest, src;
-	dest = parse_register_operand (&op_end, BREW_NO_TPC);
-	if (*op_end != ',')
-	  as_warn (_("expecting comma delimited register operands"));
-	op_end++;
-	src  = parse_register_operand (&op_end, BREW_NO_TPC);
-	inst_code += (dest << 4) + src;
-	while (ISSPACE (*op_end))
-	  op_end++;
-	if (*op_end != 0)
-	  as_warn (_("extra stuff on line ignored"));
-      }
-      break;
-    case BREW_F1_A4:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	expressionS arg;
-	char *where;
-	int regnum;
-
- 	regnum = parse_register_operand (&op_end, BREW_NO_TPC);
-	while (ISSPACE (*op_end))
-	  op_end++;
-
-	inst_code += (regnum << 4);
-
-	if (*op_end != ',')
-	  {
-	    as_bad (_("expecting comma delimited operands"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-
-	op_end = parse_exp_save_ilp (op_end, &arg);
-	where = frag_more (4);
-	fix_new_exp (frag_now,
-		     (where - frag_now->fr_literal),
-		     4,
-		     &arg,
-		     0,
-		     BFD_RELOC_32);
-      }
-      break;
-    case BREW_F1_M:
-    case BREW_F1_4:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	expressionS arg;
-	char *where;
-
-	op_end = parse_exp_save_ilp (op_end, &arg);
-	where = frag_more (4);
-	fix_new_exp (frag_now,
-		     (where - frag_now->fr_literal),
-		     4,
-		     &arg,
-		     0,
-		     BFD_RELOC_32);
-      }
-      break;
-    case BREW_F1_NARG:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      if (*op_end != 0)
-	as_warn (_("extra stuff on line ignored"));
-      break;
-    case BREW_F1_A:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	int reg;
-	reg = parse_register_operand (&op_end, BREW_NO_TPC);
-	while (ISSPACE (*op_end))
-	  op_end++;
-	if (*op_end != 0)
-	  as_warn (_("extra stuff on line ignored"));
-	inst_code += (reg << 4);
-      }
-      break;
-    case BREW_F1_ABi:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	int a, b;
-	a = parse_register_operand (&op_end, BREW_NO_TPC);
-	if (*op_end != ',')
-	  as_warn (_("expecting comma delimited register operands"));
-	op_end++;
-	if (*op_end != '(')
-	  {
-	    as_bad (_("expecting indirect register `($rA)'"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-	b = parse_register_operand (&op_end, BREW_NO_TPC);
-	if (*op_end != ')')
-	  {
-	    as_bad (_("missing closing parenthesis"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-	inst_code += (a << 4) + b;
-	while (ISSPACE (*op_end))
-	  op_end++;
-	if (*op_end != 0)
-	  as_warn (_("extra stuff on line ignored"));
-      }
-      break;
-    case BREW_F1_AiB:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	int a, b;
-	if (*op_end != '(')
-	  {
-	    as_bad (_("expecting indirect register `($rA)'"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-	a = parse_register_operand (&op_end, BREW_NO_TPC);
-	if (*op_end != ')')
-	  {
-	    as_bad (_("missing closing parenthesis"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-	if (*op_end != ',')
-	  as_warn (_("expecting comma delimited register operands"));
-	op_end++;
-	b = parse_register_operand (&op_end, BREW_NO_TPC);
-	inst_code += (a << 4) + b;
-	while (ISSPACE (*op_end))
-	  op_end++;
-	if (*op_end != 0)
-	  as_warn (_("extra stuff on line ignored"));
-      }
-      break;
-    case BREW_F1_4A:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	expressionS arg;
-	char *where;
-	int a;
-
-	op_end = parse_exp_save_ilp (op_end, &arg);
-	where = frag_more (4);
-	fix_new_exp (frag_now,
-		     (where - frag_now->fr_literal),
-		     4,
-		     &arg,
-		     0,
-		     BFD_RELOC_32);
-
-	if (*op_end != ',')
-	  {
-	    as_bad (_("expecting comma delimited operands"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-
- 	a = parse_register_operand (&op_end, BREW_NO_TPC);
-	while (ISSPACE (*op_end))
-	  op_end++;
-	if (*op_end != 0)
-	  as_warn (_("extra stuff on line ignored"));
-
-	inst_code += (a << 4);
-      }
-      break;
-    case BREW_F1_ABi2:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	expressionS arg;
-	char *offset;
-	int a, b;
-
- 	a = parse_register_operand (&op_end, BREW_NO_TPC);
-	while (ISSPACE (*op_end))
-	  op_end++;
-
-	if (*op_end != ',')
-	  {
-	    as_bad (_("expecting comma delimited operands"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-
-	op_end = parse_exp_save_ilp (op_end, &arg);
-	offset = frag_more (2);
-	fix_new_exp (frag_now,
-		     (offset - frag_now->fr_literal),
-		     2,
-		     &arg,
-		     0,
-		     BFD_RELOC_16);
-
-	if (*op_end != '(')
-	  {
-	    as_bad (_("expecting indirect register `($rX)'"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-	b = parse_register_operand (&op_end, BREW_NO_TPC);
-	if (*op_end != ')')
-	  {
-	    as_bad (_("missing closing parenthesis"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-
-	while (ISSPACE (*op_end))
-	  op_end++;
-	if (*op_end != 0)
-	  as_warn (_("extra stuff on line ignored"));
-
-	inst_code += (a << 4) + b;
-      }
-      break;
-    case BREW_F1_AiB2:
-      inst_code = opcode->opcode << 8;
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	expressionS arg;
-	char *offset;
-	int a, b;
-
-	op_end = parse_exp_save_ilp (op_end, &arg);
-	offset = frag_more (2);
-	fix_new_exp (frag_now,
-		     (offset - frag_now->fr_literal),
-		     2,
-		     &arg,
-		     0,
-		     BFD_RELOC_16);
-
-	if (*op_end != '(')
-	  {
-	    as_bad (_("expecting indirect register `($rX)'"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-	a = parse_register_operand (&op_end, BREW_NO_TPC);
-	if (*op_end != ')')
-	  {
-	    as_bad (_("missing closing parenthesis"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-
-	if (*op_end != ',')
-	  {
-	    as_bad (_("expecting comma delimited operands"));
-	    ignore_rest_of_line ();
-	    return;
-	  }
-	op_end++;
-
- 	b = parse_register_operand (&op_end, BREW_NO_TPC);
-	while (ISSPACE (*op_end))
-	  op_end++;
-
-	while (ISSPACE (*op_end))
-	  op_end++;
-	if (*op_end != 0)
-	  as_warn (_("extra stuff on line ignored"));
-
-	inst_code += (a << 4) + b;
-      }
-      break;
-    case BREW_F2_NARG:
-      inst_code = opcode->opcode << 12;
-      while (ISSPACE (*op_end))
-	op_end++;
-      if (*op_end != 0)
-	as_warn (_("extra stuff on line ignored"));
-      break;
-    case BREW_F3_PCREL:
-      inst_code = (3<<14) | (opcode->opcode << 10);
-      while (ISSPACE (*op_end))
-	op_end++;
-      {
-	expressionS arg;
-
-	op_end = parse_exp_save_ilp (op_end, &arg);
-	/* TODO: this is not something we can do at the moment!!!! */
-	/*fix_new_exp (frag_now,
-		     (p - frag_now->fr_literal),
-		     2,
-		     &arg,
-		     true,
-		     BFD_RELOC_MOXIE_10_PCREL);*/
-      }
-      break;
-    case BREW_BAD:
-      inst_code = 0;
-      while (ISSPACE (*op_end))
-	op_end++;
-      if (*op_end != 0)
-	as_warn (_("extra stuff on line ignored"));
-      break;
-    default:
-      abort ();
-    }
-
-  md_number_to_chars (p, inst_code, 2);
-  dwarf2_emit_insn (2);
-
-  while (ISSPACE (*op_end))
-    op_end++;
-
-  if (*op_end != 0)
-    as_warn (_("extra stuff on line ignored"));
-
-  if (pending_reloc)
-    as_bad (_("Something forgot to clean up\n"));
+  //reg_d = parse_register_operand(tok_start, true);
+  //IS_NEXT_TOKEN("=", "Invalid operation ");
 }
 
 /* Turn a string in input_line_pointer into a floating point constant
@@ -901,14 +510,14 @@ md_atof (int type, char *litP, int *sizeP)
 
 enum options
 {
-  OPTION_EB = OPTION_MD_BASE,
-  OPTION_EL,
+  OPTION_F = OPTION_MD_BASE,
+  OPTION_NF
 };
 
 struct option md_longopts[] =
 {
-  { "EB",          no_argument, NULL, OPTION_EB},
-  { "EL",          no_argument, NULL, OPTION_EL},
+  { "F",           no_argument, NULL, OPTION_F},
+  { "NF",          no_argument, NULL, OPTION_NF},
   { NULL,          no_argument, NULL, 0}
 };
 
@@ -921,11 +530,11 @@ md_parse_option (int c ATTRIBUTE_UNUSED, const char *arg ATTRIBUTE_UNUSED)
 {
   switch (c)
     {
-    case OPTION_EB:
-      target_big_endian = 1;
+    case OPTION_F:
+      float_support = true;
       break;
-    case OPTION_EL:
-      target_big_endian = 0;
+    case OPTION_NF:
+      float_support = false;
       break;
     default:
       return 0;
@@ -938,15 +547,15 @@ void
 md_show_usage (FILE *stream ATTRIBUTE_UNUSED)
 {
   fprintf (stream, _("\
-  -EB                     assemble for a big endian system (default)\n\
-  -EL                     assemble for a little endian system\n"));
+  -F                      enable floating point instructions (default)\n\
+  -NF                     disable floating point instructions\n"));
 }
 
 /* Apply a fixup to the object file.  */
 
 void
 md_apply_fix (fixS *fixP ATTRIBUTE_UNUSED,
-	      valueT * valP ATTRIBUTE_UNUSED, segT seg ATTRIBUTE_UNUSED)
+              valueT * valP ATTRIBUTE_UNUSED, segT seg ATTRIBUTE_UNUSED)
 {
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
   long val = *valP;
@@ -957,55 +566,21 @@ md_apply_fix (fixS *fixP ATTRIBUTE_UNUSED,
   switch (fixP->fx_r_type)
     {
     case BFD_RELOC_32:
-      if (target_big_endian)
-	{
-	  buf[0] = val >> 24;
-	  buf[1] = val >> 16;
-	  buf[2] = val >> 8;
-	  buf[3] = val >> 0;
-	}
-      else
-	{
-	  buf[3] = val >> 24;
-	  buf[2] = val >> 16;
-	  buf[1] = val >> 8;
-	  buf[0] = val >> 0;
-	}
+      buf[3] = val >> 24;
+      buf[2] = val >> 16;
+      buf[1] = val >> 8;
+      buf[0] = val >> 0;
       buf += 4;
       break;
-
+    /* The only reloc we can actually have is a 32-bit one
     case BFD_RELOC_16:
-      if (target_big_endian)
-	{
-	  buf[0] = val >> 8;
-	  buf[1] = val >> 0;
-	}
-      else
-	{
-	  buf[1] = val >> 8;
-	  buf[0] = val >> 0;
-	}
+      buf[1] = val >> 8;
+      buf[0] = val >> 0;
       buf += 2;
       break;
 
     case BFD_RELOC_8:
       *buf++ = val;
-      break;
-
-    /* TODO: we probably don't need this here: we don't have any 10-bit PC-relative relocation. */
-    /*       if we added 32-bit PC-relative ones, maybe something like this might be useful?    */
-    /*
-    case BFD_RELOC_MOXIE_10_PCREL:
-      if (!val)
-	break;
-      if (val < -1024 || val > 1022)
-	as_bad_where (fixP->fx_file, fixP->fx_line,
-                      _("pcrel too far BFD_RELOC_MOXIE_10"));
-      // 11 bit offset even numbered, so we remove right bit.
-      val >>= 1;
-      newval = md_chars_to_number (buf, 2);
-      newval |= val & 0x03ff;
-      md_number_to_chars (buf, newval, 2);
       break;
     */
     default:
@@ -1024,41 +599,9 @@ md_apply_fix (fixS *fixP ATTRIBUTE_UNUSED,
 void
 md_number_to_chars (char * ptr, valueT use, int nbytes)
 {
-  if (target_big_endian)
-    number_to_chars_bigendian (ptr, use, nbytes);
-  else
-    number_to_chars_littleendian (ptr, use, nbytes);
+  number_to_chars_littleendian (ptr, use, nbytes);
 }
 
-/* Convert from target byte order to host byte order.  */
-/* TODO: this function is not used. That's because the MOXIE 10-bit relocation type is not used. */
-/*
-static valueT
-md_chars_to_number (char * buf, int n)
-{
-  valueT result = 0;
-  unsigned char * where = (unsigned char *) buf;
-
-  if (target_big_endian)
-    {
-      while (n--)
-	{
-	  result <<= 8;
-	  result |= (*where++ & 255);
-	}
-    }
-  else
-    {
-      while (n--)
-	{
-	  result <<= 8;
-	  result |= (where[n] & 255);
-	}
-    }
-
-  return result;
-}
-*/
 
 /* Generate a machine-dependent relocation.  */
 arelent *
@@ -1080,7 +623,7 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixP)
     */
     default:
       as_bad_where (fixP->fx_file, fixP->fx_line,
-		    _("Semantics error.  This type of operand can not be relocated, it must be an assembly-time constant"));
+                    _("Semantics error.  This type of operand can not be relocated, it must be an assembly-time constant"));
       return 0;
     }
 
@@ -1127,9 +670,9 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixP)
 
       name = S_GET_NAME (fixP->fx_addsy);
       if (name == NULL)
-	name = _("<unknown>");
+        name = _("<unknown>");
       as_fatal (_("Cannot generate relocation type for symbol %s, code %s"),
-		name, bfd_get_reloc_code_name (code));
+                name, bfd_get_reloc_code_name (code));
     }
 
   return relP;
@@ -1156,4 +699,18 @@ md_pcrel_from (fixS *fixP)
       abort ();
       return addr;
     }
+}
+
+void
+md_operand (expressionS *op __attribute__((unused)))
+{
+  /* Empty for now. */
+}
+
+/* This function is called once, at assembler startup time.  It can
+   do all sorts of local initialization that needs to happen. */
+void
+md_begin (void)
+{
+  bfd_set_arch_mach (stdoutput, TARGET_ARCH, 0);
 }

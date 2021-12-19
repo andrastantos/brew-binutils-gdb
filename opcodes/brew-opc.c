@@ -19,8 +19,8 @@
    Free Software Foundation, 51 Franklin Street - Fifth Floor, Boston,
    MA 02110-1301, USA.  */
 
-#include <stdint.h>
 #include "sysdep.h"
+#include <stdint.h>
 #include "opcode/brew.h"
 
 /* TODO: right now this is not changed from the moxie baseline at all. It should be!!!! */
