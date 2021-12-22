@@ -29,6 +29,7 @@
 #include "elf/brew.h"
 
 #define DEBUG(msg) { printf msg; printf("\n"); }
+#define ABORT(msg) { as_bad msg; as_abort(__FILE__, __LINE__, __PRETTY_FUNCTION__); }
 
 extern const brew_opc_info_t brew_opc_info[128];
 
@@ -101,6 +102,87 @@ static branch_tableS branch_table[] =
   { NULL,      0x0000,            false,       0x0000,          false,     0                      }
 };
 
+
+#define NO_IMM_A     (1 << 0)
+#define NO_IMM_B     (1 << 1)
+#define NO_IMM_B     (1 << 1)
+#define NO_A_EQ_B    (1 << 2)
+#define NO_A_IS_PC   (1 << 3)
+#define NO_B_IS_PC   (1 << 4)
+#define NO_D_IS_PC   (1 << 5)
+#define NO_AB_IS_PC  (1 << 6)
+#define COMMUTATIVE  (1 << 7)
+#define HAS_UPPER    (1 << 8)
+
+typedef struct
+{
+  const char *inst_name;
+  uint16_t inst_code;
+  int op_flags;
+  int type_flags_a;
+  int type_flags_b;
+  int type_flags_d;
+} alu_tableS;
+
+
+static alu_tableS alu_table[] =
+{
+/* BINARY OPERATIONS */
+/*  inst_name  inst_code   op_flags                                                           type_flags_a           type_flags_b           type_flags_d*/
+  { "^",       0x0000,     NO_A_EQ_B | NO_IMM_B | COMMUTATIVE,                                0,                     0,                     0 },
+  { "^",       0x0000,     NO_A_EQ_B | NO_IMM_B | COMMUTATIVE,                                BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "|",       0x1000,     NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                              0,                     0,                     0 },
+  { "|",       0x1000,     NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                              BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "&",       0x2000,     NO_IMM_B | COMMUTATIVE,                                            0,                     0,                     0 },
+  { "&",       0x2000,     NO_IMM_B | COMMUTATIVE,                                            BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "-",       0x3000,     0,                                                                 0,                     0,                     0 },
+  { "-",       0x3000,     0,                                                                 BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "+",       0x4000,     NO_IMM_B | COMMUTATIVE,                                            0,                     0,                     0 },
+  { "+",       0x4000,     NO_IMM_B | COMMUTATIVE,                                            BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "<<",      0x5000,     0,                                                                 0,                     0,                     0 },
+  { "<<",      0x5000,     0,                                                                 BREW_REG_FLAG_SIGNED,  0,                     BREW_REG_FLAG_SIGNED  },
+  { ">>",      0x6000,     0,                                                                 0,                     0,                     0 },
+  { ">>",      0x7000,     0,                                                                 BREW_REG_FLAG_SIGNED,  0,                     BREW_REG_FLAG_SIGNED  },
+  { "*",       0x8000,     NO_A_IS_PC | NO_B_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      0,                     0,                     0 },
+  { "*",       0x9000,     NO_A_IS_PC | NO_B_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  /*           0xa000 is the 'upper' version of 0x8000 */
+  /*           0xb000 is the 'upper' version of 0x9000 */
+  { "+",       0xc000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | NO_IMM_B | COMMUTATIVE,     BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { "-",       0xd000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC,                              BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { "*",       0xe000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | NO_IMM_B | COMMUTATIVE,     BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { NULL,      0x0000,     0,                                                                 0,                     0,                     0 },
+};
+
+#define NO_IMM_A     (1 << 0)
+#define NO_IMM_B     (1 << 1)
+#define NO_A_EQ_B    (1 << 2)
+#define NO_A_IS_PC   (1 << 3)
+#define NO_B_IS_PC   (1 << 4)
+#define NO_D_IS_PC   (1 << 5)
+#define NO_AB_IS_PC  (1 << 6)
+#define COMMUTATIVE  (1 << 7)
+#define HAS_UPPER    (1 << 8)
+
+typedef struct
+{
+  const char *inst_name;
+  uint16_t inst_code;
+  int op_shift;
+  int type_flags_op;
+  int type_flags_d;
+} unary_op_tableS;
+
+static unary_op_tableS unary_op_table[] = {
+/*  inst_name  inst_code   op_shift  type_flags_op          type_flags_d*/
+  { "-",       0xa000,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
+  { "~",       0xa000,     8,        0,                     0 },
+  { "bswap",   0xb000,     4,        0,                     0 },
+  { "wswap",   0xb000,     8,        0,                     0 },
+  { "floor",   0xd000,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_SIGNED },
+  { "rsqrt",   0xe000,     8,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+
+  { NULL,      0x0000,     0,        0,                     0 }
+};
 
 /* This is really unfortunate that as doesn't provide a 'v' version of these routines */
 static void
@@ -203,7 +285,7 @@ get_optional_next_token(void)
     if (ISSPACE(*tok_end))
       break;
     /* These are tokens on their own right */
-    if (strchr("<>![]=,", *tok_end) != NULL)
+    if (strchr("<>![]=,^&*+/~|-", *tok_end) != NULL)
       {
         if (tok_end == tok_start)
           {
@@ -410,7 +492,7 @@ parse_exp_save_ilp (char *s, expressionS *op)
    Returns true if an expression is found, false if not.
 */
 static bool
-parse_expression(char *token)
+parse_expression(const char *token)
 {
   /* The GAS expression parser happily accepts register names (such as $r0) as expressions. We don't want that. */
   if (token[0] == '$')
@@ -418,7 +500,7 @@ parse_expression(char *token)
 
   expressionS arg;
   char *end_expr;
-  end_expr = parse_exp_save_ilp (token, &arg);
+  end_expr = parse_exp_save_ilp ((char*)token, &arg);
   if (*end_expr != 0)
   {
     return false;
@@ -484,93 +566,95 @@ md_assemble (char *str)
   }
 
   /* Store operations */
-  do {
-    if (strcasecmp(tok_start, "mem") == 0)
-      inst_code = 0xf700;
-    else if (strcasecmp(tok_start, "mem32") == 0)
-      inst_code = 0xf700;
-    else if (strcasecmp(tok_start, "mem8") == 0)
-      inst_code = 0xf500;
-    else if (strcasecmp(tok_start, "mem16") == 0)
-      inst_code = 0xf600;
-    else
-      break;
-    IS_NEXT_TOKEN(("[", _("invalid store operation syntax ")));
-    GET_NEXT_TOKEN((_("invalid store operation syntax ")));
-    /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
-    if (parse_expression(tok_start))
-      {
-        inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
-        GET_NEXT_TOKEN((_("invalid store offset syntax")));
-        if (strcmp(tok_start, ",") == 0)
-          {
-            /* We have the format of MEM[{expr},{reg}] = {reg} */
-            GET_NEXT_TOKEN((_("invalid store offset syntax")));
-            reg_a = parse_register_operand(tok_start, false);
-            if (reg_a == -1)
-              {
-                as_bad(_("Invlid register offset in store"));
-                ERR_RETURN;
-              }
-          }
-        else
-          {
-            /* We have the format of MEM[{expr}] = {reg} */
-            reg_a = 0xf;
-            undo_last_token();
-          }
-      }
-    else
-      {
-        reg_a = parse_register_operand(tok_start, false);
-        if (reg_a == -1)
-          {
-            as_bad(_("Invlid register offset in store"));
-            ERR_RETURN;
-          }
-        GET_NEXT_TOKEN((_("invalid store offset syntax")));
-        if (strcmp(tok_start, ",") == 0)
-          {
-            GET_NEXT_TOKEN((_("invalid store offset syntax")));
-            if (!parse_expression(tok_start))
-              {
-                as_bad(_("Invalid store offset syntax: expecting expression"));
-                ERR_RETURN;
-              }
-            /* We have the format of MEM[{reg},{expr}] = {reg} */
-            inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
-          }
-        else
-          {
-            /* We have the format of MEM[{reg}] = {reg} */
-            undo_last_token();
-          }
-      }
-    IS_NEXT_TOKEN(("]", _("invalid store operation syntax ")));
-    IS_NEXT_TOKEN((ASSIGNMENT_STR, _("invalid store instruction syntax: expecting " ASSIGNMENT_STR ", got %s"), tok_start));
-    GET_NEXT_TOKEN((_("invalid store operation syntax ")));
-    reg_d = parse_register_operand(tok_start, true);
-    if (reg_d == -1)
-      {
-        as_bad(_("Invalid source register for store "));
-        ERR_RETURN;
-      }
-    inst_code |= (reg_a & 0xf) << 4;
-    /* special-case TPC stores: these only have a 48-bit variant */
-    if (reg_d == BREW_REG_TPC)
-      {
-        inst_code |= 0x0800;
-        inst_code |= 0x000f;
-        if (field_e_frag == NULL)
-          {
-            field_e_frag = frag_more(4);
-            md_number_to_chars (field_e_frag, 0, 4);
-          }
-        RETURN(inst_code);
-      }
-    inst_code |= (reg_d & 0xf) << 0;
-    RETURN(inst_code);
-  } while (false);
+  do
+    {
+      if (strcasecmp(tok_start, "mem") == 0)
+        inst_code = 0xf700;
+      else if (strcasecmp(tok_start, "mem32") == 0)
+        inst_code = 0xf700;
+      else if (strcasecmp(tok_start, "mem8") == 0)
+        inst_code = 0xf500;
+      else if (strcasecmp(tok_start, "mem16") == 0)
+        inst_code = 0xf600;
+      else
+        break;
+      IS_NEXT_TOKEN(("[", _("invalid store operation syntax ")));
+      GET_NEXT_TOKEN((_("invalid store operation syntax ")));
+      /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
+      if (parse_expression(tok_start))
+        {
+          inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
+          GET_NEXT_TOKEN((_("invalid store offset syntax")));
+          if (strcmp(tok_start, ",") == 0)
+            {
+              /* We have the format of MEM[{expr},{reg}] = {reg} */
+              GET_NEXT_TOKEN((_("invalid store offset syntax")));
+              reg_a = parse_register_operand(tok_start, false);
+              if (reg_a == -1)
+                {
+                  as_bad(_("Invlid register offset in store"));
+                  ERR_RETURN;
+                }
+            }
+          else
+            {
+              /* We have the format of MEM[{expr}] = {reg} */
+              reg_a = 0xf;
+              undo_last_token();
+            }
+        }
+      else
+        {
+          reg_a = parse_register_operand(tok_start, false);
+          if (reg_a == -1)
+            {
+              as_bad(_("Invlid register offset in store"));
+              ERR_RETURN;
+            }
+          GET_NEXT_TOKEN((_("invalid store offset syntax")));
+          if (strcmp(tok_start, ",") == 0)
+            {
+              GET_NEXT_TOKEN((_("invalid store offset syntax")));
+              if (!parse_expression(tok_start))
+                {
+                  as_bad(_("Invalid store offset syntax: expecting expression"));
+                  ERR_RETURN;
+                }
+              /* We have the format of MEM[{reg},{expr}] = {reg} */
+              inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
+            }
+          else
+            {
+              /* We have the format of MEM[{reg}] = {reg} */
+              undo_last_token();
+            }
+        }
+      IS_NEXT_TOKEN(("]", _("invalid store operation syntax ")));
+      IS_NEXT_TOKEN((ASSIGNMENT_STR, _("invalid store instruction syntax: expecting " ASSIGNMENT_STR ", got %s"), tok_start));
+      GET_NEXT_TOKEN((_("invalid store operation syntax ")));
+      reg_d = parse_register_operand(tok_start, true);
+      if (reg_d == -1)
+        {
+          as_bad(_("Invalid source register for store "));
+          ERR_RETURN;
+        }
+      inst_code |= (reg_a & 0xf) << 4;
+      /* special-case TPC stores: these only have a 48-bit variant */
+      if (reg_d == BREW_REG_TPC)
+        {
+          inst_code |= 0x0800;
+          inst_code |= 0x000f;
+          if (field_e_frag == NULL)
+            {
+              field_e_frag = frag_more(4);
+              md_number_to_chars (field_e_frag, 0, 4);
+            }
+          RETURN(inst_code);
+        }
+      inst_code |= (reg_d & 0xf) << 0;
+      RETURN(inst_code);
+    }
+  while (false);
 
 
   /* branches */
@@ -718,10 +802,12 @@ md_assemble (char *str)
                 }
               RETURN(inst_code);
             }
+          ABORT((_("internal error during branch parsing")));
         }
+      ABORT((_("internal error during branch parsing")));
     }
 
-  /* All other operations have the form of {reg} = ... */
+  /* All other operations have the form of {reg} <- ... */
   reg_d = parse_register_operand(tok_start, true);
   if (reg_d == -1)
     {
@@ -733,94 +819,475 @@ md_assemble (char *str)
 
 
   /* Load operations */
-  do {
-    if (strcasecmp(tok_start, "mem") == 0 || strcasecmp(tok_start, "mem32") == 0)
-      inst_code = 0xf400;
-    else if (strcasecmp(tok_start, "mem8") == 0)
-      {
-        if ((reg_d & BREW_REG_FLAG_SIGNED) != 0)
-          inst_code = 0xf000;
-        else
-          inst_code = 0xf100;
-      }
-    else if (strcasecmp(tok_start, "mem16") == 0)
-      {
-        if ((reg_d & BREW_REG_FLAG_SIGNED) != 0)
-          inst_code = 0xf200;
-        else
-          inst_code = 0xf300;
-      }
-    else
-      break;
-    IS_NEXT_TOKEN(("[", _("invalid load operation syntax ")));
-    GET_NEXT_TOKEN((_("invalid load operation syntax ")));
-    /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
-    if (parse_expression(tok_start))
-      {
-        inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
-        GET_NEXT_TOKEN((_("invalid load offset syntax")));
-        if (strcmp(tok_start, ",") == 0)
-          {
-            /* We have the format of {reg} = MEM[{expr},{reg}]*/
-            GET_NEXT_TOKEN((_("invalid load offset syntax")));
-            reg_a = parse_register_operand(tok_start, false);
-            if (reg_a == -1)
-              {
-                as_bad(_("Invlid register offset in load"));
-                ERR_RETURN;
-              }
-          }
-        else
-          {
-            /* We have the format of {reg} = MEM[{expr}] */
-            reg_a = 0xf;
-            undo_last_token();
-          }
-      }
-    else
-      {
-        reg_a = parse_register_operand(tok_start, false);
-        if (reg_a == -1)
-          {
-            as_bad(_("Invlid register offset in load"));
-            ERR_RETURN;
-          }
-        GET_NEXT_TOKEN((_("invalid load offset syntax")));
-        if (strcmp(tok_start, ",") == 0)
-          {
-            GET_NEXT_TOKEN((_("invalid load offset syntax")));
-            if (!parse_expression(tok_start))
-              {
-                as_bad(_("Invalid load offset syntax: expecting expression"));
-                ERR_RETURN;
-              }
-            /* We have the format of {reg} = MEM[{reg},{expr}] */
-            inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
-          }
-        else
-          {
-            /* We have the format of {reg} = MEM[{reg}] */
-            undo_last_token();
-          }
-      }
-    IS_NEXT_TOKEN(("]", _("invalid load operation syntax ")));
-    inst_code |= (reg_a & 0xf) << 4;
-    /* special-case TPC stores: these only have a 48-bit variant */
-    if (reg_d == BREW_REG_TPC)
-      {
-        inst_code |= 0x0800;
-        inst_code |= 0x000f;
-        if (field_e_frag == NULL)
-          {
-            field_e_frag = frag_more(4);
-            md_number_to_chars (field_e_frag, 0, 4);
-          }
-        RETURN(inst_code);
-      }
-    inst_code |= (reg_d & 0xf) << 0;
-    RETURN(inst_code);
-  } while (false);
+  do
+    {
+      if (strcasecmp(tok_start, "mem") == 0 || strcasecmp(tok_start, "mem32") == 0)
+        inst_code = 0xf400;
+      else if (strcasecmp(tok_start, "mem8") == 0)
+        {
+          if ((reg_d & BREW_REG_FLAG_SIGNED) != 0)
+            inst_code = 0xf000;
+          else
+            inst_code = 0xf100;
+        }
+      else if (strcasecmp(tok_start, "mem16") == 0)
+        {
+          if ((reg_d & BREW_REG_FLAG_SIGNED) != 0)
+            inst_code = 0xf200;
+          else
+            inst_code = 0xf300;
+        }
+      else
+        break;
+      IS_NEXT_TOKEN(("[", _("invalid load operation syntax ")));
+      GET_NEXT_TOKEN((_("invalid load operation syntax ")));
+      /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
+      if (parse_expression(tok_start))
+        {
+          inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
+          GET_NEXT_TOKEN((_("invalid load offset syntax")));
+          if (strcmp(tok_start, ",") == 0)
+            {
+              /* We have the format of {reg} = MEM[{expr},{reg}]*/
+              GET_NEXT_TOKEN((_("invalid load offset syntax")));
+              reg_a = parse_register_operand(tok_start, false);
+              if (reg_a == -1)
+                {
+                  as_bad(_("Invlid register offset in load"));
+                  ERR_RETURN;
+                }
+            }
+          else
+            {
+              /* We have the format of {reg} = MEM[{expr}] */
+              reg_a = 0xf;
+              undo_last_token();
+            }
+        }
+      else
+        {
+          reg_a = parse_register_operand(tok_start, false);
+          if (reg_a == -1)
+            {
+              as_bad(_("Invlid register offset in load"));
+              ERR_RETURN;
+            }
+          GET_NEXT_TOKEN((_("invalid load offset syntax")));
+          if (strcmp(tok_start, ",") == 0)
+            {
+              GET_NEXT_TOKEN((_("invalid load offset syntax")));
+              if (!parse_expression(tok_start))
+                {
+                  as_bad(_("Invalid load offset syntax: expecting expression"));
+                  ERR_RETURN;
+                }
+              /* We have the format of {reg} = MEM[{reg},{expr}] */
+              inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
+            }
+          else
+            {
+              /* We have the format of {reg} = MEM[{reg}] */
+              undo_last_token();
+            }
+        }
+      IS_NEXT_TOKEN(("]", _("invalid load operation syntax ")));
+      inst_code |= (reg_a & 0xf) << 4;
+      /* special-case TPC stores: these only have a 48-bit variant */
+      if (reg_d == BREW_REG_TPC)
+        {
+          inst_code |= 0x0800;
+          inst_code |= 0x000f;
+          if (field_e_frag == NULL)
+            {
+              field_e_frag = frag_more(4);
+              md_number_to_chars (field_e_frag, 0, 4);
+            }
+          RETURN(inst_code);
+        }
+      inst_code |= (reg_d & 0xf) << 0;
+      RETURN(inst_code);
+    }
+  while (false);
 
+  /* From here on every operation has the format of {reg} <- ... */
+  /* We've already parsed the destination register and the assignment part. Our current token is the first one after the assignment */
+  /* ALU operations */
+  do
+    {
+      bool is_upper = false;
+      unary_op_tableS *unary_op_table_entry;
+      if (strcasecmp(tok_start, "upper") == 0)
+        {
+          is_upper = true;
+          GET_NEXT_TOKEN((_("unexpected end of instruction after 'upper'")));
+        }
+      /* check for prefix unary operators */
+      for (unary_op_table_entry = unary_op_table; unary_op_table_entry->inst_name != NULL; ++unary_op_table_entry)
+        {
+          if (strcasecmp(tok_start, unary_op_table_entry->inst_name) == 0 && (unary_op_table_entry->type_flags_d == (reg_d & BREW_REG_FLAG_MASK)))
+            {
+              int reg_op;
+
+              /* Found a unary ALU operation */
+              if (is_upper)
+                {
+                  as_bad(_("unary operation %s can't be prefixed with 'upper'"), unary_op_table_entry->inst_name);
+                  ERR_RETURN;
+                }
+              GET_NEXT_TOKEN((_("expected operand for unary operation %s"), tok_start));
+              reg_op = parse_register_operand(tok_start, false);
+              if ((reg_d & 0xf) == BREW_REG_TPC)
+                {
+                  as_bad(_("unary operation %s can't target TPC"), unary_op_table_entry->inst_name);
+                  ERR_RETURN;
+                }
+              if ((reg_d & 0xf) == BREW_REG_PC)
+                {
+                  as_bad(_("unary operation %s can't target PC"), unary_op_table_entry->inst_name);
+                  ERR_RETURN;
+                }
+              if (reg_op == -1)
+                {
+                  as_bad(_("operand for unary operation %s must be a register"), unary_op_table_entry->inst_name);
+                  ERR_RETURN;
+                }
+              inst_code = unary_op_table_entry->inst_code;
+              inst_code |= (reg_op & 0xf) << unary_op_table_entry->op_shift;
+              inst_code |= (reg_d & 0xf);
+              RETURN(inst_code);
+            }
+        }
+      /* it's not a prefix operation. It could be a register or an expression or a few special cases. Check for those first */
+      if (strcmp(tok_start, "1") == 0)
+        {
+          if (is_upper)
+            {
+              as_bad(_("unexpected 'upper'"));
+              ERR_RETURN;
+            }
+          get_optional_next_token();
+          if (tok_start == NULL)
+            {
+              /* This is simply {reg} <- 1. We need to handle that here even though load immediate is usually handled elsewhere, but we're too far down the road to back out. */
+              if ((reg_d & BREW_REG_FLAG_FLOAT) != 0)
+                {
+                  ABORT(("FIXME: we need to create a float constant for 1.0f"));
+                }
+              else
+                {
+                  parse_expression("1");
+                }
+              if ((reg_d & 0xf) == BREW_REG_TPC)
+                inst_code = 0x80f0;
+              else
+                {
+                  inst_code = 0x0ff0;
+                  inst_code |= (reg_d & 0xf);
+                }
+              RETURN(inst_code);
+            }
+          if ((reg_d & BREW_REG_FLAG_FLOAT) != 0)
+            {
+              if ((reg_d & 0xf) == BREW_REG_TPC)
+                {
+                  as_bad(_("reciprocal operation can't target TPC"));
+                  ERR_RETURN;
+                }
+              if ((reg_d & 0xf) == BREW_REG_PC)
+                {
+                  as_bad(_("reciprocal operation can't target PC"));
+                  ERR_RETURN;
+                }
+              int reg_op;
+              if (strcasecmp(tok_start, "/") != 0)
+                {
+                  as_bad(_("expected division (/) operator, got %s"), tok_start);
+                  ERR_RETURN;
+                }
+              GET_NEXT_TOKEN((_("expected operand for reciprocal")));
+              reg_op = parse_register_operand(tok_start, false);
+              if (reg_op == -1)
+                {
+                  as_bad(_("expected register operand for reciprocal"));
+                  ERR_RETURN;
+                }
+              if ((reg_op & BREW_REG_FLAG_FLOAT) == 0)
+                {
+                  as_bad(_("reciprocal operand must be a floating point register"));
+                  ERR_RETURN;
+                }
+              if ((reg_op & 0xf) == BREW_REG_PC)
+                {
+                  as_bad(_("reciprocal operand can't be PC"));
+                  ERR_RETURN;
+                }
+              inst_code = 0xe000;
+              inst_code |= (reg_op & 0xf) << 4;
+              inst_code |= (reg_d & 0xf) << 0;
+              RETURN(inst_code);
+            }
+        }
+      /* let's see if this is a simple immediate load */
+      if (parse_expression(tok_start))
+        {
+          char op[10];
+          alu_tableS *alu_table_entry;
+
+          get_optional_next_token();
+          if (tok_start == NULL)
+            {
+              /* This is an immediate load */
+              if (is_upper)
+                {
+                  as_bad(_("unexpected 'upper' register load"));
+                  ERR_RETURN;
+                }
+              if ((reg_d & 0xf) == BREW_REG_TPC)
+                inst_code = 0x80f0;
+              else
+                {
+                  inst_code = 0x0ff0;
+                  inst_code |= (reg_d & 0xf);
+                }
+              RETURN(inst_code);
+            }
+          /* This is not an immediate load. it must be a binary operation of the {reg} <- {expr} {op} {reg} kind. */
+          if (strlen(tok_start) > sizeof(op)-1)
+            {
+              as_bad(_("invalid binary operation: %s"), tok_start);
+              ERR_RETURN;
+            }
+          strcpy(op, tok_start);
+          GET_NEXT_TOKEN((_("expected second operand for binary operation '%s'"), op));
+          reg_a = parse_register_operand(tok_start, false);
+          if (reg_a == -1)
+            {
+              as_bad(_("second operatand for operation %s must be a register"), op);
+              ERR_RETURN;
+            }
+          for (alu_table_entry = alu_table; alu_table_entry->inst_name != NULL; ++alu_table_entry)
+            {
+              if (strcasecmp(op, alu_table_entry->inst_name) == 0)
+                {
+                  bool swap_args = false;
+                  /* Can we use this entry for the {exp} {op} {reg} thing we have here? */
+                  if ((alu_table_entry->op_flags & NO_IMM_B) != 0)
+                    {
+                      if ((alu_table_entry->op_flags & COMMUTATIVE) == 0)
+                        continue;
+                      if ((alu_table_entry->op_flags & NO_IMM_A) != 0)
+                        continue;
+                      swap_args = true;
+                      reg_b = reg_a;
+                    }
+                  if (swap_args)
+                    {
+                      if ((reg_b & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_B_IS_PC) != 0)
+                        continue;
+                      if ((reg_b & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_b)
+                        continue;
+                    }
+                  else
+                    {
+                      if ((reg_a & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_A_IS_PC) != 0)
+                        continue;
+                      if ((reg_a & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_a)
+                        continue;
+                    }
+                  if ((reg_d & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_D_IS_PC) != 0)
+                    continue;
+                  if ((reg_d & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_d)
+                    continue;
+                  if ((alu_table_entry->op_flags & HAS_UPPER) == 0 && is_upper)
+                    {
+                      as_bad(_("operation %s doesn't support 'upper'"), op);
+                      ERR_RETURN;
+                    }
+                  /* operation is suitable */
+                  inst_code = alu_table_entry->inst_code;
+                  if (swap_args)
+                    {
+                      inst_code |= 0x00f0; /* mark OP A as immediate */
+                      inst_code |= (reg_b & 0xf) << 8;
+                      inst_code |= (reg_d & 0xf) << 0;
+                      RETURN(inst_code);
+                    }
+                  else
+                    {
+                      inst_code |= 0x0f00; /* mark OP B as immediate */
+                      inst_code |= (reg_a & 0xf) << 4;
+                      inst_code |= (reg_d & 0xf) << 0;
+                      RETURN(inst_code);
+                    }
+                }
+            }
+            as_bad(_("unrecognized binary operation %s"), op);
+            ERR_RETURN;
+        }
+      reg_b = parse_register_operand(tok_start, true);
+      if (reg_b == -1)
+        {
+          as_bad(_("expected source register, got %s"), tok_start);
+          ERR_RETURN;
+        }
+      do {
+          char op[10];
+          alu_tableS *alu_table_entry;
+
+          get_optional_next_token();
+          if (tok_start == NULL)
+            {
+              /* This is a register move */
+              if (is_upper)
+                {
+                  as_bad(_("unexpected 'upper' for register move"));
+                  ERR_RETURN;
+                }
+              if ((reg_d & 0xf) == BREW_REG_TPC || (reg_b & 0xf) == BREW_REG_TPC)
+                {
+                  /* This is a TPC move */
+                  reg_d = ((reg_d & 0xf) == BREW_REG_TPC) ? 0 : (reg_d & 0xf);
+                  reg_b = ((reg_b & 0xf) == BREW_REG_TPC) ? 0 : (reg_b & 0xf);
+                  inst_code = 0x8000;
+                  inst_code |= reg_b << 4;
+                  inst_code |= reg_d << 0;
+                  RETURN(inst_code);
+                }
+              if ((reg_d & BREW_REG_FLAG_MASK) != 0 && (reg_b & BREW_REG_FLAG_SIGNED) != 0)
+                {
+                  /* This is float conversion */
+                  inst_code = 0xd000;
+                  inst_code |= (reg_b & 0xf) << 8;
+                  inst_code |= (reg_d & 0xf) << 0;
+                  RETURN(inst_code);
+                }
+              if ((reg_d & BREW_REG_FLAG_MASK) != (reg_b & BREW_REG_FLAG_MASK))
+                {
+                  as_bad(_("register moves only support identical source and destination types"));
+                  ERR_RETURN;
+                }
+              /* This is a simple register move -> use the AND operation with both sources being the same */
+              inst_code = 0x2000;
+              inst_code |= (reg_b & 0xf) << 8;
+              inst_code |= (reg_b & 0xf) << 4;
+              inst_code |= (reg_d & 0xf) << 0;
+              RETURN(inst_code);
+            }
+          /* This is not a register move. it must be a binary operation of the {reg} <- {reg} {op} [{expr}|{reg}] kind. */
+          if (strlen(tok_start) > sizeof(op)-1)
+            {
+              as_bad(_("invalid binary operation: %s"), tok_start);
+              ERR_RETURN;
+            }
+          strcpy(op, tok_start);
+          GET_NEXT_TOKEN((_("expected second operand for binary operation '%s'"), op));
+          if (parse_expression(tok_start))
+            {
+              for (alu_table_entry = alu_table; alu_table_entry->inst_name != NULL; ++alu_table_entry)
+                {
+                  if (strcasecmp(op, alu_table_entry->inst_name) == 0)
+                    {
+                      bool swap_args = false;
+                      /* Can we use this entry for the {exp} {op} {reg} thing we have here? */
+                      if ((alu_table_entry->op_flags & NO_IMM_A) != 0)
+                        {
+                          if ((alu_table_entry->op_flags & COMMUTATIVE) == 0)
+                            continue;
+                          if ((alu_table_entry->op_flags & NO_IMM_B) != 0)
+                            continue;
+                          swap_args = true;
+                          reg_a = reg_b;
+                        }
+                      if (swap_args)
+                        {
+                          if ((reg_a & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_A_IS_PC) != 0)
+                            continue;
+                          if ((reg_a & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_a)
+                            continue;
+                        }
+                      else
+                        {
+                          if ((reg_b & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_B_IS_PC) != 0)
+                            continue;
+                          if ((reg_b & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_b)
+                            continue;
+                        }
+                      if ((reg_d & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_D_IS_PC) != 0)
+                        continue;
+                      if ((reg_d & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_d)
+                        continue;
+                      if ((alu_table_entry->op_flags & HAS_UPPER) == 0 && is_upper)
+                        {
+                          as_bad(_("operation %s doesn't support 'upper'"), op);
+                          ERR_RETURN;
+                        }
+                      /* operation is suitable */
+                      inst_code = alu_table_entry->inst_code;
+                      if (swap_args)
+                        {
+                          inst_code |= 0x0f00; /* mark OP B as immediate */
+                          inst_code |= (reg_a & 0xf) << 4;
+                          inst_code |= (reg_d & 0xf) << 0;
+                          RETURN(inst_code);
+                        }
+                      else
+                        {
+                          inst_code |= 0x00f0; /* mark OP A as immediate */
+                          inst_code |= (reg_b & 0xf) << 8;
+                          inst_code |= (reg_d & 0xf) << 0;
+                          RETURN(inst_code);
+                        }
+                    }
+                }
+                as_bad(_("unrecognized binary operation %s"), op);
+                ERR_RETURN;
+            }
+          reg_a = parse_register_operand(tok_start, false);
+          if (reg_a == -1)
+            {
+              as_bad(_("second operatand for operation %s must be a register or an expression. Got: %s"), op, tok_start);
+              ERR_RETURN;
+            }
+          for (alu_table_entry = alu_table; alu_table_entry->inst_name != NULL; ++alu_table_entry)
+            {
+              //DEBUG(("Testing for compatiblity with %s", alu_table_entry->inst_name))
+              if (strcasecmp(op, alu_table_entry->inst_name) == 0)
+                {
+                  /* Can we use this entry for the {reg} {op} {reg} thing we have here? */
+                  if ((reg_a & 0xf) == (reg_b & 0xf) && (alu_table_entry->op_flags & NO_A_EQ_B) != 0)
+                    continue;
+                  if ((reg_a & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_A_IS_PC) != 0)
+                    continue;
+                  if ((reg_b & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_B_IS_PC) != 0)
+                    continue;
+                  if ((reg_d & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_D_IS_PC) != 0)
+                    continue;
+                  if ((reg_a & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_a)
+                    continue;
+                  if ((reg_b & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_b)
+                    continue;
+                  if ((reg_d & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_d)
+                    continue;
+                  if ((alu_table_entry->op_flags & HAS_UPPER) == 0 && is_upper)
+                    {
+                      as_bad(_("operation %s doesn't support 'upper'"), op);
+                      ERR_RETURN;
+                    }
+                  /* operation is suitable */
+                  inst_code = alu_table_entry->inst_code;
+                  inst_code |= (reg_a & 0xf) << 4;
+                  inst_code |= (reg_b & 0xf) << 8;
+                  inst_code |= (reg_d & 0xf) << 0;
+                  RETURN(inst_code);
+                }
+            }
+            as_bad(_("unrecognized binary operation %s"), op);
+            ERR_RETURN;
+        }
+      while (false);
+    }
+  while (false);
+  
   as_bad(_("Unrecognized instruction"));
   ERR_RETURN;
 
