@@ -494,9 +494,30 @@ parse_exp_save_ilp (char *s, expressionS *op)
 static bool
 parse_expression(const char *token)
 {
+  char *save;
+  char float_store[16]; /* We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow */
+  const char *ret_val;
+  int float_size;
+
   /* The GAS expression parser happily accepts register names (such as $r0) as expressions. We don't want that. */
   if (token[0] == '$')
     return false;
+
+  /* GAS also doesn't support any floating point expressions. We need that for float immediates, so let's test for them */
+  /* NOTE: this still doesn't support floating point expressions, such as 1.3+2.6, but that's not supported in GAS anywhere,
+     not even in .float */
+  save = input_line_pointer; /* Need to save and restore input_line_pointer as md_atof uses that as the input string */
+  input_line_pointer = (char*)token;
+  ret_val = md_atof('f', float_store, &float_size);
+  input_line_pointer = save;
+  if (ret_val == NULL)
+    {
+      /* This is a floating point constnat we could successfully parse */
+      gas_assert(float_size == 4);
+      field_e_frag = frag_more(float_size);
+      memcpy(field_e_frag, float_store, float_size);
+      return true;
+    }
 
   expressionS arg;
   char *end_expr;
@@ -1341,46 +1362,26 @@ md_assemble (char *str)
 }
 
 /* Turn a string in input_line_pointer into a floating point constant
-   of type type, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP .  An error message is
+   of type type, and store the appropriate bytes in *litP.  The number
+   of bytes emitted into litP is stored in *sizeP .  An error message is
    returned, or NULL on OK.  */
 
 const char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[4];
-  char *t;
-  int i;
-
+  DEBUG(("Boo!!!"))
   switch (type)
     {
     case 'f':
-      prec = 2;
+    case 'F':
+    case 's':
+    case 'S':
       break;
-
-    case 'd':
-      prec = 4;
-      break;
-
     default:
       *sizeP = 0;
-      return _("bad call to md_atof");
+      return _("unsupported floating point format");
     }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * 2;
-
-  for (i = prec - 1; i >= 0; i--)
-    {
-      md_number_to_chars (litP, (valueT) words[i], 2);
-      litP += 2;
-    }
-
-  return NULL;
+  return ieee_md_atof (type, litP, sizeP, target_big_endian);
 }
 
 enum options

@@ -57,6 +57,9 @@ _start:
   $tpc <- $r3
   $r3 <- $tpc
   #$pc <- $tpc # This should err out
+  $fr2 <- $fr1 + 3.1415
   
 message:
+  .word 0, 0, 0 , 0
+  .float 3.1415
         #.ascii  "Hello, world\n"
