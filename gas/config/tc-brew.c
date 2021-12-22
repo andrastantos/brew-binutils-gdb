@@ -492,7 +492,7 @@ parse_exp_save_ilp (char *s, expressionS *op)
    Returns true if an expression is found, false if not.
 */
 static bool
-parse_expression(const char *token)
+parse_expression(const char *token, bool support_float)
 {
   char *save;
   char float_store[16]; /* We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow */
@@ -516,7 +516,7 @@ parse_expression(const char *token)
       gas_assert(float_size == 4);
       field_e_frag = frag_more(float_size);
       memcpy(field_e_frag, float_store, float_size);
-      return true;
+      return support_float;
     }
 
   expressionS arg;
@@ -602,7 +602,7 @@ md_assemble (char *str)
       IS_NEXT_TOKEN(("[", _("invalid store operation syntax ")));
       GET_NEXT_TOKEN((_("invalid store operation syntax ")));
       /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
-      if (parse_expression(tok_start))
+      if (parse_expression(tok_start, false))
         {
           inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
           GET_NEXT_TOKEN((_("invalid store offset syntax")));
@@ -636,7 +636,7 @@ md_assemble (char *str)
           if (strcmp(tok_start, ",") == 0)
             {
               GET_NEXT_TOKEN((_("invalid store offset syntax")));
-              if (!parse_expression(tok_start))
+              if (!parse_expression(tok_start, false))
                 {
                   as_bad(_("Invalid store offset syntax: expecting expression"));
                   ERR_RETURN;
@@ -725,7 +725,7 @@ md_assemble (char *str)
           IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
           IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
           GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected branch target")));
-          if (!parse_expression(tok_start))
+          if (!parse_expression(tok_start, false))
             {
               as_bad(_("invalid bit-test branch instruction: expected branch target"));
               ERR_RETURN;
@@ -766,7 +766,7 @@ md_assemble (char *str)
               IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
               IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
               GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected branch target")));
-              if (!parse_expression(tok_start))
+              if (!parse_expression(tok_start, false))
                 {
                   as_bad(_("invalid bit-test branch instruction: expected branch target"));
                   ERR_RETURN;
@@ -816,7 +816,7 @@ md_assemble (char *str)
               IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
               IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
               GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected branch target")));
-              if (!parse_expression(tok_start))
+              if (!parse_expression(tok_start, false))
                 {
                   as_bad(_("invalid bit-test branch instruction: expected branch target"));
                   ERR_RETURN;
@@ -863,7 +863,7 @@ md_assemble (char *str)
       IS_NEXT_TOKEN(("[", _("invalid load operation syntax ")));
       GET_NEXT_TOKEN((_("invalid load operation syntax ")));
       /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
-      if (parse_expression(tok_start))
+      if (parse_expression(tok_start, false))
         {
           inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
           GET_NEXT_TOKEN((_("invalid load offset syntax")));
@@ -897,7 +897,7 @@ md_assemble (char *str)
           if (strcmp(tok_start, ",") == 0)
             {
               GET_NEXT_TOKEN((_("invalid load offset syntax")));
-              if (!parse_expression(tok_start))
+              if (!parse_expression(tok_start, false))
                 {
                   as_bad(_("Invalid load offset syntax: expecting expression"));
                   ERR_RETURN;
@@ -995,7 +995,7 @@ md_assemble (char *str)
                 }
               else
                 {
-                  parse_expression("1");
+                  parse_expression("1", false);
                 }
               if ((reg_d & 0xf) == BREW_REG_TPC)
                 inst_code = 0x80f0;
@@ -1048,7 +1048,7 @@ md_assemble (char *str)
             }
         }
       /* let's see if this is a simple immediate load */
-      if (parse_expression(tok_start))
+      if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT))
         {
           char op[10];
           alu_tableS *alu_table_entry;
@@ -1241,7 +1241,7 @@ md_assemble (char *str)
             }
           while(false);
           /* Let's see if we have a {reg} {op} {exp} type binary operation */
-          if (parse_expression(tok_start))
+          if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT))
             {
               for (alu_table_entry = alu_table; alu_table_entry->inst_name != NULL; ++alu_table_entry)
                 {
