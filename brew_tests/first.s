@@ -58,6 +58,7 @@ _start:
   $r3 <- $tpc
   #$pc <- $tpc # This should err out
   $fr2 <- $fr1 + 3.1415
+  #$r2 <- $r1 + 1.2 # This should err out
   
 message:
   .word 0, 0, 0 , 0
