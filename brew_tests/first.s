@@ -26,14 +26,37 @@ _start:
   #if $r3 >= $r1 $pc <- 0
   #if $r3 <= $r1 $pc <- 0
   #if $sr3 <= 0 $pc <- message
-  $r5 <- $r3 ^ $r1
-  $r5 <- $r3
-  $r5 <- 123
-  $pc <- 111
-  $tpc <- 444
-  $r1 <- 3 + $r2
-  $r1 <- $r2 + 4
-  $r1 <- 3 - $r2
-  $r1 <- $r2 - 4
+  #$r5 <- $r3 ^ $r1
+  #$r5 <- $r3
+  #$r5 <- 123
+  #$pc <- 111
+  #$tpc <- 444
+  #$r1 <- 3 + $r2
+  #$r1 <- $r2 + 4
+  #$r1 <- 3 - $r2
+  #$r1 <- $r2 - 4
+  #$r6 <- ~$r5
+  #$sr1 <- -$sr4
+  #$r1 <- $r2 + 4
+  #$r1 <- $r2 - 4
+  #$r1 <- $r2 + 1
+  #$r1 <- $r2 - 1
+  $sr1 <- upper $sr3 * $sr2
+  $sr1 <- $sr3 * $sr2
+  $r1 <- upper $r3 * $r2
+  $r1 <- $r3 * $r2
+  $fr1 <- $fr3 + $fr2
+  $fr1 <- $fr3 - $fr2
+  $fr1 <- $fr3 * $fr2
+  $fr3 <- 1 / $fr1
+  $fr3 <- RSQRT $fr1
+  $sr3 <- floor $fr1
+  $fr3 <- $sr10
+  $r2 <- bswap $r4
+  $r2 <- wswap $r4
+  $tpc <- $r3
+  $r3 <- $tpc
+  #$pc <- $tpc # This should err out
+  
 message:
-        .ascii  "Hello, world\n"
+        #.ascii  "Hello, world\n"

@@ -179,7 +179,7 @@ static unary_op_tableS unary_op_table[] = {
   { "bswap",   0xb000,     4,        0,                     0 },
   { "wswap",   0xb000,     8,        0,                     0 },
   { "floor",   0xd000,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_SIGNED },
-  { "rsqrt",   0xe000,     8,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { "rsqrt",   0xc000,     8,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
 
   { NULL,      0x0000,     0,        0,                     0 }
 };
@@ -927,7 +927,6 @@ md_assemble (char *str)
           if (strcasecmp(tok_start, unary_op_table_entry->inst_name) == 0 && (unary_op_table_entry->type_flags_d == (reg_d & BREW_REG_FLAG_MASK)))
             {
               int reg_op;
-
               /* Found a unary ALU operation */
               if (is_upper)
                 {
@@ -1021,7 +1020,7 @@ md_assemble (char *str)
                   as_bad(_("reciprocal operand can't be PC"));
                   ERR_RETURN;
                 }
-              inst_code = 0xe000;
+              inst_code = 0xc000;
               inst_code |= (reg_op & 0xf) << 4;
               inst_code |= (reg_d & 0xf) << 0;
               RETURN(inst_code);
@@ -1043,7 +1042,9 @@ md_assemble (char *str)
                   ERR_RETURN;
                 }
               if ((reg_d & 0xf) == BREW_REG_TPC)
-                inst_code = 0x80f0;
+                {
+                  inst_code = 0x80f0;
+                }
               else
                 {
                   inst_code = 0x0ff0;
@@ -1105,6 +1106,10 @@ md_assemble (char *str)
                     }
                   /* operation is suitable */
                   inst_code = alu_table_entry->inst_code;
+                  if (is_upper)
+                    {
+                      inst_code += 0x2000;
+                    }
                   if (swap_args)
                     {
                       inst_code |= 0x00f0; /* mark OP A as immediate */
@@ -1145,6 +1150,11 @@ md_assemble (char *str)
                 }
               if ((reg_d & 0xf) == BREW_REG_TPC || (reg_b & 0xf) == BREW_REG_TPC)
                 {
+                  if ((reg_d & 0xf) == BREW_REG_PC || (reg_b & 0xf) == BREW_REG_PC)
+                    {
+                      as_bad(_("direct move between $PC and $TPC is not supported"));
+                      ERR_RETURN;
+                    }
                   /* This is a TPC move */
                   reg_d = ((reg_d & 0xf) == BREW_REG_TPC) ? 0 : (reg_d & 0xf);
                   reg_b = ((reg_b & 0xf) == BREW_REG_TPC) ? 0 : (reg_b & 0xf);
@@ -1181,6 +1191,35 @@ md_assemble (char *str)
             }
           strcpy(op, tok_start);
           GET_NEXT_TOKEN((_("expected second operand for binary operation '%s'"), op));
+          /* Special-case increment and decrement operations */
+          do
+            {
+              if (strcmp(tok_start, "1") == 0)
+                {
+                  if ((reg_b & 0xf) == BREW_REG_PC)
+                    break;
+                  if ((reg_b & BREW_REG_FLAG_FLOAT) != 0)
+                    break;
+                  if ((reg_b & BREW_REG_FLAG_MASK) != (reg_d & BREW_REG_FLAG_MASK))
+                    break;
+                  if (strcmp(op, "+") == 0)
+                    {
+                      inst_code = 0x9000;
+                      inst_code |= (reg_b & 0xf) << 4;
+                      inst_code |= (reg_d & 0xf) << 0;
+                      RETURN(inst_code);
+                    }
+                  else if (strcmp(op, "-") == 0)
+                    {
+                      inst_code = 0x9000;
+                      inst_code |= (reg_b & 0xf) << 8;
+                      inst_code |= (reg_d & 0xf) << 0;
+                      RETURN(inst_code);
+                    }
+                }
+            }
+          while(false);
+          /* Let's see if we have a {reg} {op} {exp} type binary operation */
           if (parse_expression(tok_start))
             {
               for (alu_table_entry = alu_table; alu_table_entry->inst_name != NULL; ++alu_table_entry)
@@ -1188,7 +1227,7 @@ md_assemble (char *str)
                   if (strcasecmp(op, alu_table_entry->inst_name) == 0)
                     {
                       bool swap_args = false;
-                      /* Can we use this entry for the {exp} {op} {reg} thing we have here? */
+                      /* Can we use this entry for the {reg} {op} {exp} thing we have here? */
                       if ((alu_table_entry->op_flags & NO_IMM_A) != 0)
                         {
                           if ((alu_table_entry->op_flags & COMMUTATIVE) == 0)
@@ -1223,6 +1262,10 @@ md_assemble (char *str)
                         }
                       /* operation is suitable */
                       inst_code = alu_table_entry->inst_code;
+                      if (is_upper)
+                        {
+                          inst_code += 0x2000;
+                        }
                       if (swap_args)
                         {
                           inst_code |= 0x0f00; /* mark OP B as immediate */
@@ -1275,6 +1318,10 @@ md_assemble (char *str)
                     }
                   /* operation is suitable */
                   inst_code = alu_table_entry->inst_code;
+                  if (is_upper)
+                    {
+                      inst_code += 0x2000;
+                    }
                   inst_code |= (reg_a & 0xf) << 4;
                   inst_code |= (reg_b & 0xf) << 8;
                   inst_code |= (reg_d & 0xf) << 0;
