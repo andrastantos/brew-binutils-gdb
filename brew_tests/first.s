@@ -13,34 +13,34 @@
 
         .text
 _start:
-	#FENCE sdf
-  #SII
-  #MEM8[_start, $fr0] <- $r0
-  #MEM8[$fr0] <- $r0
-  #MEM8[$fr0, message+1] <- $r0
-  #$sr0 <- MEM8[$r1,message]
-  #$tpc <- MEM8[$r1]
-  #$r13 <- MEM16[$pc]
-  #if $r3[12] == 1 $pc <- 0
-  #if $r3[12] == 0 $pc <- message
-  #if $r3 >= $r1 $pc <- 0
-  #if $r3 <= $r1 $pc <- 0
-  #if $sr3 <= 0 $pc <- message
-  #$r5 <- $r3 ^ $r1
-  #$r5 <- $r3
-  #$r5 <- 123
-  #$pc <- 111
-  #$tpc <- 444
-  #$r1 <- 3 + $r2
-  #$r1 <- $r2 + 4
-  #$r1 <- 3 - $r2
-  #$r1 <- $r2 - 4
-  #$r6 <- ~$r5
-  #$sr1 <- -$sr4
-  #$r1 <- $r2 + 4
-  #$r1 <- $r2 - 4
-  #$r1 <- $r2 + 1
-  #$r1 <- $r2 - 1
+	FENCE
+  SII
+  MEM8[_start, $fr0] <- $r0
+  MEM8[$fr0] <- $r0
+  #MEM8[$fr0, message+1] <- $r0 #This is broken at the moment: the token parser doesn't collect enough tokens for the expression parser
+  $sr0 <- MEM8[$r1,message]
+  $tpc <- MEM8[$r1]
+  $r13 <- MEM16[$pc]
+  if $r3[12] == 1 $pc <- 0
+  if $r3[12] == 0 $pc <- message
+  if $r3 >= $r1 $pc <- 0
+  if $r3 <= $r1 $pc <- 0
+  if $sr3 <= 0 $pc <- message
+  $r5 <- $r3 ^ $r1
+  $r5 <- $r3
+  $r5 <- 123
+  $pc <- 111
+  $tpc <- 444
+  $r1 <- 3 + $r2
+  $r1 <- $r2 + 4
+  $r1 <- 3 - $r2
+  $r1 <- $r2 - 4
+  $r6 <- ~$r5
+  $sr1 <- -$sr4
+  $r1 <- $r2 + 4
+  $r1 <- $r2 - 4
+  $r1 <- $r2 + 1
+  $r1 <- $r2 - 1
   $sr1 <- upper $sr3 * $sr2
   $sr1 <- $sr3 * $sr2
   $r1 <- upper $r3 * $r2

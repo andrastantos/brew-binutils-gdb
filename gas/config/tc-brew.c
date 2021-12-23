@@ -523,7 +523,7 @@ parse_expression(const char *token, bool support_float)
 
           /* This is a floating point constant we could successfully parse */
           field_e_frag = frag_more(float_size);
-          memcpy(field_e_frag, float_store, float_size);
+          memcpy(field_e_frag, float_as_char, float_size);
           return true;
         }
     }

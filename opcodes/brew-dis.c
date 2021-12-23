@@ -44,13 +44,86 @@ static bfd_vma addr;
 #define FIELD_A ((inst_code >> 4) & 0xf)
 #define FIELD_D ((inst_code >> 0) & 0xf)
 
+#define GET_NIBBLE(i, nibble) ((i >> (nibble*4)) & 0xf)
+
+static bool hexdigit(char digit, int *val)
+{
+  if (digit >= '0' && digit <= '9')
+    {
+      *val = digit - '0';
+      return true;
+    }
+  if (digit >= 'a' && digit <= 'f')
+    {
+      *val = digit - 'a' + 10;
+      return true;
+    }
+  if (digit >= 'A' && digit <= 'F')
+    {
+      *val = digit - 'A' + 10;
+      return true;
+    }
+  return false;
+}
+
+static bool pattern_match(uint16_t inst_code, const char *pattern)
+{
+  const char *p;
+  int nibble;
+  int hex_p;
+  for (p=pattern, nibble=3;nibble >=0;--nibble, ++p)
+    {
+      if (*p == '.')
+        {
+          if (GET_NIBBLE(inst_code, nibble) == 0xf)
+            {
+              return false;
+            }
+          continue;
+        }
+      if (!hexdigit(*p, &hex_p))
+        {
+          return false;
+        }
+      if (hex_p != GET_NIBBLE(inst_code, nibble))
+        {
+          return false;
+        }
+    }
+    return true;
+}
+
+#define TREG_D (treg_names[FIELD_D])
+#define TREG_A (treg_names[FIELD_A])
+#define TREG_B (treg_names[FIELD_B])
+
 #define REG_D (reg_names[FIELD_D])
 #define REG_A (reg_names[FIELD_A])
 #define REG_B (reg_names[FIELD_B])
 
+#define SREG_D (sreg_names[FIELD_D])
+#define SREG_A (sreg_names[FIELD_A])
+#define SREG_B (sreg_names[FIELD_B])
+
+#define FREG_D (freg_names[FIELD_D])
+#define FREG_A (freg_names[FIELD_A])
+#define FREG_B (freg_names[FIELD_B])
+
+static const char * treg_names[16] =
+  { "$tpc", "$r1", "$r2",  "$r3",  "$r4",  "$r5",  "$r6",  "$r7", 
+    "$r8",  "$r9", "$r10", "$r11", "$r12", "$r13", "$r14", "<<<INVALID>>>"};
+
 static const char * reg_names[16] =
-  { "$pc", "$r1",  "$r2",  "$r3",  "$r4", "$r5", "$r6",  "$r7", 
-    "$r8", "$r9", "$r10", "$r11", "$r12", "$r13" "$r14", "<<<INVALID>>>"};
+  { "$pc", "$r1", "$r2",  "$r3",  "$r4",  "$r5",  "$r6",  "$r7", 
+    "$r8", "$r9", "$r10", "$r11", "$r12", "$r13", "$r14", "<<<INVALID>>>"};
+
+static const char * sreg_names[16] =
+  { "$spc", "$sr1", "$sr2",  "$sr3",  "$sr4",  "$sr5",  "$sr6",  "$sr7", 
+    "$sr8", "$sr9", "$sr10", "$sr11", "$sr12", "$sr13", "$sr14", "<<<INVALID>>>"};
+
+static const char * freg_names[16] =
+  { "$fpc", "$fr1", "$fr2",  "$fr3",  "$fr4",  "$fr5",  "$fr6",  "$fr7", 
+    "$fr8", "$fr9", "$fr10", "$fr11", "$fr12", "$fr13", "$fr14", "<<<INVALID>>>"};
 
 static bool get_uint16(uint16_t *buffer)
 {
@@ -80,14 +153,43 @@ static bool get_uint32(uint32_t *buffer)
   return true;
 }
 
-#define ERR_RETURN { info->memory_error_func(0, addr, info); }
+#define UNKNOWN \
+{ \
+  if (length == 2) \
+    { \
+      fpr(stream, "unknown instruction 0x%04x", inst_code); \
+    } \
+  else \
+    { \
+      fpr(stream, "unknown instruction 0x%04x 0x%08x", inst_code, field_e); \
+    } \
+  return length; \
+}
 
+static char branch_target_buffer[255];
+static char *branch_target(uint32_t field_e)
+{
+  if ((field_e & 0) == 0)
+    {
+      /* Abosolute address */
+      sprintf(branch_target_buffer, "<- %u", field_e);
+    }
+  else
+    {
+      /* Relative address */
+      sprintf(branch_target_buffer, "<- $pc+%d", (int32_t)field_e);
+    }
+  return branch_target_buffer;
+}
+
+#define INST(...) { fpr(stream, __VA_ARGS__ ); return length; }
 int
 print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
 {
   int length = 2;
   uint16_t inst_code;
   uint32_t field_e;
+  float field_e_as_float;
 
   OPCODES_ASSERT(infoP->endian == BFD_ENDIAN_LITTLE);
 
@@ -104,76 +206,218 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
   /* Determine if we need field_e and read it if we do */
   if (FIELD_D == 0xf || FIELD_B == 0xf || FIELD_A == 0xf || (inst_code >> 11) == 0x1f) {
     length = 6;
+    void *x;
     if (!get_uint32(&field_e))
       {
         return -1;
       }
+    memcpy(&field_e_as_float, &field_e, 4);
+    x = &field_e_as_float;
+    DEBUG("0x%08x, 0x%08x", *(int*)x, field_e);
   }
   switch (FIELD_C)
     {
     case 0x0: /* ^ and special */
-      switch (inst_code)
-        {
-          case 0x0000:
-            fpr(stream, "FILL");
-            return length;
-          case 0x0110:
-            fpr(stream, "BREAK");
-            return length;
-          case 0x0220:
-            fpr(stream, "SYSCALL");
-            return length;
-          case 0x0330:
-            fpr(stream, "STU");
-            return length;
-          case 0x0440:
-            fpr(stream, "SII");
-            return length;
-          case 0x0dd0:
-            fpr(stream, "FENCE");
-            return length;
-          case 0x0ee0:
-            fpr(stream, "WFENCE");
-            return length;
-        }
-      if ((inst_code & 0xfff0) == 0x0ff0)
-        {
-          /* load immedate */
-          fpr(stream, "%s <- %d", REG_D, field_e);
-        }
+      if (pattern_match(inst_code, "0000")) INST("FILL");
+      if (pattern_match(inst_code, "0110")) INST("BREAK");
+      if (pattern_match(inst_code, "0220")) INST("SYSCALL");
+      if (pattern_match(inst_code, "0330")) INST("STU");
+      if (pattern_match(inst_code, "0440")) INST("SII");
+      if (pattern_match(inst_code, "0dd0")) INST("FENCE");
+      if (pattern_match(inst_code, "0ee0")) INST("WFENCE");
+      if (pattern_match(inst_code, "0..0")) UNKNOWN;
+      if (pattern_match(inst_code, "0ff.")) INST("%s <- %u", REG_D, field_e);
+      if (pattern_match(inst_code, "0f..")) UNKNOWN;
+      if (pattern_match(inst_code, "0.f.")) INST("%s <- %s ^ %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "0...")) INST("%s <- %s ^ %s", REG_D, REG_B, REG_A);
       break;
     case 0x1:
-    break;
+      if (pattern_match(inst_code, "1000")) INST("WOI");
+      if (pattern_match(inst_code, "1f..")) UNKNOWN;
+      if (pattern_match(inst_code, "1.f.")) INST("%s <- %s | %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "1...")) INST("%s <- %s | %s", REG_D, REG_B, REG_A);
+      break;
     case 0x2:
-    break;
+      if (pattern_match(inst_code, "2f..")) UNKNOWN;
+      if (pattern_match(inst_code, "2.f.")) INST("%s <- %s & %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "2...")) INST("%s <- %s & %s", REG_D, REG_B, REG_A);
+      break;
     case 0x3:
-    break;
+      if (pattern_match(inst_code, "3f..")) INST("%s <- %u - %s", REG_D, field_e, REG_A);
+      if (pattern_match(inst_code, "3.f.")) INST("%s <- %s - %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "3...")) INST("%s <- %s - %s", REG_D, REG_B, REG_A);
+      break;
     case 0x4:
-    break;
+      if (pattern_match(inst_code, "4f..")) UNKNOWN;
+      if (pattern_match(inst_code, "4.f.")) INST("%s <- %s + %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "4...")) INST("%s <- %s + %s", REG_D, REG_B, REG_A);
+      break;
     case 0x5:
-    break;
+      if (pattern_match(inst_code, "5f..")) INST("%s <- %u << %s", REG_D, field_e, REG_A);
+      if (pattern_match(inst_code, "5.f.")) INST("%s <- %s << %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "5...")) INST("%s <- %s << %s", REG_D, REG_B, REG_A);
+      break;
     case 0x6:
-    break;
+      if (pattern_match(inst_code, "6f..")) INST("%s <- %u >> %s", REG_D, field_e, REG_A);
+      if (pattern_match(inst_code, "6.f.")) INST("%s <- %s >> %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "6...")) INST("%s <- %s >> %s", REG_D, REG_B, REG_A);
+      break;
     case 0x7:
-    break;
+      if (pattern_match(inst_code, "7f..")) INST("%s <- %d >> %s", SREG_D, (int32_t)field_e, REG_A);
+      if (pattern_match(inst_code, "7.f.")) INST("%s <- %s >> %u", SREG_D, SREG_B, field_e);
+      if (pattern_match(inst_code, "7...")) INST("%s <- %s >> %s", SREG_D, SREG_B, REG_A);
+      break;
     case 0x8:
-    break;
+      if (pattern_match(inst_code, "8f..")) UNKNOWN;
+      if (pattern_match(inst_code, "8ff.")) UNKNOWN;
+      if (pattern_match(inst_code, "80f.")) INST("%s <- %u", TREG_D, field_e);
+      if (pattern_match(inst_code, "8.f.")) INST("%s <- %s * %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "80..")) INST("%s <- %s", TREG_D, TREG_A);
+      if (pattern_match(inst_code, "8.0.")) UNKNOWN;
+      if (pattern_match(inst_code, "8...")) INST("%s <- %s * %s", REG_D, REG_B, REG_A);
+      break;
     case 0x9:
-    break;
+      if (pattern_match(inst_code, "9f..")) UNKNOWN;
+      if (pattern_match(inst_code, "9ff.")) UNKNOWN;
+      if (pattern_match(inst_code, "90f.")) UNKNOWN;
+      if (pattern_match(inst_code, "9.f.")) INST("%s <- %s * %d", SREG_D, SREG_B, (int32_t)field_e);
+      if (pattern_match(inst_code, "90..")) INST("%s <- %s + 1", REG_D, REG_A);
+      if (pattern_match(inst_code, "9.0.")) INST("%s <- %s - 1", REG_D, REG_B);
+      if (pattern_match(inst_code, "9...")) INST("%s <- %s * %s", SREG_D, SREG_B, SREG_A);
+      break;
     case 0xa:
-    break;
+      if (pattern_match(inst_code, "af..")) UNKNOWN;
+      if (pattern_match(inst_code, "aff.")) UNKNOWN;
+      if (pattern_match(inst_code, "a0f.")) UNKNOWN;
+      if (pattern_match(inst_code, "a.f.")) INST("%s <- upper %s * %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "a0..")) INST("%s <- -%s", REG_D, REG_A);
+      if (pattern_match(inst_code, "a.0.")) INST("%s <- ~%s", REG_D, REG_B);
+      if (pattern_match(inst_code, "a...")) INST("%s <- upper %s * %s", REG_D, REG_B, REG_A);
+      break;
     case 0xb:
-    break;
+      if (pattern_match(inst_code, "bf..")) UNKNOWN;
+      if (pattern_match(inst_code, "bff.")) UNKNOWN;
+      if (pattern_match(inst_code, "b0f.")) UNKNOWN;
+      if (pattern_match(inst_code, "b.f.")) INST("%s <- %s * %d", SREG_D, SREG_B, (int32_t)field_e);
+      if (pattern_match(inst_code, "b0..")) INST("%s <- bswap %s", REG_D, REG_A);
+      if (pattern_match(inst_code, "b.0.")) INST("%s <- wswap %s", REG_D, REG_B);
+      if (pattern_match(inst_code, "b...")) INST("%s <- %s * %s", SREG_D, SREG_B, SREG_A);
+      break;
     case 0xc:
-    break;
+      if (pattern_match(inst_code, "cf..")) UNKNOWN;
+      if (pattern_match(inst_code, "c0f.")) UNKNOWN;
+      if (pattern_match(inst_code, "c.f0")) UNKNOWN;
+      if (pattern_match(inst_code, "cff.")) UNKNOWN;
+      if (pattern_match(inst_code, "c.f.")) INST("%s <- %s + %f", FREG_D, FREG_B, field_e_as_float);
+      if (pattern_match(inst_code, "c..0")) UNKNOWN;
+      if (pattern_match(inst_code, "c.0.")) INST("%s <- rsqrt %s", FREG_D, FREG_B);
+      if (pattern_match(inst_code, "c0..")) INST("%s <- 1 / %s", FREG_D, FREG_A);
+      if (pattern_match(inst_code, "c...")) INST("%s <- %s + %s", FREG_D, FREG_B, FREG_A);
+      break;
     case 0xd:
-    break;
+      if (pattern_match(inst_code, "df..")) INST("%s <- %f - %s", FREG_D, field_e_as_float, FREG_A);
+      if (pattern_match(inst_code, "d0f.")) UNKNOWN;
+      if (pattern_match(inst_code, "d.f0")) UNKNOWN;
+      if (pattern_match(inst_code, "dff.")) UNKNOWN;
+      if (pattern_match(inst_code, "d.f.")) INST("%s <- %s - %f", FREG_D, FREG_B, field_e_as_float);
+      if (pattern_match(inst_code, "d..0")) UNKNOWN;
+      if (pattern_match(inst_code, "d.0.")) INST("%s <- %s", FREG_D, SREG_B);
+      if (pattern_match(inst_code, "d0..")) INST("%s <- floor %s", SREG_D, FREG_A);
+      if (pattern_match(inst_code, "d...")) INST("%s <- %s - %s", FREG_D, FREG_B, FREG_A);
+      break;
     case 0xe:
-    break;
+      if (pattern_match(inst_code, "ef..")) UNKNOWN;
+      if (pattern_match(inst_code, "e0f.")) UNKNOWN;
+      if (pattern_match(inst_code, "e.f0")) UNKNOWN;
+      if (pattern_match(inst_code, "eff.")) UNKNOWN;
+      if (pattern_match(inst_code, "e.f.")) INST("%s <- %s * %f", FREG_D, FREG_B, field_e_as_float);
+      if (pattern_match(inst_code, "e..0")) UNKNOWN;
+      if (pattern_match(inst_code, "e.0.")) UNKNOWN;
+      if (pattern_match(inst_code, "e0..")) UNKNOWN;
+      if (pattern_match(inst_code, "e...")) INST("%s <- %s * %s", FREG_D, FREG_B, FREG_A);
+      break;
     case 0xf:
-    break;
+      if (pattern_match(inst_code, "f0..")) INST("%s <- MEM8[%s]", SREG_D, REG_A);
+      if (pattern_match(inst_code, "f1..")) INST("%s <- MEM8[%s]", REG_D, REG_A);
+      if (pattern_match(inst_code, "f2..")) INST("%s <- MEM16[%s]", SREG_D, REG_A);
+      if (pattern_match(inst_code, "f3..")) INST("%s <- MEM16[%s]", REG_D, REG_A);
+      if (pattern_match(inst_code, "f4..")) INST("%s <- MEM32[%s]", REG_D, REG_A);
+      if (pattern_match(inst_code, "f5..")) INST("MEM8[%s] <- %s", REG_A, REG_D);
+      if (pattern_match(inst_code, "f6..")) INST("MEM16[%s] <- %s", REG_A, REG_D);
+      if (pattern_match(inst_code, "f7..")) INST("MEM32[%s] <- %s", REG_A, REG_D);
+
+      if (pattern_match(inst_code, "f8f.")) INST("%s <- MEM8[%d]", SREG_D, field_e);
+      if (pattern_match(inst_code, "f8ff")) INST("$stpc <- MEM8[%d]", field_e);
+      if (pattern_match(inst_code, "f9f.")) INST("%s <- MEM8[%d]", REG_D, field_e);
+      if (pattern_match(inst_code, "f9ff")) INST("$tpc <- MEM8[%d]", field_e);
+      if (pattern_match(inst_code, "faf.")) INST("%s <- MEM16[%d]", SREG_D, field_e);
+      if (pattern_match(inst_code, "faff")) INST("$stpc <- MEM16[%d]", field_e);
+      if (pattern_match(inst_code, "fbf.")) INST("%s <- MEM16[%d]", REG_D, field_e);
+      if (pattern_match(inst_code, "fbff")) INST("$tpc <- MEM16[%d]", field_e);
+      if (pattern_match(inst_code, "fcf.")) INST("%s <- MEM32[%d]", REG_D, field_e);
+      if (pattern_match(inst_code, "fcff")) INST("$tpc <- MEM32[%d]", field_e);
+      if (pattern_match(inst_code, "fdf.")) INST("MEM8[%d] <- %s", field_e, REG_D);
+      if (pattern_match(inst_code, "fdff")) INST("MEM8[%d] <- $tpc", field_e);
+      if (pattern_match(inst_code, "fef.")) INST("MEM16[%d] <- %s", field_e, REG_D);
+      if (pattern_match(inst_code, "feff")) INST("MEM16[%d] <- $tpc", field_e);
+      if (pattern_match(inst_code, "fff.")) INST("MEM32[%d] <- %s", field_e, REG_D);
+      if (pattern_match(inst_code, "ffff")) INST("MEM32[%d] <- $tpc", field_e);
+
+      if (pattern_match(inst_code, "f8..")) INST("%s <- MEM8[%s,%d]", SREG_D, REG_A, field_e);
+      if (pattern_match(inst_code, "f8.f")) INST("$stpc <- MEM8[%s,%d]", REG_A, field_e);
+      if (pattern_match(inst_code, "f9..")) INST("%s <- MEM8[%s,%d]", REG_D, REG_A, field_e);
+      if (pattern_match(inst_code, "f9.f")) INST("$tpc <- MEM8[%s,%d]", REG_A, field_e);
+      if (pattern_match(inst_code, "fa..")) INST("%s <- MEM16[%s,%d]", SREG_D, REG_A, field_e);
+      if (pattern_match(inst_code, "fa.f")) INST("$stpc <- MEM16[%s,%d]", REG_A, field_e);
+      if (pattern_match(inst_code, "fb..")) INST("%s <- MEM16[%s,%d]", REG_D, REG_A, field_e);
+      if (pattern_match(inst_code, "fb.f")) INST("$tpc <- MEM16[%s,%d]", REG_A, field_e);
+      if (pattern_match(inst_code, "fc..")) INST("%s <- MEM32[%s,%d]", REG_D, REG_A, field_e);
+      if (pattern_match(inst_code, "fc.f")) INST("$tpc <- MEM32[%s,%d]", REG_A, field_e);
+      if (pattern_match(inst_code, "fd..")) INST("MEM8[%s,%d] <- %s", REG_A, field_e, REG_D);
+      if (pattern_match(inst_code, "fd.f")) INST("MEM8[%s,%d] <- $tpc", REG_A, field_e);
+      if (pattern_match(inst_code, "fe..")) INST("MEM16[%s,%d] <- %s", REG_A, field_e, REG_D);
+      if (pattern_match(inst_code, "fe.f")) INST("MEM16[%s,%d] <- $tpc", REG_A, field_e);
+      if (pattern_match(inst_code, "ff..")) INST("MEM32[%s,%d] <- %s", REG_A, field_e, REG_D);
+      if (pattern_match(inst_code, "ff.f")) INST("MEM32[%s,%d] <- $tpc", REG_A, field_e);
+      break;
     default:
       OPCODES_ASSERT(false);
+    }
+  if (FIELD_D == 0xf)
+    {
+      if (pattern_match(inst_code, "0.0f")) INST("if %s == 0 $pc %s", REG_B, branch_target(field_e));
+      if (pattern_match(inst_code, "0.1f")) INST("if %s != 0 $pc %s", REG_B, branch_target(field_e));
+      if (pattern_match(inst_code, "0.2f")) INST("if %s < 0 $pc %s", SREG_B, branch_target(field_e));
+      if (pattern_match(inst_code, "0.3f")) INST("if %s >= 0 $pc %s", SREG_B, branch_target(field_e));
+      if (pattern_match(inst_code, "0.4f")) INST("if %s > 0 $pc %s", SREG_B, branch_target(field_e));
+      if (pattern_match(inst_code, "0.5f")) INST("if %s <= 0 $pc %s", SREG_B, branch_target(field_e));
+      if (pattern_match(inst_code, "0.6f")) UNKNOWN;
+      if (pattern_match(inst_code, "0.7f")) UNKNOWN;
+      if (pattern_match(inst_code, "0.8f")) UNKNOWN;
+      if (pattern_match(inst_code, "0.9f")) UNKNOWN;
+      if (pattern_match(inst_code, "0.af")) UNKNOWN;
+      if (pattern_match(inst_code, "0.bf")) INST("if %s < 0 $pc %s", FREG_B, branch_target(field_e));
+      if (pattern_match(inst_code, "0.cf")) INST("if %s >= 0 $pc %s", FREG_B, branch_target(field_e));
+      if (pattern_match(inst_code, "0.df")) INST("if %s > 0 $pc %s", FREG_B, branch_target(field_e));
+      if (pattern_match(inst_code, "0.ef")) INST("if %s <= 0 $pc %s", FREG_B, branch_target(field_e));
+
+      if (pattern_match(inst_code, "1..f")) INST("if %s == %s $pc %s", REG_B, REG_A, branch_target(field_e));
+      if (pattern_match(inst_code, "2..f")) INST("if %s != %s $pc %s", REG_B, REG_A, branch_target(field_e));
+      if (pattern_match(inst_code, "3..f")) INST("if %s < %s $pc %s", SREG_B, SREG_A, branch_target(field_e));
+      if (pattern_match(inst_code, "4..f")) INST("if %s >= %s $pc %s", SREG_B, SREG_A, branch_target(field_e));
+      if (pattern_match(inst_code, "5..f")) INST("if %s < %s $pc %s", REG_B, REG_A, branch_target(field_e));
+      if (pattern_match(inst_code, "6..f")) INST("if %s >= %s $pc %s", REG_B, REG_A, branch_target(field_e));
+      if (pattern_match(inst_code, "7..f")) UNKNOWN;
+      if (pattern_match(inst_code, "8..f")) UNKNOWN;
+      if (pattern_match(inst_code, "9..f")) UNKNOWN;
+      if (pattern_match(inst_code, "a..f")) UNKNOWN;
+      if (pattern_match(inst_code, "b..f")) UNKNOWN;
+      if (pattern_match(inst_code, "c..f")) UNKNOWN;
+      if (pattern_match(inst_code, "d..f")) INST("if %s < %s $pc %s", FREG_B, FREG_A, branch_target(field_e));
+      if (pattern_match(inst_code, "e..f")) INST("if %s >= %s $pc %s", FREG_B, FREG_A, branch_target(field_e));
+
+      if (pattern_match(inst_code, ".f.f")) INST("if %s[%d] == 1 $pc %s", REG_A, FIELD_C, branch_target(field_e));
+      if (pattern_match(inst_code, "..ff")) INST("if %s[%d] == 0 $pc %s", REG_B, FIELD_C, branch_target(field_e));
     }
   if (length == 2)
     {
