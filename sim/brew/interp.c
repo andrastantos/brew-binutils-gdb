@@ -39,65 +39,70 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "sim-signal.h"
 #include "target-newlib-syscall.h"
 
-typedef int word;
-typedef unsigned int uword;
 
-/* Extract the signed 10-bit offset from a 16-bit branch
-   instruction.  */
-#define INST2OFFSET(o) ((((signed short)((o & ((1<<10)-1))<<6))>>6)<<1)
 
-#define EXTRACT_WORD(addr) \
-  ((sim_core_read_aligned_1 (scpu, cia, read_map, addr) << 24) \
-   + (sim_core_read_aligned_1 (scpu, cia, read_map, addr+1) << 16) \
-   + (sim_core_read_aligned_1 (scpu, cia, read_map, addr+2) << 8) \
-   + (sim_core_read_aligned_1 (scpu, cia, read_map, addr+3)))
 
-#define EXTRACT_OFFSET(addr)                                                \
-  (unsigned int)                                                        \
-  (((signed short)                                                        \
-    ((sim_core_read_aligned_1 (scpu, cia, read_map, addr) << 8)                \
-     + (sim_core_read_aligned_1 (scpu, cia, read_map, addr+1))) << 16) >> 16)
 
-static unsigned long
-brew_extract_unsigned_integer (unsigned char *addr, int len)
+/* Macros to extract operands from the instruction word.  */
+#define FIELD_C ((inst_code >> 12) & 0xf)
+#define FIELD_B ((inst_code >> 8) & 0xf)
+#define FIELD_A ((inst_code >> 4) & 0xf)
+#define FIELD_D ((inst_code >> 0) & 0xf)
+
+#define GET_NIBBLE(i, nibble) ((i >> (nibble*4)) & 0xf)
+
+static bool hexdigit(char digit, int *val)
 {
-  unsigned long retval;
-  unsigned char * p;
-  unsigned char * startaddr = (unsigned char *)addr;
-  unsigned char * endaddr = startaddr + len;
- 
-  if (len > (int) sizeof (unsigned long))
-    printf ("That operation is not available on integers of more than %zu bytes.",
-            sizeof (unsigned long));
- 
-  /* Start at the most significant end of the integer, and work towards
-     the least significant.  */
-  retval = 0;
-
-  for (p = endaddr; p > startaddr;)
-    retval = (retval << 8) | * -- p;
-  
-  return retval;
-}
-
-static void
-brew_store_unsigned_integer (unsigned char *addr, int len, unsigned long val)
-{
-  unsigned char * p;
-  unsigned char * startaddr = (unsigned char *)addr;
-  unsigned char * endaddr = startaddr + len;
-
-  for (p = endaddr; p > startaddr;)
+  if (digit >= '0' && digit <= '9')
     {
-      * -- p = val & 0xff;
-      val >>= 8;
+      *val = digit - '0';
+      return true;
     }
+  if (digit >= 'a' && digit <= 'f')
+    {
+      *val = digit - 'a' + 10;
+      return true;
+    }
+  if (digit >= 'A' && digit <= 'F')
+    {
+      *val = digit - 'A' + 10;
+      return true;
+    }
+  return false;
 }
 
-/* brew register names.  */
-static const char *reg_names[16] = 
-  { "$fp", "$sp", "$r0", "$r1", "$r2", "$r3", "$r4", "$r5", 
-    "$r6", "$r7", "$r8", "$r9", "$r10", "$r11", "$r12", "$r13" };
+static bool pattern_match(uint16_t inst_code, const char *pattern)
+{
+  const char *p;
+  int nibble;
+  int hex_p;
+  for (p=pattern, nibble=3;nibble >=0;--nibble, ++p)
+    {
+      if (*p == '.')
+        {
+          if (GET_NIBBLE(inst_code, nibble) == 0xf)
+            {
+              return false;
+            }
+          continue;
+        }
+      if (!hexdigit(*p, &hex_p))
+        {
+          return false;
+        }
+      if (hex_p != GET_NIBBLE(inst_code, nibble))
+        {
+          return false;
+        }
+    }
+    return true;
+}
+
+static const char * reg_names[16] =
+  { "$pc", "$r1", "$r2",  "$r3",  "$r4",  "$r5",  "$r6",  "$r7", 
+    "$r8", "$r9", "$r10", "$r11", "$r12", "$r13", "$r14", "<<<INVALID>>>"};
+
+
 
 /* The machine state.
 
@@ -108,32 +113,23 @@ static const char *reg_names[16] =
    data in native order improves the performance of the simulator.
    Simulation speed is deemed more important.  */
 
-#define NUM_BREW_REGS 17 /* Including PC */
-#define NUM_BREW_SREGS 256 /* The special registers */
-#define PC_REGNO     16
+/* We will implement the following register layout:
+   0 - *current context* pc
+   1..14 - $r1...$r14
+   15 - *other context* pc
+*/
+
+#define NUM_BREW_REGS 16 /* Including TPC */
+#define PC_REGNO      0
 
 /* The ordering of the brew_regset structure is matched in the
    gdb/config/brew/tm-brew.h file in the REGISTER_NAMES macro.  */
 /* TODO: This should be moved to sim-main.h:_sim_cpu.  */
 struct brew_regset
 {
-  word                  regs[NUM_BREW_REGS + 1]; /* primary registers */
-  word                  sregs[256];             /* special registers */
-  word            cc;                   /* the condition code reg */
+  unit32_t regs[NUM_BREW_REGS];
+  bool is_task_mode;
   unsigned long long insts;                /* instruction counter */
-};
-
-#define CC_GT  1<<0
-#define CC_LT  1<<1
-#define CC_EQ  1<<2
-#define CC_GTU 1<<3
-#define CC_LTU 1<<4
-
-/* TODO: This should be moved to sim-main.h:_sim_cpu.  */
-union
-{
-  struct brew_regset asregs;
-  word asints [1];                /* but accessed larger... */
 } cpu;
 
 static void
@@ -142,14 +138,16 @@ set_initial_gprs (void)
   int i;
   long space;
   
-  /* Set up machine just out of reset.  */
-  cpu.asregs.regs[PC_REGNO] = 0;
-  
-  /* Clean out the register contents.  */
-  for (i = 0; i < NUM_BREW_REGS; i++)
-    cpu.asregs.regs[i] = 0;
-  for (i = 0; i < NUM_BREW_SREGS; i++)
-    cpu.asregs.sregs[i] = 0;
+  cpu.regs[PC_REGNO] = 0;
+  cpu.is_task_mode = true;
+  /* FIXME: do we want to get some other state in the registers? */
+  /* Such as:
+     - explicit randomization
+     - results of POST
+     - version/revision info
+
+     Also: we will want to start in scheduler mode for a system simulation.
+  */
 }
 
 /* Write a 1 byte value to memory.  */
@@ -237,23 +235,26 @@ convert_target_flags (unsigned int tflags)
 
 /* TODO: Split this up into finger trace levels than just insn.  */
 #define BREW_TRACE_INSN(str) \
-  TRACE_INSN (scpu, "0x%08x, %s, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x", \
-              opc, str, cpu.asregs.regs[0], cpu.asregs.regs[1], \
+  TRACE_INSN (scpu, "0x%08x, %s, %s %cPC: 0x%x, %cPC: 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x", \
+              opc, str, cpu.is_task_mode?"TSK":"SCH", \
+              cpu.is_task_mode?"T":"S", cpu.asregs.regs[0], \
+              cpu.is_task_mode?"S":"T", cpu.asregs.regs[15], \
+              cpu.asregs.regs[1], \
               cpu.asregs.regs[2], cpu.asregs.regs[3], cpu.asregs.regs[4], \
               cpu.asregs.regs[5], cpu.asregs.regs[6], cpu.asregs.regs[7], \
               cpu.asregs.regs[8], cpu.asregs.regs[9], cpu.asregs.regs[10], \
               cpu.asregs.regs[11], cpu.asregs.regs[12], cpu.asregs.regs[13], \
-              cpu.asregs.regs[14], cpu.asregs.regs[15])
+              cpu.asregs.regs[14])
 
 void
 sim_engine_run (SIM_DESC sd,
-                int next_cpu_nr, /* ignore  */
+                int next_cpu_nr, /* the CPU to run  */
                 int nr_cpus, /* ignore  */
                 int siggnal) /* ignore  */
 {
-  word pc, opc;
-  unsigned short inst;
-  sim_cpu *scpu = STATE_CPU (sd, 0); /* FIXME */
+  uint32_t pc, opc;
+  uint16_t inst;
+  sim_cpu *scpu = STATE_CPU (sd, next_cpu_nr);
   address_word cia = CPU_PC_GET (scpu);
 
   pc = cpu.asregs.regs[PC_REGNO];
@@ -262,6 +263,7 @@ sim_engine_run (SIM_DESC sd,
   do 
     {
       opc = pc;
+
 
       /* Fetch the instruction at pc.  */
       inst = (sim_core_read_aligned_1 (scpu, cia, read_map, pc) << 8)
