@@ -28,7 +28,7 @@
 #include "opcode/brew.h"
 #include "elf/brew.h"
 
-#define DEBUG(msg) { printf msg; printf("\n"); }
+#define DEBUG(...) { fprintf (stderr, __VA_ARGS__); fprintf(stderr, "\n"); }
 #define ABORT(msg) { as_bad msg; as_abort(__FILE__, __LINE__, __PRETTY_FUNCTION__); }
 
 extern const brew_opc_info_t brew_opc_info[128];
@@ -249,7 +249,7 @@ const char *special_tokens[] = {
 static void
 get_optional_next_token(void)
 {
-  //DEBUG(("get_optional_next_token with tok_start: %8p, tok_end: %8p, tok_end_holder: '%c'", tok_start, tok_end, tok_end_holder));
+  //DEBUG("get_optional_next_token with tok_start: %8p, tok_end: %8p, tok_end_holder: '%c'", tok_start, tok_end, tok_end_holder);
 
   if (tok_start == NULL)
     return;
@@ -264,7 +264,7 @@ get_optional_next_token(void)
 
   /* Find the end of the token */
   tok_end = tok_start;
-  //DEBUG(("get_optional_next_token %s", tok_end));
+  //DEBUG("get_optional_next_token %s", tok_end);
   /* special 2-char tokens */
   for (special_token = special_tokens; *special_token != NULL; ++special_token)
     {
@@ -273,7 +273,7 @@ get_optional_next_token(void)
           tok_end = tok_start+2;
           tok_end_holder = *tok_end;
           *tok_end = 0;
-          DEBUG(("                 returning %s", tok_start));
+          DEBUG("                 returning %s", tok_start);
           return;
         }
     }
@@ -309,7 +309,7 @@ get_optional_next_token(void)
       return;
     }
   *tok_end = 0;
-  DEBUG(("                 returning %s", tok_start));
+  DEBUG("                 returning %s", tok_start);
 }
 
 /* Same as get_optional_next_token, but requires next token to be valid.
@@ -353,9 +353,9 @@ is_next_token(const char *expected_tok, char *err_msg, ...)
   bool ret_val;
 
   va_start(args, err_msg);
-  //DEBUG(("is_next_token %s enters with %s", expected_tok, tok_start));
+  //DEBUG("is_next_token %s enters with %s", expected_tok, tok_start);
   ret_val = vget_next_token(err_msg, args);
-  //DEBUG(("is_next_token %s compares to %s with ret_val %s", expected_tok, tok_start, ret_val ? "true":"false"));
+  //DEBUG("is_next_token %s compares to %s with ret_val %s", expected_tok, tok_start, ret_val ? "true":"false");
   if (!ret_val)
     {
     va_end(args);
@@ -385,7 +385,7 @@ undo_last_token(void)
   *tok_end = tok_end_holder;
   tok_end = tok_start;
   tok_end_holder = *tok_end;
-  DEBUG(("                 undo"));
+  DEBUG("                 undo");
 }
 
 /* Makes sure the token stream is completely parsed
@@ -494,10 +494,9 @@ parse_exp_save_ilp (char *s, expressionS *op)
 static bool
 parse_expression(const char *token, bool support_float)
 {
-  char *save;
-  char float_store[16]; /* We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow */
-  const char *ret_val;
-  int float_size;
+  LITTLENUM_TYPE float_store[4]; /* We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow */
+  char float_as_char[4];
+  char *ret_val;
 
   /* The GAS expression parser happily accepts register names (such as $r0) as expressions. We don't want that. */
   if (token[0] == '$')
@@ -506,17 +505,27 @@ parse_expression(const char *token, bool support_float)
   /* GAS also doesn't support any floating point expressions. We need that for float immediates, so let's test for them */
   /* NOTE: this still doesn't support floating point expressions, such as 1.3+2.6, but that's not supported in GAS anywhere,
      not even in .float */
-  save = input_line_pointer; /* Need to save and restore input_line_pointer as md_atof uses that as the input string */
-  input_line_pointer = (char*)token;
-  ret_val = md_atof('f', float_store, &float_size);
-  input_line_pointer = save;
-  if (ret_val == NULL)
+  if (support_float)
     {
-      /* This is a floating point constnat we could successfully parse */
-      gas_assert(float_size == 4);
-      field_e_frag = frag_more(float_size);
-      memcpy(field_e_frag, float_store, float_size);
-      return support_float;
+      ret_val = atof_ieee((char*)token, 'f', float_store);
+      if (ret_val != NULL && ret_val > token)
+        {
+          DEBUG("float parser return %s with 0x%04x 0x%04x", ret_val, float_store[0], float_store[1]);
+          int prec = 2;
+          int float_size = 4;
+          char *litP = float_as_char;
+          LITTLENUM_TYPE *wordP;
+          for (wordP = float_store + prec; prec --;)
+            {
+              md_number_to_chars (litP, (valueT) (* -- wordP), sizeof (LITTLENUM_TYPE));
+              litP += sizeof (LITTLENUM_TYPE);
+            }
+
+          /* This is a floating point constant we could successfully parse */
+          field_e_frag = frag_more(float_size);
+          memcpy(field_e_frag, float_store, float_size);
+          return true;
+        }
     }
 
   expressionS arg;
@@ -541,9 +550,9 @@ parse_expression(const char *token, bool support_float)
 
 
 
-#define GET_NEXT_TOKEN(err_msg) { bool x; x = get_next_token err_msg; if (!x) { DEBUG(("GET_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str)); close_token_strm(); ignore_rest_of_line(); return;}}
-#define IS_NEXT_TOKEN(params) { if (!is_next_token params) { DEBUG(("IS_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str)); close_token_strm(); ignore_rest_of_line(); return;}}
-#define ERR_RETURN { DEBUG(("ERR RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str)); close_token_strm(); ignore_rest_of_line(); return; }
+#define GET_NEXT_TOKEN(err_msg) { bool x; x = get_next_token err_msg; if (!x) { DEBUG("GET_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str); close_token_strm(); ignore_rest_of_line(); return;}}
+#define IS_NEXT_TOKEN(params) { if (!is_next_token params) { DEBUG("IS_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str); close_token_strm(); ignore_rest_of_line(); return;}}
+#define ERR_RETURN { DEBUG("ERR RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str); close_token_strm(); ignore_rest_of_line(); return; }
 #define RETURN(inst_code) { \
   md_number_to_chars (inst_code_frag, inst_code, 2); \
   if (field_e_frag != NULL) \
@@ -573,7 +582,7 @@ md_assemble (char *str)
   inst_code_frag = frag_more (2); /* Let's start a new fragment for the 16-bit instruction code */
   field_e_frag = NULL; /* We initially don't have field_e. If, during parsing we encouter an expression, we'll allocate a fragment here */
 
-  DEBUG(("md_assemble: %s", str))
+  DEBUG("md_assemble: %s", str);
 
   GET_NEXT_TOKEN((_("Invalid instruction: not a single token is found ")));
   /* Deal with simple instructions */
@@ -1314,7 +1323,7 @@ md_assemble (char *str)
             }
           for (alu_table_entry = alu_table; alu_table_entry->inst_name != NULL; ++alu_table_entry)
             {
-              //DEBUG(("Testing for compatiblity with %s", alu_table_entry->inst_name))
+              //DEBUG("Testing for compatiblity with %s", alu_table_entry->inst_name);
               if (strcasecmp(op, alu_table_entry->inst_name) == 0)
                 {
                   /* Can we use this entry for the {reg} {op} {reg} thing we have here? */
@@ -1369,7 +1378,6 @@ md_assemble (char *str)
 const char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  DEBUG(("Boo!!!"))
   switch (type)
     {
     case 'f':
