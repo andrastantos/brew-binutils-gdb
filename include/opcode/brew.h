@@ -87,16 +87,3 @@
 #define BREW_REG_FLAG_MASK 0xf000
 #define BREW_REG_FLAG_FLOAT 0x2000 /* Used to mark register operands for F0...FE. These are aliases for R0...RE for floating point operations */
 #define BREW_REG_FLAG_SIGNED 0x4000 /* Used to mark register operands for S0...SE. These are aliases for R0...RE for signed operations */
-
-typedef struct brew_opc_info_t
-{
-  uint16_t      opcode;
-  unsigned      itype;
-  const char *  name;
-} brew_opc_info_t;
-
-extern const brew_opc_info_t brew_form1_opc_info[128];
-extern const brew_opc_info_t brew_form2_opc_info[4];
-extern const brew_opc_info_t brew_form3_opc_info[16];
-
-extern const brew_opc_info_t brew_raw_opc_info[];

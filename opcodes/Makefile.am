@@ -125,7 +125,6 @@ TARGET32_LIBOPCODES_CFILES = \
 	avr-dis.c \
 	bfin-dis.c \
 	brew-dis.c \
-	brew-opc.c \
 	cgen-asm.c \
 	cgen-bitset.c \
 	cgen-dis.c \
