@@ -31,8 +31,6 @@
 #define DEBUG(...) { fprintf (stderr, __VA_ARGS__); fprintf(stderr, "\n"); }
 #define ABORT(msg) { as_bad msg; as_abort(__FILE__, __LINE__, __PRETTY_FUNCTION__); }
 
-extern const brew_opc_info_t brew_opc_info[128];
-
 const char comment_chars[]        = "#";
 const char line_separator_chars[] = ";";
 const char line_comment_chars[]   = "#";
@@ -249,6 +247,7 @@ const char *special_tokens[] = {
 static void
 get_optional_next_token(void)
 {
+  int paren_cnt;
   //DEBUG("get_optional_next_token with tok_start: %8p, tok_end: %8p, tok_end_holder: '%c'", tok_start, tok_end, tok_end_holder);
 
   if (tok_start == NULL)
@@ -277,13 +276,35 @@ get_optional_next_token(void)
           return;
         }
     }
+  /* We need to be a bit tricky around parnethesis:
+     we want something, like '(label + 3 *2 -1)' to
+     be parsed into a single token so that the expression
+     parser can get it as one go.
+  */
+  paren_cnt = 0;
   do {
     if (*tok_end == 0)
       break;
     if (is_end_of_line[*tok_end & 0xff])
       break;
-    if (ISSPACE(*tok_end))
+    if (ISSPACE(*tok_end) && paren_cnt == 0)
       break;
+    if (*tok_end == '(')
+      ++paren_cnt;
+    if (*tok_end == ')')
+      {
+        --paren_cnt;
+        if (paren_cnt == 0)
+          {
+            ++tok_end;
+            break;
+          }
+      }
+    if (paren_cnt > 0)
+      {
+        ++tok_end;
+        continue;
+      }
     /* These are tokens on their own right */
     if (strchr("<>![]=,^&*+/~|-", *tok_end) != NULL)
       {

@@ -17,7 +17,6 @@ _start:
   SII
   MEM8[_start, $fr0] <- $r0
   MEM8[$fr0] <- $r0
-  #MEM8[$fr0, message+1] <- $r0 #This is broken at the moment: the token parser doesn't collect enough tokens for the expression parser
   $sr0 <- MEM8[$r1,message]
   $tpc <- MEM8[$r1]
   $r13 <- MEM16[$pc]
@@ -59,6 +58,9 @@ _start:
   #$pc <- $tpc # This should err out
   $fr2 <- $fr1 + 3.1415
   #$r2 <- $r1 + 1.2 # This should err out
+  #MEM8[$fr0, message+1] <- $r0 #This fails: we need to put parens around expressions
+  MEM8[$fr0, message] <- $r0
+  MEM8[$fr0, (message+1)] <- $r0
   
 message:
   .word 0, 0, 0 , 0
