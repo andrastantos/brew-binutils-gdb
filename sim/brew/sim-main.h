@@ -26,20 +26,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "sim-basics.h"
 #include "sim-base.h"
 #include "bfd.h"
+#include <stdint.h>
 
-#define PCIDX 17
+/* We will implement the following register layout:
+   0 - *current context* pc
+   1..14 - $r1...$r14
+   15 - *other context* pc
+*/
 
+#define BREW_NUM_REGS 17 /* Including TPC in slot 15 and next_pc in slot 16 */
+#define BREW_REG_PC 0
+#define BREW_REG_OTHER_PC 15
+#define BREW_REG_NEXT_PC 16
+
+/* TODO: there's a whole slew of inter-dependencies between the simulator and GDB
+   GDB has a brew-tdep.h brew-tdep.c file-set that contains all/most of this.
+
+   For instance, register names and their numbering, even some calling conversion
+   stuff if in there */
 struct _sim_cpu {
+  sim_cpu_base base;
 
   /* The following are internal simulator state variables: */
+  unit32_t regs[BREW_NUM_REGS];
+  bool is_task_mode;
 
-/* To keep this default simulator simple, and fast, we use a direct
-   vector of registers. The internal simulator engine then uses
-   manifests to access the correct slot. */
-
-  unsigned_word registers[19];
-
-  sim_cpu_base base;
 };
 
 #endif

@@ -113,33 +113,14 @@ static const char * reg_names[16] =
    data in native order improves the performance of the simulator.
    Simulation speed is deemed more important.  */
 
-/* We will implement the following register layout:
-   0 - *current context* pc
-   1..14 - $r1...$r14
-   15 - *other context* pc
-*/
-
-#define NUM_BREW_REGS 16 /* Including TPC */
-#define PC_REGNO      0
-
-/* The ordering of the brew_regset structure is matched in the
-   gdb/config/brew/tm-brew.h file in the REGISTER_NAMES macro.  */
-/* TODO: This should be moved to sim-main.h:_sim_cpu.  */
-struct brew_regset
-{
-  unit32_t regs[NUM_BREW_REGS];
-  bool is_task_mode;
-  unsigned long long insts;                /* instruction counter */
-} cpu;
-
 static void
-set_initial_gprs (void)
+set_initial_gprs (sim_cpu *scpu)
 {
   int i;
   long space;
   
-  cpu.regs[PC_REGNO] = 0;
-  cpu.is_task_mode = true;
+  scpu->regs[BREW_REG_PC] = 0;
+  scpu->is_task_mode = true;
   /* FIXME: do we want to get some other state in the registers? */
   /* Such as:
      - explicit randomization
@@ -150,65 +131,13 @@ set_initial_gprs (void)
   */
 }
 
-/* Write a 1 byte value to memory.  */
+static INLINE void write_uint8 (sim_cpu *scpu, uint32_t addr, uint8_t  val) { sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+static INLINE void write_uint16(sim_cpu *scpu, uint32_t addr, uint16_t val) { sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+static INLINE void write_uint32(sim_cpu *scpu, uint32_t addr, uint32_t val) { sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
 
-static INLINE void
-wbat (sim_cpu *scpu, word pc, word x, word v)
-{
-  address_word cia = CPU_PC_GET (scpu);
-  
-  sim_core_write_aligned_1 (scpu, cia, write_map, x, v);
-}
-
-/* Write a 2 byte value to memory.  */
-
-static INLINE void
-wsat (sim_cpu *scpu, word pc, word x, word v)
-{
-  address_word cia = CPU_PC_GET (scpu);
-  
-  sim_core_write_aligned_2 (scpu, cia, write_map, x, v);
-}
-
-/* Write a 4 byte value to memory.  */
-
-static INLINE void
-wlat (sim_cpu *scpu, word pc, word x, word v)
-{
-  address_word cia = CPU_PC_GET (scpu);
-        
-  sim_core_write_aligned_4 (scpu, cia, write_map, x, v);
-}
-
-/* Read 2 bytes from memory.  */
-
-static INLINE int
-rsat (sim_cpu *scpu, word pc, word x)
-{
-  address_word cia = CPU_PC_GET (scpu);
-  
-  return (sim_core_read_aligned_2 (scpu, cia, read_map, x));
-}
-
-/* Read 1 byte from memory.  */
-
-static INLINE int
-rbat (sim_cpu *scpu, word pc, word x)
-{
-  address_word cia = CPU_PC_GET (scpu);
-  
-  return (sim_core_read_aligned_1 (scpu, cia, read_map, x));
-}
-
-/* Read 4 bytes from memory.  */
-
-static INLINE int
-rlat (sim_cpu *scpu, word pc, word x)
-{
-  address_word cia = CPU_PC_GET (scpu);
-  
-  return (sim_core_read_aligned_4 (scpu, cia, read_map, x));
-}
+static INLINE uint8_t  read_uint8 (sim_cpu *scpu, uint32_t addr) { return sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, addr); }
+static INLINE uint16_t read_uint8 (sim_cpu *scpu, uint32_t addr) { return sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, addr); }
+static INLINE uint32_t read_uint8 (sim_cpu *scpu, uint32_t addr) { return sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, addr); }
 
 #define CHECK_FLAG(T,H) if (tflags & T) { hflags |= H; tflags ^= T; }
 
@@ -234,17 +163,39 @@ convert_target_flags (unsigned int tflags)
 }
 
 /* TODO: Split this up into finger trace levels than just insn.  */
-#define BREW_TRACE_INSN(str) \
-  TRACE_INSN (scpu, "0x%08x, %s, %s %cPC: 0x%x, %cPC: 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x", \
-              opc, str, cpu.is_task_mode?"TSK":"SCH", \
-              cpu.is_task_mode?"T":"S", cpu.asregs.regs[0], \
-              cpu.is_task_mode?"S":"T", cpu.asregs.regs[15], \
-              cpu.asregs.regs[1], \
-              cpu.asregs.regs[2], cpu.asregs.regs[3], cpu.asregs.regs[4], \
-              cpu.asregs.regs[5], cpu.asregs.regs[6], cpu.asregs.regs[7], \
-              cpu.asregs.regs[8], cpu.asregs.regs[9], cpu.asregs.regs[10], \
-              cpu.asregs.regs[11], cpu.asregs.regs[12], cpu.asregs.regs[13], \
-              cpu.asregs.regs[14])
+static INLINE void brew_trace(sim_cpu *scpu, const char *message)
+{
+  if (message == NULL) message = "---";
+  TRACE_INSN(
+    scpu,
+    "%s, %cPC: 0x%x, %s, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, (%cPC: 0x%x)",
+    scpu->is_task_mode?"TSK":"SCH", 
+    scpu->is_task_mode?"T":"S", scpu->regs[0],
+    message, 
+    scpu->regs[0], scpu->regs[1], scpu->regs[2], scpu->regs[3], scpu->regs[4], scpu->regs[5], 
+    scpu->regs[6], scpu->regs[7], scpu->regs[8], scpu->regs[9], scpu->regs[10], 
+    scpu->regs[11], scpu->regs[12], scpu->regs[13], scpu->regs[14],
+    scpu->is_task_mode?"S":"T", scpu->regs[15]);
+}
+#define BREW_TRACE_INSN(message) brew_trace(scpu, message)
+
+#define UNKNOWN { \
+  char inst_str[25]; \
+  if (length == 2) \
+    sprintf(inst_str, "UKN 0x%04x", inst_code); \
+  else \
+    sprintf(inst_str, "UKN 0x%04x 0x%08x", inst_code, field_e); \
+  BREW_TRACE_INSN("inst_str"); \
+  sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); \
+}
+
+#define REG_D_TARGET scpu->regs[FIELD_D == BREW_REG_PC ? BREW_REG_NEXT_PC : FIELD_D]
+#define REG_TPC_TARGET scpu->regs[scpu->is_task_mode ? BREW_REG_NEXT_PC : BREW_REG_OTHER_PC]
+
+#define REG_D (scpu->regs[FIELD_D] & 0xffffffff) /* simple trick to ensure that this field is invalid on the LHS */
+#define REG_A (scpu->regs[FIELD_A] & 0xffffffff) /* simple trick to ensure that this field is invalid on the LHS */
+#define REG_B (scpu->regs[FIELD_B] & 0xffffffff) /* simple trick to ensure that this field is invalid on the LHS */
+#define REG_TPC (scpu->regs[scpu->is_task_mode ? BREW_REG_PC : BREW_REG_OTHER_PC] & 0xffffffff) /* simple trick to ensure that this field is invalid on the LHS */
 
 void
 sim_engine_run (SIM_DESC sd,
@@ -252,24 +203,259 @@ sim_engine_run (SIM_DESC sd,
                 int nr_cpus, /* ignore  */
                 int siggnal) /* ignore  */
 {
-  uint32_t pc, opc;
-  uint16_t inst;
+  uint32_t pc;
+  uint16_t inst_code;
+  uint32_t field_e;
+  float field_e_as_float;
+  int length;
   sim_cpu *scpu = STATE_CPU (sd, next_cpu_nr);
-  address_word cia = CPU_PC_GET (scpu);
-
-  pc = cpu.asregs.regs[PC_REGNO];
-
+  
   /* Run instructions here. */
   do 
     {
-      opc = pc;
+      {
+        /* scoping pc to make sure we don't even accidentally use that for anything */
+        uint32_t pc = CPU_PC_GET (scpu) & ~1; /* PC is always 16-bit aligned, the LSB is ignored */
+
+        /* Fetch the instruction at pc.  */
+        length = 2;
+        inst_code = sim_core_read_aligned_2(scpu, pc, exec_map, pc);
+
+        /* Determine if we need field_e and read it if we do */
+        if (FIELD_D == 0xf || FIELD_B == 0xf || FIELD_A == 0xf || (inst_code >> 11) == 0x1f) {
+          length = 6;
+          field_e = sim_core_read_unaligned_4(scpu, pc, exec_map, pc+2);
+          memcpy(&field_e_as_float, &field_e, 4);
+          //DEBUG("0x%08x, 0x%08x", *(int*)x, field_e);
+        }
+        scpu->regs[BREW_REG_NEXT_PC] = pc + length; /* Update PC to the next instruction. It's possible that the instruction itself is a branch, in which case it'll be overwritten */
+      }
+      switch (FIELD_C)
+        {
+        case 0x0: /* ^ and special */
+          if (pattern_match(inst_code, "0000")) { BREW_TRACE_INSN("FILL"); sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); }
+          if (pattern_match(inst_code, "0110")) { BREW_TRACE_INSN("BREAK"); sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGTRAP); }
+          if (pattern_match(inst_code, "0220")) { BREW_TRACE_INSN("SYSCALL"); sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); } /* We should simulate syscalls here */
+          if (pattern_match(inst_code, "0330")) { BREW_TRACE_INSN("STU"); } /* Return to task mode --> NOP in task mode */
+          if (pattern_match(inst_code, "0440")) { BREW_TRACE_INSN("SII"); sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); }
+          if (pattern_match(inst_code, "0dd0")) { BREW_TRACE_INSN("FENCE"); }
+          if (pattern_match(inst_code, "0ee0")) { BREW_TRACE_INSN("WFENCE"); }
+          if (pattern_match(inst_code, "0..0")) UNKNOWN;
+          if (pattern_match(inst_code, "0ff.")) { REG_D_TARGET = field_e; BREW_TRACE_INSN("load immediate"); }
+          if (pattern_match(inst_code, "0f..")) UNKNOWN;
+          if (pattern_match(inst_code, "0.f.")) { REG_D_TARGET = REG_B ^ field_e; BREW_TRACE_INSN(NULL); }
+          if (pattern_match(inst_code, "0...")) { REG_D_TARGET = REG_B ^ REG_A; BREW_TRACE_INSN(NULL); }
+          break;
+        case 0x1:
+          if (pattern_match(inst_code, "1000")) { BREW_TRACE_INSN("WOI"); sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); }
+          if (pattern_match(inst_code, "1f..")) UNKNOWN;
+          if (pattern_match(inst_code, "1.f.")) INST("%s <- %s | %u", REG_D, REG_B, field_e);
+          if (pattern_match(inst_code, "1...")) INST("%s <- %s | %s", REG_D, REG_B, REG_A);
+          break;
+        case 0x2:
+          if (pattern_match(inst_code, "2f..")) UNKNOWN;
+          if (pattern_match(inst_code, "2.f.")) INST("%s <- %s & %u", REG_D, REG_B, field_e);
+          if (pattern_match(inst_code, "2...")) INST("%s <- %s & %s", REG_D, REG_B, REG_A);
+          break;
+        case 0x3:
+          if (pattern_match(inst_code, "3f..")) INST("%s <- %u - %s", REG_D, field_e, REG_A);
+          if (pattern_match(inst_code, "3.f.")) INST("%s <- %s - %u", REG_D, REG_B, field_e);
+          if (pattern_match(inst_code, "3...")) INST("%s <- %s - %s", REG_D, REG_B, REG_A);
+          break;
+        case 0x4:
+          if (pattern_match(inst_code, "4f..")) UNKNOWN;
+          if (pattern_match(inst_code, "4.f.")) INST("%s <- %s + %u", REG_D, REG_B, field_e);
+          if (pattern_match(inst_code, "4...")) INST("%s <- %s + %s", REG_D, REG_B, REG_A);
+          break;
+        case 0x5:
+          if (pattern_match(inst_code, "5f..")) INST("%s <- %u << %s", REG_D, field_e, REG_A);
+          if (pattern_match(inst_code, "5.f.")) INST("%s <- %s << %u", REG_D, REG_B, field_e);
+          if (pattern_match(inst_code, "5...")) INST("%s <- %s << %s", REG_D, REG_B, REG_A);
+          break;
+        case 0x6:
+          if (pattern_match(inst_code, "6f..")) INST("%s <- %u >> %s", REG_D, field_e, REG_A);
+          if (pattern_match(inst_code, "6.f.")) INST("%s <- %s >> %u", REG_D, REG_B, field_e);
+          if (pattern_match(inst_code, "6...")) INST("%s <- %s >> %s", REG_D, REG_B, REG_A);
+          break;
+        case 0x7:
+          if (pattern_match(inst_code, "7f..")) INST("%s <- %d >> %s", SREG_D, (int32_t)field_e, REG_A);
+          if (pattern_match(inst_code, "7.f.")) INST("%s <- %s >> %u", SREG_D, SREG_B, field_e);
+          if (pattern_match(inst_code, "7...")) INST("%s <- %s >> %s", SREG_D, SREG_B, REG_A);
+          break;
+        case 0x8:
+          if (pattern_match(inst_code, "8f..")) UNKNOWN;
+          if (pattern_match(inst_code, "8ff.")) UNKNOWN;
+          if (pattern_match(inst_code, "80f.")) INST("%s <- %u", TREG_D, field_e);
+          if (pattern_match(inst_code, "8.f.")) INST("%s <- %s * %u", REG_D, REG_B, field_e);
+          if (pattern_match(inst_code, "80..")) INST("%s <- %s", TREG_D, TREG_A);
+          if (pattern_match(inst_code, "8.0.")) UNKNOWN;
+          if (pattern_match(inst_code, "8...")) INST("%s <- %s * %s", REG_D, REG_B, REG_A);
+          break;
+        case 0x9:
+          if (pattern_match(inst_code, "9f..")) UNKNOWN;
+          if (pattern_match(inst_code, "9ff.")) UNKNOWN;
+          if (pattern_match(inst_code, "90f.")) UNKNOWN;
+          if (pattern_match(inst_code, "9.f.")) INST("%s <- %s * %d", SREG_D, SREG_B, (int32_t)field_e);
+          if (pattern_match(inst_code, "90..")) INST("%s <- %s + 1", REG_D, REG_A);
+          if (pattern_match(inst_code, "9.0.")) INST("%s <- %s - 1", REG_D, REG_B);
+          if (pattern_match(inst_code, "9...")) INST("%s <- %s * %s", SREG_D, SREG_B, SREG_A);
+          break;
+        case 0xa:
+          if (pattern_match(inst_code, "af..")) UNKNOWN;
+          if (pattern_match(inst_code, "aff.")) UNKNOWN;
+          if (pattern_match(inst_code, "a0f.")) UNKNOWN;
+          if (pattern_match(inst_code, "a.f.")) INST("%s <- upper %s * %u", REG_D, REG_B, field_e);
+          if (pattern_match(inst_code, "a0..")) INST("%s <- -%s", REG_D, REG_A);
+          if (pattern_match(inst_code, "a.0.")) INST("%s <- ~%s", REG_D, REG_B);
+          if (pattern_match(inst_code, "a...")) INST("%s <- upper %s * %s", REG_D, REG_B, REG_A);
+          break;
+        case 0xb:
+          if (pattern_match(inst_code, "bf..")) UNKNOWN;
+          if (pattern_match(inst_code, "bff.")) UNKNOWN;
+          if (pattern_match(inst_code, "b0f.")) UNKNOWN;
+          if (pattern_match(inst_code, "b.f.")) INST("%s <- %s * %d", SREG_D, SREG_B, (int32_t)field_e);
+          if (pattern_match(inst_code, "b0..")) INST("%s <- bswap %s", REG_D, REG_A);
+          if (pattern_match(inst_code, "b.0.")) INST("%s <- wswap %s", REG_D, REG_B);
+          if (pattern_match(inst_code, "b...")) INST("%s <- %s * %s", SREG_D, SREG_B, SREG_A);
+          break;
+        case 0xc:
+          if (pattern_match(inst_code, "cf..")) UNKNOWN;
+          if (pattern_match(inst_code, "c0f.")) UNKNOWN;
+          if (pattern_match(inst_code, "c.f0")) UNKNOWN;
+          if (pattern_match(inst_code, "cff.")) UNKNOWN;
+          if (pattern_match(inst_code, "c.f.")) INST("%s <- %s + %f", FREG_D, FREG_B, field_e_as_float);
+          if (pattern_match(inst_code, "c..0")) UNKNOWN;
+          if (pattern_match(inst_code, "c.0.")) INST("%s <- rsqrt %s", FREG_D, FREG_B);
+          if (pattern_match(inst_code, "c0..")) INST("%s <- 1 / %s", FREG_D, FREG_A);
+          if (pattern_match(inst_code, "c...")) INST("%s <- %s + %s", FREG_D, FREG_B, FREG_A);
+          break;
+        case 0xd:
+          if (pattern_match(inst_code, "df..")) INST("%s <- %f - %s", FREG_D, field_e_as_float, FREG_A);
+          if (pattern_match(inst_code, "d0f.")) UNKNOWN;
+          if (pattern_match(inst_code, "d.f0")) UNKNOWN;
+          if (pattern_match(inst_code, "dff.")) UNKNOWN;
+          if (pattern_match(inst_code, "d.f.")) INST("%s <- %s - %f", FREG_D, FREG_B, field_e_as_float);
+          if (pattern_match(inst_code, "d..0")) UNKNOWN;
+          if (pattern_match(inst_code, "d.0.")) INST("%s <- %s", FREG_D, SREG_B);
+          if (pattern_match(inst_code, "d0..")) INST("%s <- floor %s", SREG_D, FREG_A);
+          if (pattern_match(inst_code, "d...")) INST("%s <- %s - %s", FREG_D, FREG_B, FREG_A);
+          break;
+        case 0xe:
+          if (pattern_match(inst_code, "ef..")) UNKNOWN;
+          if (pattern_match(inst_code, "e0f.")) UNKNOWN;
+          if (pattern_match(inst_code, "e.f0")) UNKNOWN;
+          if (pattern_match(inst_code, "eff.")) UNKNOWN;
+          if (pattern_match(inst_code, "e.f.")) INST("%s <- %s * %f", FREG_D, FREG_B, field_e_as_float);
+          if (pattern_match(inst_code, "e..0")) UNKNOWN;
+          if (pattern_match(inst_code, "e.0.")) UNKNOWN;
+          if (pattern_match(inst_code, "e0..")) UNKNOWN;
+          if (pattern_match(inst_code, "e...")) INST("%s <- %s * %s", FREG_D, FREG_B, FREG_A);
+          break;
+        case 0xf:
+          if (pattern_match(inst_code, "f0..")) INST("%s <- MEM8[%s]", SREG_D, REG_A);
+          if (pattern_match(inst_code, "f1..")) INST("%s <- MEM8[%s]", REG_D, REG_A);
+          if (pattern_match(inst_code, "f2..")) INST("%s <- MEM16[%s]", SREG_D, REG_A);
+          if (pattern_match(inst_code, "f3..")) INST("%s <- MEM16[%s]", REG_D, REG_A);
+          if (pattern_match(inst_code, "f4..")) INST("%s <- MEM32[%s]", REG_D, REG_A);
+          if (pattern_match(inst_code, "f5..")) INST("MEM8[%s] <- %s", REG_A, REG_D);
+          if (pattern_match(inst_code, "f6..")) INST("MEM16[%s] <- %s", REG_A, REG_D);
+          if (pattern_match(inst_code, "f7..")) INST("MEM32[%s] <- %s", REG_A, REG_D);
+
+          if (pattern_match(inst_code, "f8f.")) INST("%s <- MEM8[%d]", SREG_D, field_e);
+          if (pattern_match(inst_code, "f8ff")) INST("$stpc <- MEM8[%d]", field_e);
+          if (pattern_match(inst_code, "f9f.")) INST("%s <- MEM8[%d]", REG_D, field_e);
+          if (pattern_match(inst_code, "f9ff")) INST("$tpc <- MEM8[%d]", field_e);
+          if (pattern_match(inst_code, "faf.")) INST("%s <- MEM16[%d]", SREG_D, field_e);
+          if (pattern_match(inst_code, "faff")) INST("$stpc <- MEM16[%d]", field_e);
+          if (pattern_match(inst_code, "fbf.")) INST("%s <- MEM16[%d]", REG_D, field_e);
+          if (pattern_match(inst_code, "fbff")) INST("$tpc <- MEM16[%d]", field_e);
+          if (pattern_match(inst_code, "fcf.")) INST("%s <- MEM32[%d]", REG_D, field_e);
+          if (pattern_match(inst_code, "fcff")) INST("$tpc <- MEM32[%d]", field_e);
+          if (pattern_match(inst_code, "fdf.")) INST("MEM8[%d] <- %s", field_e, REG_D);
+          if (pattern_match(inst_code, "fdff")) INST("MEM8[%d] <- $tpc", field_e);
+          if (pattern_match(inst_code, "fef.")) INST("MEM16[%d] <- %s", field_e, REG_D);
+          if (pattern_match(inst_code, "feff")) INST("MEM16[%d] <- $tpc", field_e);
+          if (pattern_match(inst_code, "fff.")) INST("MEM32[%d] <- %s", field_e, REG_D);
+          if (pattern_match(inst_code, "ffff")) INST("MEM32[%d] <- $tpc", field_e);
+
+          if (pattern_match(inst_code, "f8..")) INST("%s <- MEM8[%s,%d]", SREG_D, REG_A, field_e);
+          if (pattern_match(inst_code, "f8.f")) INST("$stpc <- MEM8[%s,%d]", REG_A, field_e);
+          if (pattern_match(inst_code, "f9..")) INST("%s <- MEM8[%s,%d]", REG_D, REG_A, field_e);
+          if (pattern_match(inst_code, "f9.f")) INST("$tpc <- MEM8[%s,%d]", REG_A, field_e);
+          if (pattern_match(inst_code, "fa..")) INST("%s <- MEM16[%s,%d]", SREG_D, REG_A, field_e);
+          if (pattern_match(inst_code, "fa.f")) INST("$stpc <- MEM16[%s,%d]", REG_A, field_e);
+          if (pattern_match(inst_code, "fb..")) INST("%s <- MEM16[%s,%d]", REG_D, REG_A, field_e);
+          if (pattern_match(inst_code, "fb.f")) INST("$tpc <- MEM16[%s,%d]", REG_A, field_e);
+          if (pattern_match(inst_code, "fc..")) INST("%s <- MEM32[%s,%d]", REG_D, REG_A, field_e);
+          if (pattern_match(inst_code, "fc.f")) INST("$tpc <- MEM32[%s,%d]", REG_A, field_e);
+          if (pattern_match(inst_code, "fd..")) INST("MEM8[%s,%d] <- %s", REG_A, field_e, REG_D);
+          if (pattern_match(inst_code, "fd.f")) INST("MEM8[%s,%d] <- $tpc", REG_A, field_e);
+          if (pattern_match(inst_code, "fe..")) INST("MEM16[%s,%d] <- %s", REG_A, field_e, REG_D);
+          if (pattern_match(inst_code, "fe.f")) INST("MEM16[%s,%d] <- $tpc", REG_A, field_e);
+          if (pattern_match(inst_code, "ff..")) INST("MEM32[%s,%d] <- %s", REG_A, field_e, REG_D);
+          if (pattern_match(inst_code, "ff.f")) INST("MEM32[%s,%d] <- $tpc", REG_A, field_e);
+          break;
+        default:
+          OPCODES_ASSERT(false);
+        }
+      if (FIELD_D == 0xf)
+        {
+          if (pattern_match(inst_code, "0.0f")) INST("if %s == 0 $pc %s", REG_B, branch_target(field_e));
+          if (pattern_match(inst_code, "0.1f")) INST("if %s != 0 $pc %s", REG_B, branch_target(field_e));
+          if (pattern_match(inst_code, "0.2f")) INST("if %s < 0 $pc %s", SREG_B, branch_target(field_e));
+          if (pattern_match(inst_code, "0.3f")) INST("if %s >= 0 $pc %s", SREG_B, branch_target(field_e));
+          if (pattern_match(inst_code, "0.4f")) INST("if %s > 0 $pc %s", SREG_B, branch_target(field_e));
+          if (pattern_match(inst_code, "0.5f")) INST("if %s <= 0 $pc %s", SREG_B, branch_target(field_e));
+          if (pattern_match(inst_code, "0.6f")) UNKNOWN;
+          if (pattern_match(inst_code, "0.7f")) UNKNOWN;
+          if (pattern_match(inst_code, "0.8f")) UNKNOWN;
+          if (pattern_match(inst_code, "0.9f")) UNKNOWN;
+          if (pattern_match(inst_code, "0.af")) UNKNOWN;
+          if (pattern_match(inst_code, "0.bf")) INST("if %s < 0 $pc %s", FREG_B, branch_target(field_e));
+          if (pattern_match(inst_code, "0.cf")) INST("if %s >= 0 $pc %s", FREG_B, branch_target(field_e));
+          if (pattern_match(inst_code, "0.df")) INST("if %s > 0 $pc %s", FREG_B, branch_target(field_e));
+          if (pattern_match(inst_code, "0.ef")) INST("if %s <= 0 $pc %s", FREG_B, branch_target(field_e));
+
+          if (pattern_match(inst_code, "1..f")) INST("if %s == %s $pc %s", REG_B, REG_A, branch_target(field_e));
+          if (pattern_match(inst_code, "2..f")) INST("if %s != %s $pc %s", REG_B, REG_A, branch_target(field_e));
+          if (pattern_match(inst_code, "3..f")) INST("if %s < %s $pc %s", SREG_B, SREG_A, branch_target(field_e));
+          if (pattern_match(inst_code, "4..f")) INST("if %s >= %s $pc %s", SREG_B, SREG_A, branch_target(field_e));
+          if (pattern_match(inst_code, "5..f")) INST("if %s < %s $pc %s", REG_B, REG_A, branch_target(field_e));
+          if (pattern_match(inst_code, "6..f")) INST("if %s >= %s $pc %s", REG_B, REG_A, branch_target(field_e));
+          if (pattern_match(inst_code, "7..f")) UNKNOWN;
+          if (pattern_match(inst_code, "8..f")) UNKNOWN;
+          if (pattern_match(inst_code, "9..f")) UNKNOWN;
+          if (pattern_match(inst_code, "a..f")) UNKNOWN;
+          if (pattern_match(inst_code, "b..f")) UNKNOWN;
+          if (pattern_match(inst_code, "c..f")) UNKNOWN;
+          if (pattern_match(inst_code, "d..f")) INST("if %s < %s $pc %s", FREG_B, FREG_A, branch_target(field_e));
+          if (pattern_match(inst_code, "e..f")) INST("if %s >= %s $pc %s", FREG_B, FREG_A, branch_target(field_e));
+
+          if (pattern_match(inst_code, ".f.f")) INST("if %s[%d] == 1 $pc %s", REG_A, FIELD_C, branch_target(field_e));
+          if (pattern_match(inst_code, "..ff")) INST("if %s[%d] == 0 $pc %s", REG_B, FIELD_C, branch_target(field_e));
+        }
 
 
-      /* Fetch the instruction at pc.  */
-      inst = (sim_core_read_aligned_1 (scpu, cia, read_map, pc) << 8)
-        + sim_core_read_aligned_1 (scpu, cia, read_map, pc+1);
 
-      /* Decode instruction.  */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       if (inst & (1 << 15))
         {
           if (inst & (1 << 14))
@@ -1135,57 +1321,57 @@ sim_engine_run (SIM_DESC sd,
     } while (1);
 }
 
-static int
-brew_reg_store (SIM_CPU *scpu, int rn, unsigned char *memory, int length)
-{
-  if (rn < NUM_BREW_REGS && rn >= 0)
-    {
-      if (length == 4)
-        {
-          long ival;
-          
-          /* misalignment safe */
-          ival = brew_extract_unsigned_integer (memory, 4);
-          cpu.asints[rn] = ival;
-        }
-
-      return 4;
-    }
-  else
-    return 0;
-}
+/* Read a memory location (memory) and store it in register (rn). Length is required to be 4 (32-bits) */
+/* Returns the number of bytes read from memory */
 
 static int
-brew_reg_fetch (SIM_CPU *scpu, int rn, unsigned char *memory, int length)
+brew_reg_store (sim_cpu *scpu, int rn, unsigned char *memory, int length)
 {
-  if (rn < NUM_BREW_REGS && rn >= 0)
-    {
-      if (length == 4)
-        {
-          long ival = cpu.asints[rn];
-
-          /* misalignment-safe */
-          brew_store_unsigned_integer (memory, 4, ival);
-        }
-      
-      return 4;
-    }
-  else
+  if (rn > NUM_BREW_REGS && rn < 0)
     return 0;
+  if (length != 4)
+    return 0;
+
+  long ival;
+  
+  /* misalignment safe */
+  ival = brew_extract_unsigned_integer (memory, 4);
+  scpu->registers[rn] = ival;
+  return 4;
 }
 
+/* Store register (rn) at memory location (memory). Length is required to be 4 (32-bits) */
+/* Returns the number of bytes stored in memory */
+static int
+brew_reg_fetch (sim_cpu *scpu, int rn, unsigned char *memory, int length)
+{
+  if (rn > NUM_BREW_REGS && rn < 0)
+    return 0;
+  if (length != 4)
+    return 0;
+
+  long ival = scpu->registers[rn];
+
+  /* misalignment-safe */
+  brew_store_unsigned_integer (memory, 4, ival);
+  return 4;
+}
+
+/* Returns the current PC */
 static sim_cia
-brew_pc_get (sim_cpu *cpu)
+brew_pc_get (sim_cpu *scpu)
 {
-  return cpu->registers[PCIDX];
+  return scpu->registers[0];
 }
 
+/* Sets the PC to the required value */
 static void
-brew_pc_set (sim_cpu *cpu, sim_cia pc)
+brew_pc_set (sim_cpu *scpu, sim_cia pc)
 {
-  cpu->registers[PCIDX] = pc;
+  scpu->registers[0] = pc;
 }
 
+/* De-allocates any resources, allocated in sim_open */
 static void
 free_state (SIM_DESC sd)
 {
@@ -1195,6 +1381,9 @@ free_state (SIM_DESC sd)
   sim_state_free (sd);
 }
 
+/* Starts the simulation context. Returns a 'whatever' that will be used as a context variable
+   kind: SIM_OPEN_STANDALONE for standalone or SIM_OPEN_DEBUG for gdb sessions
+*/
 SIM_DESC
 sim_open (SIM_OPEN_KIND kind, host_callback *cb,
           struct bfd *abfd, char * const *argv)
@@ -1204,10 +1393,11 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
   SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
 
   /* Set default options before parsing user options.  */
-  current_target_byte_order = BFD_ENDIAN_BIG;
+  current_target_byte_order = BFD_ENDIAN_LITTLE;
 
   /* The cpu data is kept in a separately allocated chunk of memory.  */
-  if (sim_cpu_alloc_all (sd, 1) != SIM_RC_OK)
+  SIM_ASSERT(MAX_NR_PROCESSORS == 1);
+  if (sim_cpu_alloc_all (sd, MAX_NR_PROCESSORS) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -1226,11 +1416,12 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
       return 0;
     }
 
+  /* FIXME: not sure what these do. Probably create and allocate some memory */
   sim_do_command(sd," memory region 0x00000000,0x4000000") ; 
-  sim_do_command(sd," memory region 0xE0000000,0x10000") ; 
+  //sim_do_command(sd," memory region 0xE0000000,0x10000") ; 
 
   /* Check for/establish the a reference program image.  */
-  if (sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
+  if   (sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -1252,10 +1443,11 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
       return 0;
     }
 
-  /* CPU specific initialization.  */
+  /* CPU specific initialization. */
+  /* That is: setting up callbacks for load/store registers and for get/set of PC */
   for (i = 0; i < MAX_NR_PROCESSORS; ++i)
     {
-      SIM_CPU *cpu = STATE_CPU (sd, i);
+      sim_cpu *cpu = STATE_CPU (sd, i);
 
       CPU_REG_FETCH (cpu) = brew_reg_fetch;
       CPU_REG_STORE (cpu) = brew_reg_store;
