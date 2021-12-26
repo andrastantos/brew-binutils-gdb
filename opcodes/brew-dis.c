@@ -283,6 +283,7 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "9.f.")) INST("%s <- %s * %d", SREG_D, SREG_B, (int32_t)field_e);
       if (pattern_match(inst_code, "90..")) INST("%s <- %s + 1", REG_D, REG_A);
       if (pattern_match(inst_code, "9.0.")) INST("%s <- %s - 1", REG_D, REG_B);
+      if (pattern_match(inst_code, "9..0")) UNKNOWN;
       if (pattern_match(inst_code, "9...")) INST("%s <- %s * %s", SREG_D, SREG_B, SREG_A);
       break;
     case 0xa:
@@ -290,18 +291,20 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "aff.")) UNKNOWN;
       if (pattern_match(inst_code, "a0f.")) UNKNOWN;
       if (pattern_match(inst_code, "a.f.")) INST("%s <- upper %s * %u", REG_D, REG_B, field_e);
-      if (pattern_match(inst_code, "a0..")) INST("%s <- -%s", REG_D, REG_A);
+      if (pattern_match(inst_code, "a0..")) INST("%s <- -%s", SREG_D, SREG_A);
       if (pattern_match(inst_code, "a.0.")) INST("%s <- ~%s", REG_D, REG_B);
+      if (pattern_match(inst_code, "a..0")) UNKNOWN;
       if (pattern_match(inst_code, "a...")) INST("%s <- upper %s * %s", REG_D, REG_B, REG_A);
       break;
     case 0xb:
       if (pattern_match(inst_code, "bf..")) UNKNOWN;
       if (pattern_match(inst_code, "bff.")) UNKNOWN;
       if (pattern_match(inst_code, "b0f.")) UNKNOWN;
-      if (pattern_match(inst_code, "b.f.")) INST("%s <- %s * %d", SREG_D, SREG_B, (int32_t)field_e);
+      if (pattern_match(inst_code, "b.f.")) INST("%s <- upper %s * %d", SREG_D, SREG_B, (int32_t)field_e);
       if (pattern_match(inst_code, "b0..")) INST("%s <- bswap %s", REG_D, REG_A);
       if (pattern_match(inst_code, "b.0.")) INST("%s <- wswap %s", REG_D, REG_B);
-      if (pattern_match(inst_code, "b...")) INST("%s <- %s * %s", SREG_D, SREG_B, SREG_A);
+      if (pattern_match(inst_code, "b..0")) UNKNOWN;
+      if (pattern_match(inst_code, "b...")) INST("%s <- upper %s * %s", SREG_D, SREG_B, SREG_A);
       break;
     case 0xc:
       if (pattern_match(inst_code, "cf..")) UNKNOWN;

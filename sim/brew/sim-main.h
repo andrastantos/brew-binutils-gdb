@@ -48,7 +48,8 @@ struct _sim_cpu {
   sim_cpu_base base;
 
   /* The following are internal simulator state variables: */
-  unit32_t regs[BREW_NUM_REGS];
+  uint32_t regs[BREW_NUM_REGS];
+  bool regs_touch[BREW_NUM_REGS]; /* Set to true every time a register is modified to help tracing */
   bool is_task_mode;
 
 };

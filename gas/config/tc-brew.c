@@ -126,29 +126,29 @@ typedef struct
 static alu_tableS alu_table[] =
 {
 /* BINARY OPERATIONS */
-/*  inst_name  inst_code   op_flags                                                           type_flags_a           type_flags_b           type_flags_d*/
-  { "^",       0x0000,     NO_A_EQ_B | NO_IMM_B | COMMUTATIVE,                                0,                     0,                     0 },
-  { "^",       0x0000,     NO_A_EQ_B | NO_IMM_B | COMMUTATIVE,                                BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "|",       0x1000,     NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                              0,                     0,                     0 },
-  { "|",       0x1000,     NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                              BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "&",       0x2000,     NO_IMM_B | COMMUTATIVE,                                            0,                     0,                     0 },
-  { "&",       0x2000,     NO_IMM_B | COMMUTATIVE,                                            BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "-",       0x3000,     0,                                                                 0,                     0,                     0 },
-  { "-",       0x3000,     0,                                                                 BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "+",       0x4000,     NO_IMM_B | COMMUTATIVE,                                            0,                     0,                     0 },
-  { "+",       0x4000,     NO_IMM_B | COMMUTATIVE,                                            BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "<<",      0x5000,     0,                                                                 0,                     0,                     0 },
-  { "<<",      0x5000,     0,                                                                 BREW_REG_FLAG_SIGNED,  0,                     BREW_REG_FLAG_SIGNED  },
-  { ">>",      0x6000,     0,                                                                 0,                     0,                     0 },
-  { ">>",      0x7000,     0,                                                                 BREW_REG_FLAG_SIGNED,  0,                     BREW_REG_FLAG_SIGNED  },
-  { "*",       0x8000,     NO_A_IS_PC | NO_B_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      0,                     0,                     0 },
-  { "*",       0x9000,     NO_A_IS_PC | NO_B_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+/*  inst_name  inst_code   op_flags                                                                        type_flags_a           type_flags_b           type_flags_d*/
+  { "^",       0x0000,     NO_A_EQ_B | NO_IMM_B | COMMUTATIVE,                                             0,                     0,                     0 },
+  { "^",       0x0000,     NO_A_EQ_B | NO_IMM_B | COMMUTATIVE,                                             BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "|",       0x1000,     NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                                           0,                     0,                     0 },
+  { "|",       0x1000,     NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                                           BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "&",       0x2000,     NO_IMM_B | COMMUTATIVE,                                                         0,                     0,                     0 },
+  { "&",       0x2000,     NO_IMM_B | COMMUTATIVE,                                                         BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "-",       0x3000,     0,                                                                              0,                     0,                     0 },
+  { "-",       0x3000,     0,                                                                              BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "+",       0x4000,     NO_IMM_B | COMMUTATIVE,                                                         0,                     0,                     0 },
+  { "+",       0x4000,     NO_IMM_B | COMMUTATIVE,                                                         BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "<<",      0x5000,     0,                                                                              0,                     0,                     0 },
+  { "<<",      0x5000,     0,                                                                              BREW_REG_FLAG_SIGNED,  0,                     BREW_REG_FLAG_SIGNED  },
+  { ">>",      0x6000,     0,                                                                              0,                     0,                     0 },
+  { ">>",      0x7000,     0,                                                                              BREW_REG_FLAG_SIGNED,  0,                     BREW_REG_FLAG_SIGNED  },
+  { "*",       0x8000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      0,                     0,                     0 },
+  { "*",       0x9000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   /*           0xa000 is the 'upper' version of 0x8000 */
   /*           0xb000 is the 'upper' version of 0x9000 */
-  { "+",       0xc000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | NO_IMM_B | COMMUTATIVE,     BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
-  { "-",       0xd000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC,                              BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
-  { "*",       0xe000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | NO_IMM_B | COMMUTATIVE,     BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
-  { NULL,      0x0000,     0,                                                                 0,                     0,                     0 },
+  { "+",       0xc000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | NO_IMM_B | COMMUTATIVE,                  BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { "-",       0xd000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC,                                           BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { "*",       0xe000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | NO_IMM_B | COMMUTATIVE,                  BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { NULL,      0x0000,     0,                                                                              0,                     0,                     0 },
 };
 
 #define NO_IMM_A     (1 << 0)
