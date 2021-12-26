@@ -348,6 +348,8 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "f5..")) INST("MEM8[%s] <- %s", REG_A, REG_D);
       if (pattern_match(inst_code, "f6..")) INST("MEM16[%s] <- %s", REG_A, REG_D);
       if (pattern_match(inst_code, "f7..")) INST("MEM32[%s] <- %s", REG_A, REG_D);
+      if (pattern_match(inst_code, "f7.f")) UNKNOWN;
+      if (pattern_match(inst_code, "f7f.")) UNKNOWN;
 
       if (pattern_match(inst_code, "f8f.")) INST("%s <- MEM8[%d]", SREG_D, field_e);
       if (pattern_match(inst_code, "f8ff")) INST("$stpc <- MEM8[%d]", field_e);

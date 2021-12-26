@@ -176,10 +176,12 @@ convert_target_flags (unsigned int tflags)
 
 static INLINE void brew_trace(sim_cpu *scpu, const char *fmt, ...)
 {
+  const char *side_effect_delim = "                                                                                                                ";
   char *pc_name;
   char message[256];
   char fragment[256];
   va_list args;
+  bool first = true;
 
   pc_name = scpu->is_task_mode ? "$tpc": "$spc";
 
@@ -195,6 +197,11 @@ static INLINE void brew_trace(sim_cpu *scpu, const char *fmt, ...)
     {
       if (scpu->regs_touch[i])
         {
+          if (first)
+            {
+              strncat(message, side_effect_delim, MIN(sizeof(message) - strlen(message) - 1, 40-strlen(message)));
+              first = false;
+            }
           snprintf(fragment, sizeof(fragment)-1, " %s <- 0x%x", reg_names[i] == NULL ? pc_name : reg_names[i], scpu->regs[i]);
           strncat(message, fragment, sizeof(message) - strlen(message) - 1);
           message[sizeof(message)-1] = 0;
@@ -287,12 +294,12 @@ static char *branch_target(uint32_t field_e)
   if ((field_e & 0) == 0)
     {
       /* Abosolute address */
-      sprintf(branch_target_buffer, "<- %u", field_e);
+      sprintf(branch_target_buffer, "<- 0x%x", field_e);
     }
   else
     {
       /* Relative address */
-      sprintf(branch_target_buffer, "<- $pc+%d", (int32_t)field_e);
+      sprintf(branch_target_buffer, "<- $pc+0x%x", (int32_t)field_e);
     }
   return branch_target_buffer;
 }
@@ -389,20 +396,20 @@ sim_engine_run (SIM_DESC sd,
           if (pattern_match(inst_code, "0dd0")) { NEXT_INST("FENCE"); }
           if (pattern_match(inst_code, "0ee0")) { NEXT_INST("WFENCE"); }
           if (pattern_match(inst_code, "0..0")) UNKNOWN;
-          if (pattern_match(inst_code, "0ff.")) { REG_D_TARGET = field_e; BREW_TRACE_INST("%s <- %u", trREG_D, field_e); }
+          if (pattern_match(inst_code, "0ff.")) { REG_D_TARGET = field_e; BREW_TRACE_INST("%s <- %u (0x%x)", trREG_D, field_e, field_e); }
           if (pattern_match(inst_code, "0f..")) UNKNOWN;
-          if (pattern_match(inst_code, "0.f.")) { REG_D_TARGET = REG_B ^ field_e; NEXT_INST("%s <- %s ^ %u", trREG_D, trREG_B, field_e); }
+          if (pattern_match(inst_code, "0.f.")) { REG_D_TARGET = REG_B ^ field_e; NEXT_INST("%s <- %s ^ 0x%x", trREG_D, trREG_B, field_e); }
           if (pattern_match(inst_code, "0...")) { REG_D_TARGET = REG_B ^ REG_A; NEXT_INST("%s <- %s ^ %s", trREG_D, trREG_B, trREG_A); }
           break;
         case 0x1:
           if (pattern_match(inst_code, "1000")) { BREW_TRACE_INST("WOI"); sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); }
           if (pattern_match(inst_code, "1f..")) UNKNOWN;
-          if (pattern_match(inst_code, "1.f.")) { REG_D_TARGET = REG_B | field_e; NEXT_INST("%s <- %s | %u", trREG_D, trREG_B, field_e); }
+          if (pattern_match(inst_code, "1.f.")) { REG_D_TARGET = REG_B | field_e; NEXT_INST("%s <- %s | 0x%x", trREG_D, trREG_B, field_e); }
           if (pattern_match(inst_code, "1...")) { REG_D_TARGET = REG_B | REG_A; NEXT_INST("%s <- %s | %s", trREG_D, trREG_B, trREG_A); }
           break;
         case 0x2:
           if (pattern_match(inst_code, "2f..")) UNKNOWN;
-          if (pattern_match(inst_code, "2.f.")) { REG_D_TARGET = REG_B & field_e; NEXT_INST("%s <- %s & %u", trREG_D, trREG_B, field_e); }
+          if (pattern_match(inst_code, "2.f.")) { REG_D_TARGET = REG_B & field_e; NEXT_INST("%s <- %s & 0x%x", trREG_D, trREG_B, field_e); }
           if (pattern_match(inst_code, "2...")) { REG_D_TARGET = REG_B & REG_A; NEXT_INST("%s <- %s & %s", trREG_D, trREG_B, trREG_A); }
           break;
         case 0x3:
@@ -514,39 +521,39 @@ sim_engine_run (SIM_DESC sd,
           if (pattern_match(inst_code, "f7.f")) UNKNOWN;
           if (pattern_match(inst_code, "f7f.")) UNKNOWN;
 
-          if (pattern_match(inst_code, "f8f.")) { REG_D_TARGET = (int32_t)read_int8(scpu, field_e); NEXT_INST("%s <- MEM8[%d]", trSREG_D, field_e); }
-          if (pattern_match(inst_code, "f8ff")) { REG_TPC_TARGET = (int32_t)read_int8(scpu, field_e); NEXT_INST("$stpc <- MEM8[%d]", field_e); }
-          if (pattern_match(inst_code, "f9f.")) { REG_D_TARGET = read_uint8(scpu, field_e); NEXT_INST("%s <- MEM8[%d]", trREG_D, field_e); }
-          if (pattern_match(inst_code, "f9ff")) { REG_TPC_TARGET = read_uint8(scpu, field_e); NEXT_INST("$tpc <- MEM8[%d]", field_e); }
-          if (pattern_match(inst_code, "faf.")) { TEST_ALIGN(field_e, 2); REG_D_TARGET = (int32_t)read_int16(scpu, field_e); NEXT_INST("%s <- MEM16[%d]", trSREG_D, field_e); }
-          if (pattern_match(inst_code, "faff")) { TEST_ALIGN(field_e, 2); REG_TPC_TARGET = (int32_t)read_int16(scpu, field_e); NEXT_INST("$stpc <- MEM16[%d]", field_e); }
-          if (pattern_match(inst_code, "fbf.")) { TEST_ALIGN(field_e, 2); REG_D_TARGET = read_uint16(scpu, field_e); NEXT_INST("%s <- MEM16[%d]", trREG_D, field_e); }
-          if (pattern_match(inst_code, "fbff")) { TEST_ALIGN(field_e, 2); REG_TPC_TARGET = read_uint16(scpu, field_e); NEXT_INST("$tpc <- MEM16[%d]", field_e); }
-          if (pattern_match(inst_code, "fcf.")) { TEST_ALIGN(field_e, 4); REG_D_TARGET = read_uint32(scpu, field_e); NEXT_INST("%s <- MEM32[%d]", trREG_D, field_e); }
-          if (pattern_match(inst_code, "fcff")) { TEST_ALIGN(field_e, 4); REG_TPC_TARGET = read_uint32(scpu, field_e); NEXT_INST("$tpc <- MEM32[%d]", field_e); }
-          if (pattern_match(inst_code, "fdf.")) { write_uint8(scpu, field_e, REG_D); NEXT_INST("MEM8[%d] <- %s", field_e, trREG_D); }
-          if (pattern_match(inst_code, "fdff")) { write_uint8(scpu, field_e, REG_TPC); NEXT_INST("MEM8[%d] <- $tpc", field_e); }
-          if (pattern_match(inst_code, "fef.")) { TEST_ALIGN(field_e, 2); write_uint16(scpu, field_e, REG_D); NEXT_INST("MEM16[%d] <- %s", field_e, trREG_D); }
-          if (pattern_match(inst_code, "feff")) { TEST_ALIGN(field_e, 2); write_uint16(scpu, field_e, REG_TPC); NEXT_INST("MEM16[%d] <- $tpc", field_e); }
-          if (pattern_match(inst_code, "fff.")) { TEST_ALIGN(field_e, 4); write_uint32(scpu, field_e, REG_D); NEXT_INST("MEM32[%d] <- %s", field_e, trREG_D); }
-          if (pattern_match(inst_code, "ffff")) { TEST_ALIGN(field_e, 4); write_uint32(scpu, field_e, REG_TPC); NEXT_INST("MEM32[%d] <- $tpc", field_e); }
+          if (pattern_match(inst_code, "f8f.")) { REG_D_TARGET = (int32_t)read_int8(scpu, field_e); NEXT_INST("%s <- MEM8[0x%x]", trSREG_D, field_e); }
+          if (pattern_match(inst_code, "f8ff")) { REG_TPC_TARGET = (int32_t)read_int8(scpu, field_e); NEXT_INST("$stpc <- MEM8[0x%x]", field_e); }
+          if (pattern_match(inst_code, "f9f.")) { REG_D_TARGET = read_uint8(scpu, field_e); NEXT_INST("%s <- MEM8[0x%x]", trREG_D, field_e); }
+          if (pattern_match(inst_code, "f9ff")) { REG_TPC_TARGET = read_uint8(scpu, field_e); NEXT_INST("$tpc <- MEM8[0x%x]", field_e); }
+          if (pattern_match(inst_code, "faf.")) { TEST_ALIGN(field_e, 2); REG_D_TARGET = (int32_t)read_int16(scpu, field_e); NEXT_INST("%s <- MEM16[0x%x]", trSREG_D, field_e); }
+          if (pattern_match(inst_code, "faff")) { TEST_ALIGN(field_e, 2); REG_TPC_TARGET = (int32_t)read_int16(scpu, field_e); NEXT_INST("$stpc <- MEM16[0x%x]", field_e); }
+          if (pattern_match(inst_code, "fbf.")) { TEST_ALIGN(field_e, 2); REG_D_TARGET = read_uint16(scpu, field_e); NEXT_INST("%s <- MEM16[0x%x]", trREG_D, field_e); }
+          if (pattern_match(inst_code, "fbff")) { TEST_ALIGN(field_e, 2); REG_TPC_TARGET = read_uint16(scpu, field_e); NEXT_INST("$tpc <- MEM16[0x%x]", field_e); }
+          if (pattern_match(inst_code, "fcf.")) { TEST_ALIGN(field_e, 4); REG_D_TARGET = read_uint32(scpu, field_e); NEXT_INST("%s <- MEM32[0x%x]", trREG_D, field_e); }
+          if (pattern_match(inst_code, "fcff")) { TEST_ALIGN(field_e, 4); REG_TPC_TARGET = read_uint32(scpu, field_e); NEXT_INST("$tpc <- MEM32[0x%x]", field_e); }
+          if (pattern_match(inst_code, "fdf.")) { write_uint8(scpu, field_e, REG_D); NEXT_INST("MEM8[0x%x] <- %s", field_e, trREG_D); }
+          if (pattern_match(inst_code, "fdff")) { write_uint8(scpu, field_e, REG_TPC); NEXT_INST("MEM8[0x%x] <- $tpc", field_e); }
+          if (pattern_match(inst_code, "fef.")) { TEST_ALIGN(field_e, 2); write_uint16(scpu, field_e, REG_D); NEXT_INST("MEM16[0x%x] <- %s", field_e, trREG_D); }
+          if (pattern_match(inst_code, "feff")) { TEST_ALIGN(field_e, 2); write_uint16(scpu, field_e, REG_TPC); NEXT_INST("MEM16[0x%x] <- $tpc", field_e); }
+          if (pattern_match(inst_code, "fff.")) { TEST_ALIGN(field_e, 4); write_uint32(scpu, field_e, REG_D); NEXT_INST("MEM32[0x%x] <- %s", field_e, trREG_D); }
+          if (pattern_match(inst_code, "ffff")) { TEST_ALIGN(field_e, 4); write_uint32(scpu, field_e, REG_TPC); NEXT_INST("MEM32[0x%x] <- $tpc", field_e); }
 
-          if (pattern_match(inst_code, "f8..")) { REG_D_TARGET = (int32_t)read_int8(scpu, REG_A+field_e); NEXT_INST("%s <- MEM8[%s,%d]", trSREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "f8.f")) { REG_TPC_TARGET = (int32_t)read_int8(scpu, REG_A+field_e); NEXT_INST("$stpc <- MEM8[%s,%d]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "f9..")) { REG_D_TARGET = read_uint8(scpu, REG_A+field_e); NEXT_INST("%s <- MEM8[%s,%d]", trREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "f9.f")) { REG_TPC_TARGET = read_uint8(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM8[%s,%d]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fa..")) { TEST_ALIGN(REG_A+field_e, 2); REG_D_TARGET = (int32_t)read_int16(scpu, REG_A+field_e); NEXT_INST("%s <- MEM16[%s,%d]", trSREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "fa.f")) { TEST_ALIGN(REG_A+field_e, 2); REG_TPC_TARGET = (int32_t)read_int16(scpu, REG_A+field_e); NEXT_INST("$stpc <- MEM16[%s,%d]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fb..")) { TEST_ALIGN(REG_A+field_e, 2); REG_D_TARGET = read_uint16(scpu, REG_A+field_e); NEXT_INST("%s <- MEM16[%s,%d]", trREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "fb.f")) { TEST_ALIGN(REG_A+field_e, 2); REG_TPC_TARGET = read_uint16(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM16[%s,%d]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fc..")) { TEST_ALIGN(REG_A+field_e, 4); REG_D_TARGET = read_uint32(scpu, REG_A+field_e); NEXT_INST("%s <- MEM32[%s,%d]", trREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "fc.f")) { TEST_ALIGN(REG_A+field_e, 4); REG_TPC_TARGET = read_uint32(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM32[%s,%d]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fd..")) { write_uint8(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM8[%s,%d] <- %s", trREG_A, field_e, trREG_D); }
-          if (pattern_match(inst_code, "fd.f")) { write_uint8(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM8[%s,%d] <- $tpc", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fe..")) { TEST_ALIGN(REG_A+field_e, 2); write_uint16(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM16[%s,%d] <- %s", trREG_A, field_e, trREG_D); }
-          if (pattern_match(inst_code, "fe.f")) { TEST_ALIGN(REG_A+field_e, 2); write_uint16(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM16[%s,%d] <- $tpc", trREG_A, field_e); }
-          if (pattern_match(inst_code, "ff..")) { TEST_ALIGN(REG_A+field_e, 4); write_uint32(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM32[%s,%d] <- %s", trREG_A, field_e, trREG_D); }
-          if (pattern_match(inst_code, "ff.f")) { TEST_ALIGN(REG_A+field_e, 4); write_uint32(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM32[%s,%d] <- $tpc", trREG_A, field_e); }
+          if (pattern_match(inst_code, "f8..")) { REG_D_TARGET = (int32_t)read_int8(scpu, REG_A+field_e); NEXT_INST("%s <- MEM8[%s,0x%x]", trSREG_D, trREG_A, field_e); }
+          if (pattern_match(inst_code, "f8.f")) { REG_TPC_TARGET = (int32_t)read_int8(scpu, REG_A+field_e); NEXT_INST("$stpc <- MEM8[%s,0x%x]", trREG_A, field_e); }
+          if (pattern_match(inst_code, "f9..")) { REG_D_TARGET = read_uint8(scpu, REG_A+field_e); NEXT_INST("%s <- MEM8[%s,0x%x]", trREG_D, trREG_A, field_e); }
+          if (pattern_match(inst_code, "f9.f")) { REG_TPC_TARGET = read_uint8(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM8[%s,0x%x]", trREG_A, field_e); }
+          if (pattern_match(inst_code, "fa..")) { TEST_ALIGN(REG_A+field_e, 2); REG_D_TARGET = (int32_t)read_int16(scpu, REG_A+field_e); NEXT_INST("%s <- MEM16[%s,0x%x]", trSREG_D, trREG_A, field_e); }
+          if (pattern_match(inst_code, "fa.f")) { TEST_ALIGN(REG_A+field_e, 2); REG_TPC_TARGET = (int32_t)read_int16(scpu, REG_A+field_e); NEXT_INST("$stpc <- MEM16[%s,0x%x]", trREG_A, field_e); }
+          if (pattern_match(inst_code, "fb..")) { TEST_ALIGN(REG_A+field_e, 2); REG_D_TARGET = read_uint16(scpu, REG_A+field_e); NEXT_INST("%s <- MEM16[%s,0x%x]", trREG_D, trREG_A, field_e); }
+          if (pattern_match(inst_code, "fb.f")) { TEST_ALIGN(REG_A+field_e, 2); REG_TPC_TARGET = read_uint16(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM16[%s,0x%x]", trREG_A, field_e); }
+          if (pattern_match(inst_code, "fc..")) { TEST_ALIGN(REG_A+field_e, 4); REG_D_TARGET = read_uint32(scpu, REG_A+field_e); NEXT_INST("%s <- MEM32[%s,0x%x]", trREG_D, trREG_A, field_e); }
+          if (pattern_match(inst_code, "fc.f")) { TEST_ALIGN(REG_A+field_e, 4); REG_TPC_TARGET = read_uint32(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM32[%s,0x%x]", trREG_A, field_e); }
+          if (pattern_match(inst_code, "fd..")) { write_uint8(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM8[%s,0x%x] <- %s", trREG_A, field_e, trREG_D); }
+          if (pattern_match(inst_code, "fd.f")) { write_uint8(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM8[%s,0x%x] <- $tpc", trREG_A, field_e); }
+          if (pattern_match(inst_code, "fe..")) { TEST_ALIGN(REG_A+field_e, 2); write_uint16(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM16[%s,0x%x] <- %s", trREG_A, field_e, trREG_D); }
+          if (pattern_match(inst_code, "fe.f")) { TEST_ALIGN(REG_A+field_e, 2); write_uint16(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM16[%s,0x%x] <- $tpc", trREG_A, field_e); }
+          if (pattern_match(inst_code, "ff..")) { TEST_ALIGN(REG_A+field_e, 4); write_uint32(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM32[%s,0x%x] <- %s", trREG_A, field_e, trREG_D); }
+          if (pattern_match(inst_code, "ff.f")) { TEST_ALIGN(REG_A+field_e, 4); write_uint32(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM32[%s,0x%x] <- $tpc", trREG_A, field_e); }
           break;
         default:
           SIM_ASSERT(false);

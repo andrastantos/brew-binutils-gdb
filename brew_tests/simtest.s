@@ -9,6 +9,7 @@ _start:
   $r1 <- $r1 - $r1
   $r2 <- $r1
   $r3 <- $r1 + 1
-  SYSCALL
-_loop:
   $pc <- _loop
+  SII
+_loop:
+  SYSCALL
