@@ -179,7 +179,7 @@ static unary_op_tableS unary_op_table[] = {
   { "bsi",     0xc000,     4,        0,                     0 },
   { "wsi",     0xc000,     8,        0,                     0 },
   { "floor",   0xd000,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_SIGNED },
-  { "rsqrt",   0xc000,     8,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { "rsqrt",   0xe000,     8,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
 
   { NULL,      0x0000,     0,        0,                     0 }
 };
@@ -1073,7 +1073,7 @@ md_assemble (char *str)
                   as_bad(_("reciprocal operand can't be PC"));
                   ERR_RETURN;
                 }
-              inst_code = 0xc000;
+              inst_code = 0xe000;
               inst_code |= (reg_op & 0xf) << 4;
               inst_code |= (reg_d & 0xf) << 0;
               RETURN(inst_code);
