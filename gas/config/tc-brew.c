@@ -176,6 +176,8 @@ static unary_op_tableS unary_op_table[] = {
   { "~",       0xa000,     8,        0,                     0 },
   { "bswap",   0xb000,     4,        0,                     0 },
   { "wswap",   0xb000,     8,        0,                     0 },
+  { "bsi",     0xc000,     4,        0,                     0 },
+  { "wsi",     0xc000,     8,        0,                     0 },
   { "floor",   0xd000,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_SIGNED },
   { "rsqrt",   0xc000,     8,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
 

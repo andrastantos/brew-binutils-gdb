@@ -313,8 +313,8 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "cff.")) UNKNOWN;
       if (pattern_match(inst_code, "c.f.")) INST("%s <- %s + %f", FREG_D, FREG_B, field_e_as_float);
       if (pattern_match(inst_code, "c..0")) UNKNOWN;
-      if (pattern_match(inst_code, "c.0.")) INST("%s <- rsqrt %s", FREG_D, FREG_B);
-      if (pattern_match(inst_code, "c0..")) INST("%s <- 1 / %s", FREG_D, FREG_A);
+      if (pattern_match(inst_code, "c0..")) INST("%s <- bsi %s", REG_D, REG_A);
+      if (pattern_match(inst_code, "c.0.")) INST("%s <- wsi %s", REG_D, REG_B);
       if (pattern_match(inst_code, "c...")) INST("%s <- %s + %s", FREG_D, FREG_B, FREG_A);
       break;
     case 0xd:
@@ -335,8 +335,8 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "eff.")) UNKNOWN;
       if (pattern_match(inst_code, "e.f.")) INST("%s <- %s * %f", FREG_D, FREG_B, field_e_as_float);
       if (pattern_match(inst_code, "e..0")) UNKNOWN;
-      if (pattern_match(inst_code, "e.0.")) UNKNOWN;
-      if (pattern_match(inst_code, "e0..")) UNKNOWN;
+      if (pattern_match(inst_code, "e.0.")) INST("%s <- rsqrt %s", FREG_D, FREG_B);
+      if (pattern_match(inst_code, "e0..")) INST("%s <- 1 / %s", FREG_D, FREG_A);
       if (pattern_match(inst_code, "e...")) INST("%s <- %s * %s", FREG_D, FREG_B, FREG_A);
       break;
     case 0xf:

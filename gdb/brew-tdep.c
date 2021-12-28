@@ -66,17 +66,15 @@ brew_frame_align (struct gdbarch *gdbarch, CORE_ADDR sp)
   return sp & ~1;
 }
 
-constexpr gdb_byte brew_break_insn[] = { 0x35, 0x00 };
+constexpr gdb_byte brew_break_insn[] = { 0x10, 0x01 }; /* BREAK instruction: 0x0110 */
 
 typedef BP_MANIPULATION (brew_break_insn) brew_breakpoint;
 
-/* Moxie register names.  */
-
 static const char * const brew_register_names[] = {
-  "$fp",  "$sp",  "$r0",  "$r1",  "$r2",
-  "$r3",  "$r4",  "$r5", "$r6", "$r7",
-  "$r8", "$r9", "$r10", "$r11", "$r12",
-  "$r13", "$pc", "$cc" };
+  "$pc",  "$r0",  "$r1",  "$r2",
+  "$r3",  "$r4",  "$r5",  "$r6",
+  "$r7",  "$r8",  "$r9",  "$r10",
+  "$r11", "$r12", "$r13" };
 
 /* Implement the "register_name" gdbarch method.  */
 

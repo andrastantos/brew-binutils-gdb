@@ -335,6 +335,22 @@ static INLINE uint32_t wswap(uint32_t val)
     (((val >> 16) & 0xffff) << 0);
 }
 
+static INLINE uint32_t bsi(uint32_t val)
+{
+  return
+    ((val & 0x80) != 0) ?
+      (0xffffff00 | (val & 0xff)) :
+      (val & 0xff);
+}
+
+static INLINE uint32_t wsi(uint32_t val)
+{
+  return
+    ((val & 0x8000) != 0) ?
+      (0xffff0000 | (val & 0xffff)) :
+      (val & 0xffff);
+}
+
 #define TEST_ALIGN(reg, alignment) if (reg % (alignment-1) != 0) sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGBUS);
 
 static INLINE void branch_to(sim_cpu *scpu, uint32_t field_e)
@@ -483,8 +499,8 @@ sim_engine_run (SIM_DESC sd,
           if (pattern_match(inst_code, "cff.")) UNKNOWN;
           if (pattern_match(inst_code, "c.f.")) { REG_D_TARGET = as_int(as_float(REG_B) + as_float(field_e)); NEXT_INST("%s <- %s + %f", trFREG_D, trFREG_B, as_float(field_e)); }
           if (pattern_match(inst_code, "c..0")) UNKNOWN;
-          if (pattern_match(inst_code, "c.0.")) { if (REG_A <= 0.0f) { if (scpu->is_task_mode) { swap_mode = true; update_pc_before_exception = false; } sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGFPE); } REG_D_TARGET = as_int(1.0f / sqrtf(as_float(REG_B))); NEXT_INST("%s <- rsqrt %s", trFREG_D, trFREG_B); }
-          if (pattern_match(inst_code, "c0..")) { if (REG_A == 0.0f) { if (scpu->is_task_mode) { swap_mode = true; update_pc_before_exception = false; } sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGFPE); } REG_D_TARGET = as_int(1.0f / as_float(REG_A)); NEXT_INST("%s <- 1 / %s", trFREG_D, trFREG_A); }
+          if (pattern_match(inst_code, "c.0.")) { REG_D_TARGET = wsi(REG_B); NEXT_INST("%s <- wsi %s", trREG_D, trREG_B); }
+          if (pattern_match(inst_code, "c0..")) { REG_D_TARGET = bsi(REG_A); NEXT_INST("%s <- bsi %s", trREG_D, trREG_A); }
           if (pattern_match(inst_code, "c...")) { REG_D_TARGET = as_int(as_float(REG_B) + as_float(REG_A)); NEXT_INST("%s <- %s + %s", trFREG_D, trFREG_B, trFREG_A); }
           break;
         case 0xd:
@@ -505,8 +521,8 @@ sim_engine_run (SIM_DESC sd,
           if (pattern_match(inst_code, "eff.")) UNKNOWN;
           if (pattern_match(inst_code, "e.f.")) { REG_D_TARGET = as_int(as_float(REG_B) * as_float(field_e)); NEXT_INST("R <- FR * FI"); }
           if (pattern_match(inst_code, "e..0")) UNKNOWN;
-          if (pattern_match(inst_code, "e.0.")) UNKNOWN;
-          if (pattern_match(inst_code, "e0..")) UNKNOWN;
+          if (pattern_match(inst_code, "e.0.")) { if (REG_A <= 0.0f) { if (scpu->is_task_mode) { swap_mode = true; update_pc_before_exception = false; } sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGFPE); } REG_D_TARGET = as_int(1.0f / sqrtf(as_float(REG_B))); NEXT_INST("%s <- rsqrt %s", trFREG_D, trFREG_B); }
+          if (pattern_match(inst_code, "e0..")) { if (REG_A == 0.0f) { if (scpu->is_task_mode) { swap_mode = true; update_pc_before_exception = false; } sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGFPE); } REG_D_TARGET = as_int(1.0f / as_float(REG_A)); NEXT_INST("%s <- 1 / %s", trFREG_D, trFREG_A); }
           if (pattern_match(inst_code, "e...")) { REG_D_TARGET = as_int(as_float(REG_B) * as_float(REG_A)); NEXT_INST("R <- FR * FR"); }
           break;
         case 0xf:
