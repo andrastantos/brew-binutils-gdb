@@ -58,6 +58,7 @@ static inst_tableS inst_table[] =
   { "fence",   0x0dd0 },
   { "wfence",  0x0ee0 },
   { "woi",     0x1000 },
+  { "nop",     0x1111 }, /* pseudo instruction: $r1 = $r1 | $r1, which is of course, a no-op */
   { NULL,      0x0000 }
 };
 
