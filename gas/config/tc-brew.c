@@ -139,9 +139,9 @@ static alu_tableS alu_table[] =
   { "+",       0x4000,     NO_IMM_B | COMMUTATIVE,                                                         0,                     0,                     0 },
   { "+",       0x4000,     NO_IMM_B | COMMUTATIVE,                                                         BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   { "<<",      0x5000,     0,                                                                              0,                     0,                     0 },
-  { "<<",      0x5000,     0,                                                                              BREW_REG_FLAG_SIGNED,  0,                     BREW_REG_FLAG_SIGNED  },
+  { "<<",      0x5000,     0,                                                                              0,                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   { ">>",      0x6000,     0,                                                                              0,                     0,                     0 },
-  { ">>",      0x7000,     0,                                                                              BREW_REG_FLAG_SIGNED,  0,                     BREW_REG_FLAG_SIGNED  },
+  { ">>",      0x7000,     0,                                                                              0,                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   { "*",       0x8000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      0,                     0,                     0 },
   { "*",       0x9000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   /*           0xa000 is the 'upper' version of 0x8000 */
@@ -454,11 +454,28 @@ parse_reg_index(char *str)
       register index, or BREW_REG_TPC for $tpc and flags set as appropriate
       -1 in case of failure.
 */
+
+typedef struct 
+{
+  const char *name;
+  int regno;
+  bool is_tpc;
+} named_registers_s;
+
+static named_registers_s named_registers[] = {
+  {"pc",  BREW_REG_PC,  false},
+  {"tpc", BREW_REG_TPC, true},
+  {"sp",  BREW_REG_SP,  false},
+  {"fp",  BREW_REG_FP,  false},
+  {NULL,  0, false}
+};
+
 static int
 parse_register_operand (char *token, bool allow_tpc)
 {
   int flags = 0;
   int reg_idx;
+  named_registers_s *named_register_entry;
 
   if (token[0] != '$')
     {
@@ -466,22 +483,28 @@ parse_register_operand (char *token, bool allow_tpc)
       return -1;
     }
   token++;
-  if (token[0] == 's')
+  /* have to special case $sp */
+  if (token[0] == 's' && !(token[1] == 'p' && token[2] == 0)) 
     {
       flags = BREW_REG_FLAG_SIGNED;
       token++;
     }
-  else if (float_support && (token[0] == 'f'))
+  /* have to special-case $fp */
+  else if (float_support && (token[0] == 'f') && !(token[1] == 'p' && token[2] == 0))
     {
       flags = BREW_REG_FLAG_FLOAT;
       token++;
     }
   
-  if (strcasecmp(token, "pc") == 0)
-    reg_idx = BREW_REG_PC;
-  else if (allow_tpc && strcasecmp(token, "tpc") == 0)
-    reg_idx = BREW_REG_TPC;
-  else if (token[0] == 'r')
+  for (named_register_entry = named_registers; named_register_entry->name != NULL; ++named_register_entry)
+    {
+      if ((allow_tpc || !named_register_entry->is_tpc) && strcasecmp(token, named_register_entry->name) == 0)
+        {
+          reg_idx = named_register_entry->regno;
+          return flags | reg_idx;
+        }
+    }
+  if (token[0] == 'r')
     {
       reg_idx = parse_reg_index(token+1);
     }

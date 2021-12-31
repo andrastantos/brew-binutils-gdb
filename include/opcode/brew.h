@@ -77,6 +77,8 @@
 #define BREW_iD                 0x50a /* Unary Instructions with immediate source */
 
 #define BREW_REG_PC 0x0
+#define BREW_REG_SP 0x1 /* R1 is of course a general purpose register, but the ABI defines it as SP, so let's have an alias for that */
+#define BREW_REG_FP 0x2 /* R2 is of course a general purpose register, but the ABI defines it as FP, so let's have an alias for that */
 #define BREW_REG_R(x) (x)
 
 #define BREW_NO_TPC 0
