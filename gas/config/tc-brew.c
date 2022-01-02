@@ -28,7 +28,7 @@
 #include "opcode/brew.h"
 #include "elf/brew.h"
 
-#define DEBUG(...) { fprintf (stderr, __VA_ARGS__); fprintf(stderr, "\n"); }
+#define DEBUG(...) { if (trace) {fprintf (stderr, __VA_ARGS__); fprintf(stderr, "\n");} }
 #define ABORT(msg) { as_bad msg; as_abort(__FILE__, __LINE__, __PRETTY_FUNCTION__); }
 
 const char comment_chars[]        = "#";
@@ -177,8 +177,8 @@ static unary_op_tableS unary_op_table[] = {
   { "~",       0xa000,     8,        0,                     0 },
   { "bswap",   0xb000,     4,        0,                     0 },
   { "wswap",   0xb000,     8,        0,                     0 },
-  { "bsi",     0xc000,     4,        0,                     0 },
-  { "wsi",     0xc000,     8,        0,                     0 },
+  { "bsi",     0xc000,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
+  { "wsi",     0xc000,     8,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
   { "floor",   0xd000,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_SIGNED },
   { "rsqrt",   0xe000,     8,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
 
@@ -207,6 +207,7 @@ const char FLT_CHARS[] = "rRsSfFdDxXpP";
 const char EXP_CHARS[] = "eE";
 
 bool float_support = true;
+bool trace = false;
 
 /* TOKEN STREAM ROUTINES */
 /*************************/
@@ -248,7 +249,7 @@ const char *special_tokens[] = {
    putting a zero-termination into the token delimiter. The original
    character is saved in tok_end_holder */
 static void
-get_optional_next_token(void)
+get_optional_next_token(const char *terminals)
 {
   int paren_cnt;
   //DEBUG("get_optional_next_token with tok_start: %8p, tok_end: %8p, tok_end_holder: '%c'", tok_start, tok_end, tok_end_holder);
@@ -266,6 +267,23 @@ get_optional_next_token(void)
 
   /* Find the end of the token */
   tok_end = tok_start;
+  /* If terminals are provided, read until any of them occurs */
+  if (terminals != NULL)
+    {
+      while(strchr(terminals, *tok_end) == NULL)
+        {
+          ++tok_end;
+          if (*tok_end == 0)
+            break;
+          if (is_end_of_line[*tok_end & 0xff])
+            break;
+        }
+        tok_end_holder = *tok_end;
+        *tok_end = 0;
+        DEBUG("                 returning %s", tok_start);
+        return;
+    }
+
   //DEBUG("get_optional_next_token %s", tok_end);
   /* special 2-char tokens */
   for (special_token = special_tokens; *special_token != NULL; ++special_token)
@@ -343,9 +361,9 @@ get_optional_next_token(void)
    Returns true on success, false on failure.
 */
 static bool
-vget_next_token(const char *err_msg, va_list args)
+vget_next_token(const char *terminals, const char *err_msg, va_list args)
 {
-  get_optional_next_token();
+  get_optional_next_token(terminals);
   if (tok_start == NULL)
     {
       as_vbad(err_msg, args);
@@ -355,13 +373,13 @@ vget_next_token(const char *err_msg, va_list args)
   return true;
 }
 static bool
-get_next_token(const char *err_msg, ...)
+get_next_token(const char *terminals, const char *err_msg, ...)
 {
   va_list args;
   bool ret_val;
 
   va_start(args, err_msg);
-  ret_val = vget_next_token(err_msg, args);
+  ret_val = vget_next_token(terminals, err_msg, args);
   va_end(args);
   return ret_val;
 }
@@ -378,7 +396,7 @@ is_next_token(const char *expected_tok, char *err_msg, ...)
 
   va_start(args, err_msg);
   //DEBUG("is_next_token %s enters with %s", expected_tok, tok_start);
-  ret_val = vget_next_token(err_msg, args);
+  ret_val = vget_next_token(NULL, err_msg, args);
   //DEBUG("is_next_token %s compares to %s with ret_val %s", expected_tok, tok_start, ret_val ? "true":"false");
   if (!ret_val)
     {
@@ -412,12 +430,22 @@ undo_last_token(void)
   DEBUG("                 undo");
 }
 
+/* back-tracks to the specified point */
+static void
+back_track_to(char *point)
+{
+  *tok_end = tok_end_holder;
+  tok_end = point;
+  tok_end_holder = *tok_end;
+  DEBUG("                 back-track to '%s'", tok_end);
+}
+
 /* Makes sure the token stream is completely parsed
    Outputs warkings and errors about this and ends the token stream.
 */
 static void close_token_strm(void)
 {
-  get_optional_next_token();
+  get_optional_next_token(NULL);
   if (tok_start != NULL)
     as_warn (_("extra stuff on line ignored '%s'"), tok_start);
   end_token_strm();
@@ -597,7 +625,8 @@ parse_expression(const char *token, bool support_float)
 
 
 
-#define GET_NEXT_TOKEN(err_msg) { bool x; x = get_next_token err_msg; if (!x) { DEBUG("GET_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str); close_token_strm(); ignore_rest_of_line(); return;}}
+#define GET_NEXT_TOKEN(...) { bool x; x = get_next_token(NULL, __VA_ARGS__); if (!x) { DEBUG("GET_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str); close_token_strm(); ignore_rest_of_line(); return;}}
+#define GET_NEXT_TOKEN_UNTIL(...) { bool x; x = get_next_token(__VA_ARGS__); if (!x) { DEBUG("GET_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str); close_token_strm(); ignore_rest_of_line(); return;}}
 #define IS_NEXT_TOKEN(params) { if (!is_next_token params) { DEBUG("IS_NEXT_TOKEN RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str); close_token_strm(); ignore_rest_of_line(); return;}}
 #define ERR_RETURN { DEBUG("ERR RETURN with token %s, position %ld in str %s\n", tok_start, tok_start-str, str); close_token_strm(); ignore_rest_of_line(); return; }
 #define RETURN(inst_code) { \
@@ -631,7 +660,7 @@ md_assemble (char *str)
 
   DEBUG("md_assemble: %s", str);
 
-  GET_NEXT_TOKEN((_("Invalid instruction: not a single token is found ")));
+  GET_NEXT_TOKEN(_("Invalid instruction: not a single token is found "));
   /* Deal with simple instructions */
   {
     inst_tableS *inst_table_entry;
@@ -656,16 +685,16 @@ md_assemble (char *str)
       else
         break;
       IS_NEXT_TOKEN(("[", _("invalid store operation syntax ")));
-      GET_NEXT_TOKEN((_("invalid store operation syntax ")));
+      GET_NEXT_TOKEN_UNTIL("],", _("invalid store operation syntax "));
       /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
       if (parse_expression(tok_start, false))
         {
           inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
-          GET_NEXT_TOKEN((_("invalid store offset syntax")));
+          GET_NEXT_TOKEN(_("invalid store offset syntax"));
           if (strcmp(tok_start, ",") == 0)
             {
               /* We have the format of MEM[{expr},{reg}] = {reg} */
-              GET_NEXT_TOKEN((_("invalid store offset syntax")));
+              GET_NEXT_TOKEN(_("invalid store offset syntax"));
               reg_a = parse_register_operand(tok_start, false);
               if (reg_a == -1)
                 {
@@ -688,10 +717,10 @@ md_assemble (char *str)
               as_bad(_("Invlid register offset in store"));
               ERR_RETURN;
             }
-          GET_NEXT_TOKEN((_("invalid store offset syntax")));
+          GET_NEXT_TOKEN(_("invalid store offset syntax"));
           if (strcmp(tok_start, ",") == 0)
             {
-              GET_NEXT_TOKEN((_("invalid store offset syntax")));
+              GET_NEXT_TOKEN_UNTIL("]",_("invalid store offset syntax"));
               if (!parse_expression(tok_start, false))
                 {
                   as_bad(_("Invalid store offset syntax: expecting expression"));
@@ -708,7 +737,7 @@ md_assemble (char *str)
         }
       IS_NEXT_TOKEN(("]", _("invalid store operation syntax ")));
       IS_NEXT_TOKEN((ASSIGNMENT_STR, _("invalid store instruction syntax: expecting " ASSIGNMENT_STR ", got %s"), tok_start));
-      GET_NEXT_TOKEN((_("invalid store operation syntax ")));
+      GET_NEXT_TOKEN(_("invalid store operation syntax "));
       reg_d = parse_register_operand(tok_start, true);
       if (reg_d == -1)
         {
@@ -740,19 +769,19 @@ md_assemble (char *str)
       int reg1;
       int reg2;
 
-      GET_NEXT_TOKEN((_("invalid instruction syntax")));
+      GET_NEXT_TOKEN(_("invalid instruction syntax"));
       reg1 = parse_register_operand(tok_start, false);
       if (reg1 == -1)
         {
           as_bad(_("Invalid branch instruction: expected test register"));
           ERR_RETURN;
         }
-      GET_NEXT_TOKEN((_("invalid instruction syntax")));
+      GET_NEXT_TOKEN(_("invalid instruction syntax"));
       if (strcmp(tok_start, "[") == 0)
         {
           int bit_idx;
           /* This is a bit-test branch */
-          GET_NEXT_TOKEN((_("invalid instruction syntax")));
+          GET_NEXT_TOKEN(_("invalid instruction syntax"));
           bit_idx = parse_reg_index(tok_start);
           if (bit_idx == -1)
             {
@@ -761,7 +790,7 @@ md_assemble (char *str)
             }
           IS_NEXT_TOKEN(("]", _("invalid bit-test branch instruction: expected ']'")));
           IS_NEXT_TOKEN(("==", _("invalid bit-test branch instruction: expected '=='")));
-          GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected condition")));
+          GET_NEXT_TOKEN(_("invalid bit-test branch instruction: expected condition"));
           if (strcmp(tok_start, "0") == 0)
             {
               inst_code = 0x00ff;
@@ -780,7 +809,7 @@ md_assemble (char *str)
             }
           IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
           IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
-          GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected branch target")));
+          GET_NEXT_TOKEN(_("invalid bit-test branch instruction: expected branch target"));
           if (!parse_expression(tok_start, false))
             {
               as_bad(_("invalid bit-test branch instruction: expected branch target"));
@@ -798,7 +827,7 @@ md_assemble (char *str)
               ERR_RETURN;
             }
           strcpy(branch_op, tok_start);
-          GET_NEXT_TOKEN((_("invlid branch instruction: expected second comparison argument")));
+          GET_NEXT_TOKEN(_("invlid branch instruction: expected second comparison argument"));
           if (strcmp(tok_start, "0") == 0)
             {
               /* comparison with 0 */
@@ -821,7 +850,7 @@ md_assemble (char *str)
                 }
               IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
               IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
-              GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected branch target")));
+              GET_NEXT_TOKEN(_("invalid bit-test branch instruction: expected branch target"));
               if (!parse_expression(tok_start, false))
                 {
                   as_bad(_("invalid bit-test branch instruction: expected branch target"));
@@ -871,7 +900,7 @@ md_assemble (char *str)
               inst_code |= reg_a << 4;
               IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
               IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
-              GET_NEXT_TOKEN((_("invalid bit-test branch instruction: expected branch target")));
+              GET_NEXT_TOKEN(_("invalid bit-test branch instruction: expected branch target"));
               if (!parse_expression(tok_start, false))
                 {
                   as_bad(_("invalid bit-test branch instruction: expected branch target"));
@@ -892,7 +921,7 @@ md_assemble (char *str)
       ERR_RETURN;
     }
   IS_NEXT_TOKEN((ASSIGNMENT_STR, _("Invalid operation ")));
-  GET_NEXT_TOKEN((_("Incomplete instructions")));
+  GET_NEXT_TOKEN(_("Incomplete instructions"));
 
 
   /* Load operations */
@@ -917,16 +946,16 @@ md_assemble (char *str)
       else
         break;
       IS_NEXT_TOKEN(("[", _("invalid load operation syntax ")));
-      GET_NEXT_TOKEN((_("invalid load operation syntax ")));
+      GET_NEXT_TOKEN_UNTIL("],", _("invalid load operation syntax "));
       /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
       if (parse_expression(tok_start, false))
         {
           inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
-          GET_NEXT_TOKEN((_("invalid load offset syntax")));
+          GET_NEXT_TOKEN(_("invalid load offset syntax"));
           if (strcmp(tok_start, ",") == 0)
             {
               /* We have the format of {reg} = MEM[{expr},{reg}]*/
-              GET_NEXT_TOKEN((_("invalid load offset syntax")));
+              GET_NEXT_TOKEN(_("invalid load offset syntax"));
               reg_a = parse_register_operand(tok_start, false);
               if (reg_a == -1)
                 {
@@ -949,10 +978,10 @@ md_assemble (char *str)
               as_bad(_("Invlid register offset in load"));
               ERR_RETURN;
             }
-          GET_NEXT_TOKEN((_("invalid load offset syntax")));
+          GET_NEXT_TOKEN(_("invalid load offset syntax"));
           if (strcmp(tok_start, ",") == 0)
             {
-              GET_NEXT_TOKEN((_("invalid load offset syntax")));
+              GET_NEXT_TOKEN_UNTIL("]", _("invalid load offset syntax"));
               if (!parse_expression(tok_start, false))
                 {
                   as_bad(_("Invalid load offset syntax: expecting expression"));
@@ -996,7 +1025,7 @@ md_assemble (char *str)
       if (strcasecmp(tok_start, "upper") == 0)
         {
           is_upper = true;
-          GET_NEXT_TOKEN((_("unexpected end of instruction after 'upper'")));
+          GET_NEXT_TOKEN(_("unexpected end of instruction after 'upper'"));
         }
       /* check for prefix unary operators */
       for (unary_op_table_entry = unary_op_table; unary_op_table_entry->inst_name != NULL; ++unary_op_table_entry)
@@ -1010,7 +1039,7 @@ md_assemble (char *str)
                   as_bad(_("unary operation %s can't be prefixed with 'upper'"), unary_op_table_entry->inst_name);
                   ERR_RETURN;
                 }
-              GET_NEXT_TOKEN((_("expected operand for unary operation %s"), tok_start));
+              GET_NEXT_TOKEN(_("expected operand for unary operation %s"), tok_start);
               reg_op = parse_register_operand(tok_start, false);
               if ((reg_d & 0xf) == BREW_REG_TPC)
                 {
@@ -1041,7 +1070,8 @@ md_assemble (char *str)
               as_bad(_("unexpected 'upper'"));
               ERR_RETURN;
             }
-          get_optional_next_token();
+          char *back_track_point = tok_start;
+          get_optional_next_token(NULL);
           if (tok_start == NULL)
             {
               /* This is simply {reg} <- 1. We need to handle that here even though load immediate is usually handled elsewhere, but we're too far down the road to back out. */
@@ -1080,7 +1110,7 @@ md_assemble (char *str)
                   as_bad(_("expected division (/) operator, got %s"), tok_start);
                   ERR_RETURN;
                 }
-              GET_NEXT_TOKEN((_("expected operand for reciprocal")));
+              GET_NEXT_TOKEN(_("expected operand for reciprocal"));
               reg_op = parse_register_operand(tok_start, false);
               if (reg_op == -1)
                 {
@@ -1102,14 +1132,25 @@ md_assemble (char *str)
               inst_code |= (reg_d & 0xf) << 0;
               RETURN(inst_code);
             }
+            /* back-track to further processing... */
+            back_track_to(back_track_point);
+            GET_NEXT_TOKEN(_("Unable to get next token after undo?!"));
         }
+      /* It could be a negative immediate ($r1 <- -1), which would fail the previous check for prefix operations, so check for that. */
+      if (strcmp(tok_start, "-") == 0)
+        {
+          char *real_start = tok_start;
+          get_optional_next_token(NULL); // This will advance tok_end to the next token and replace the zero-terminator
+          tok_start = real_start;
+        }
+      //DEBUG("trying to parse token '%s' as expression", tok_start);
       /* let's see if this is a simple immediate load */
       if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT))
         {
           char op[10];
           alu_tableS *alu_table_entry;
 
-          get_optional_next_token();
+          get_optional_next_token(NULL);
           if (tok_start == NULL)
             {
               /* This is an immediate load */
@@ -1136,7 +1177,7 @@ md_assemble (char *str)
               ERR_RETURN;
             }
           strcpy(op, tok_start);
-          GET_NEXT_TOKEN((_("expected second operand for binary operation '%s'"), op));
+          GET_NEXT_TOKEN(_("expected second operand for binary operation '%s'"), op);
           reg_a = parse_register_operand(tok_start, false);
           if (reg_a == -1)
             {
@@ -1216,7 +1257,7 @@ md_assemble (char *str)
           char op[10];
           alu_tableS *alu_table_entry;
 
-          get_optional_next_token();
+          get_optional_next_token(NULL);
           if (tok_start == NULL)
             {
               /* This is a register move */
@@ -1267,7 +1308,8 @@ md_assemble (char *str)
               ERR_RETURN;
             }
           strcpy(op, tok_start);
-          GET_NEXT_TOKEN((_("expected second operand for binary operation '%s'"), op));
+          //DEBUG("getting second operand for op %s", op);
+          GET_NEXT_TOKEN_UNTIL("\0", _("expected second operand for binary operation '%s'"), op);
           /* Special-case increment and decrement operations */
           do
             {
@@ -1442,13 +1484,17 @@ md_atof (int type, char *litP, int *sizeP)
 enum options
 {
   OPTION_F = OPTION_MD_BASE,
-  OPTION_NF
+  OPTION_NF,
+  OPTION_T,
+  OPTION_NT,
 };
 
 struct option md_longopts[] =
 {
   { "F",           no_argument, NULL, OPTION_F},
   { "NF",          no_argument, NULL, OPTION_NF},
+  { "T",           no_argument, NULL, OPTION_T},
+  { "NT",          no_argument, NULL, OPTION_NT},
   { NULL,          no_argument, NULL, 0}
 };
 
@@ -1466,6 +1512,12 @@ md_parse_option (int c ATTRIBUTE_UNUSED, const char *arg ATTRIBUTE_UNUSED)
       break;
     case OPTION_NF:
       float_support = false;
+      break;
+    case OPTION_T:
+      trace = true;
+      break;
+    case OPTION_NT:
+      trace = false;
       break;
     default:
       return 0;
