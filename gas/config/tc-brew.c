@@ -823,11 +823,11 @@ md_assemble (char *str)
           char branch_op[3];
           if (strlen(tok_start) > 2)
             {
-              as_bad(_("invalid branch instruction: unrecognized condition: %s"), tok_start);
+              as_bad(_("invalid comparison branch instruction: unrecognized condition: %s"), tok_start);
               ERR_RETURN;
             }
           strcpy(branch_op, tok_start);
-          GET_NEXT_TOKEN(_("invlid branch instruction: expected second comparison argument"));
+          GET_NEXT_TOKEN(_("invlid comparison branch instruction: expected second comparison argument"));
           if (strcmp(tok_start, "0") == 0)
             {
               /* comparison with 0 */
@@ -840,7 +840,7 @@ md_assemble (char *str)
                 }
               if (branch_table_entry->inst_name == NULL)
                 {
-                  as_bad(_("invalid branch instruction: unrecognized condition: %s"), branch_op);
+                  as_bad(_("invalid comparison branch instruction: unrecognized condition: %s"), branch_op);
                   ERR_RETURN;
                 }
               inst_code = branch_table_entry->zero_inst_code;
@@ -848,12 +848,12 @@ md_assemble (char *str)
                 {
                   inst_code |= (reg1 & 0xf) << 8;
                 }
-              IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
-              IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
-              GET_NEXT_TOKEN(_("invalid bit-test branch instruction: expected branch target"));
+              IS_NEXT_TOKEN(("$pc", _("invalid comparison branch instruction: expected '$pc'")));
+              IS_NEXT_TOKEN(("<-", _("invalid comparison branch instruction: expected '<-'")));
+              GET_NEXT_TOKEN(_("invalid comparison branch instruction: expected branch target"));
               if (!parse_expression(tok_start, false))
                 {
-                  as_bad(_("invalid bit-test branch instruction: expected branch target"));
+                  as_bad(_("invalid comparison branch instruction: expected branch target"));
                   ERR_RETURN;
                 }
               RETURN(inst_code);
@@ -1567,7 +1567,7 @@ md_apply_fix (fixS *fixP ATTRIBUTE_UNUSED,
       break;
     */
     default:
-      abort ();
+      as_fatal("Relocation type %d is not supported on brew. Do you have an undefined symbol?", fixP->fx_r_type);
     }
 
   if (max != 0 && (val < min || val > max))
