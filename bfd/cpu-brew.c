@@ -25,18 +25,18 @@
 
 const bfd_arch_info_type bfd_brew_arch =
 {
-  32,		      /* Bits in a word.  */
-  32,		      /* Bits in an address.  */
-  8,		      /* Bits in a byte.  */
-  bfd_arch_brew,      /* Architecture Number.  */
-  bfd_mach_brew,      /* Machine number.  */
-  "brew",	      /* Arch name.  */
-  "brew",	      /* Printable name.  */
-  2,		      /* Section alignment power.  */
-  true,	              /* The one and only.  */
+  32,                  /* Bits in a word.  */
+  32,                  /* Bits in an address.  */
+  8,                   /* Bits in a byte.  */
+  bfd_arch_brew,       /* Architecture Number.  */
+  bfd_mach_brew,       /* Machine number.  */
+  "brew",              /* Arch name.  */
+  "brew",              /* Printable name.  */
+  4,                   /* Section alignment power.  */
+  true,                /* The one and only.  */
   bfd_default_compatible,
   bfd_default_scan,
   bfd_arch_default_fill,
   NULL,
-  0 /* Maximum offset of a reloc from the start of an insn.  */
+  0                    /* Maximum offset of a reloc from the start of an insn.  */
 };
