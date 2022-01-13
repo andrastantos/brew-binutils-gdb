@@ -27,7 +27,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/time.h>
 #include <unistd.h>
+#include <utime.h>
+#include <time.h>
+#include <sys/times.h>
+#include <errno.h>
 #include "bfd.h"
 #include "libiberty.h"
 #include "sim/sim.h"
@@ -38,6 +45,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "sim-io.h"
 #include "sim-signal.h"
 #include "target-newlib-syscall.h"
+
+#include "newlib_syscalls.h"
+#include "newlib_stat.h"
+#include "brew-calls.h"
 
 #include <math.h>
 
@@ -366,6 +377,236 @@ static INLINE void branch_to(sim_cpu *scpu, uint32_t field_e)
     }
 }
 
+// Copies a string from SIM memory to host memory.
+// Returns a pointer to the string, WHICH NEEDS TO BE FREE-d
+static char *sim_core_read_str(SIM_DESC sd, sim_cpu *scpu, uint32_t addr)
+{
+  size_t alloc_size = 1024;
+  char *str = (char *)malloc(alloc_size);
+  size_t str_len = 0;
+  char *c = str;
+  SIM_ASSERT(str != NULL);
+  do
+    {
+      *c = sim_core_read_1(scpu, CPU_PC_GET(scpu), read_map, addr);
+      if (*c == 0)
+        break;
+      ++c;
+      ++str_len;
+      if (str_len >= alloc_size)
+        {
+          alloc_size *= 2;
+          str = (char *)realloc(str, alloc_size);
+          SIM_ASSERT(str != NULL);
+          c = str+str_len;
+        }
+    } while (false);
+  return str;
+}
+
+#define SET_ERRNO(value) { TEST_ALIGN(errno_addr, 4); write_uint32(scpu, errno_addr, value); }
+
+static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint16_t syscall_no)
+{
+  // Syscalls follow normal function-call ABI with the addition that
+  // $r3 points to 'errno' on entry.
+  // The ABI declares that $r8...$r14 needs to maintain it's value
+  // accross calls. This applies to SYSCALLs too. $sp and $fp need
+  // to be preserved as well. $r3...$r7 can change, though it's quite
+  // possible that a true executive implementaton would preserve those
+  // as well. In the simulator, we'll only override the return value
+  // register(s) and preserve all other.
+  //
+  // The syscall number is held at the 16-bit address after the SYSCALL
+  // instruction. This is the address where the PC points to in real HW,
+  // but NOT where it points in the simulator.
+  // $pc needs to be advanced by 4 prior returning from the SYSCALL
+  // into task mode. Again, the simulator - being task-mode only for now -
+  // only needs to worry about setting the PC up appropriately.
+  uint32_t errno_addr = scpu->regs[3];
+  uint32_t arg1 = scpu->regs[4];
+  uint32_t arg2 = scpu->regs[5];
+  uint32_t arg3 = scpu->regs[6];
+  uint32_t arg4 = scpu->regs[7];
+  char *str1;
+  char *str2;
+  int ret_val;
+
+  REG_TPC_TARGET = REG_TPC + 4; // PC at this point still points
+  switch (syscall_no) {
+    case SYS_exit:
+      // simulated process terminating: let's terminate too!
+      exit(arg1);
+      break;
+    case SYS_open:
+      // FIXME: handle the VA_ARG portion of the call!!
+      str1 = sim_core_read_str(sd, scpu, arg1);
+      ret_val = open(str1, arg2);
+      free(str1);
+      scpu->regs[4] = ret_val;
+      if (ret_val == -1)
+        SET_ERRNO(errno);
+      break;
+    case SYS_close:
+      ret_val = close(arg1);
+      scpu->regs[4] = ret_val;
+      if (ret_val == -1)
+        SET_ERRNO(errno);
+      break;
+    case SYS_read: {
+      void *buffer = malloc(arg3);
+      ret_val = read(arg1, buffer, arg3);
+      scpu->regs[4] = ret_val;
+      if (ret_val >= 0)
+        sim_core_write_buffer(sd, scpu, write_map, buffer, arg2, arg3);
+      else
+        SET_ERRNO(errno);
+      free(buffer);
+      break;
+    }
+    case SYS_write: {
+      void *buffer = malloc(arg3);
+      sim_core_read_buffer(sd, scpu, write_map, buffer, arg2, arg3);
+      ret_val = write(arg1, buffer, arg3);
+      scpu->regs[4] = ret_val;
+      if (ret_val == -1)
+        SET_ERRNO(errno);
+      free(buffer);
+      break;
+    }
+    case SYS_lseek:
+      ret_val = lseek(arg1, arg2, arg3);
+      scpu->regs[4] = ret_val;
+      if (ret_val == -1)
+        SET_ERRNO(errno);
+      break;
+    case SYS_unlink:
+      str1 = sim_core_read_str(sd, scpu, arg1);
+      ret_val = unlink(str1);
+      free(str1);
+      scpu->regs[4] = ret_val;
+      if (ret_val == -1)
+        SET_ERRNO(errno);
+      break;
+    case SYS_getpid:
+      // Since we don't simulate multiple processes, we simply return the PID of the simulator.
+      scpu->regs[4] = getpid();
+      break;
+    case SYS_kill:
+      ret_val = kill(arg1, arg2);
+      scpu->regs[4] = ret_val;
+      if (ret_val == -1)
+        SET_ERRNO(errno);
+      break;
+    case SYS_fstat: {
+      struct stat statbuf;
+      ret_val = fstat(arg1, &statbuf);
+      // We actually have to translate the stat structure: we can't just assume it has the same layout
+      // on the host as on the simulator.
+      SIM_ASSERT(false);
+      break;
+    }
+
+    // These are not implemented
+    case SYS_argvlen:
+    case SYS_argv:
+      TRACE_EVENTS (scpu, "Unknown SYSCALL: %d", syscall_no);
+      sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGTRAP);
+      break;
+    case SYS_chdir:
+      str1 = sim_core_read_str(sd, scpu, arg1);
+      ret_val = chdir(str1);
+      free(str1);
+      scpu->regs[4] = ret_val;
+      if (ret_val == -1)
+        SET_ERRNO(errno);
+      break;
+    case SYS_stat: {
+      struct stat statbuf;
+      ret_val = fstat(arg1, &statbuf);
+      // We actually have to translate the stat structure: we can't just assume it has the same layout
+      // on the host as on the simulator.
+      SIM_ASSERT(false);
+      break;
+    }
+    case SYS_chmod:
+      str1 = sim_core_read_str(sd, scpu, arg1);
+      ret_val = chmod(str1, arg2);
+      free(str1);
+      scpu->regs[4] = ret_val;
+      if (ret_val == -1)
+        SET_ERRNO(errno);
+      break;
+    case SYS_utime: {
+      struct utimbuf times;
+      str1 = sim_core_read_str(sd, scpu, arg1);
+      ret_val = utime(str1, &times);
+      free(str1);
+      // We actually have to translate the stat structure: we can't just assume it has the same layout
+      // on the host as on the simulator.
+      SIM_ASSERT(false);
+      break;
+    }
+    case SYS_time: {
+      time_t now = time(NULL);
+      scpu->regs[4] = now;
+      if (arg1 != 0)
+        {
+          sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, arg1, now);
+        }
+      break;
+    }
+    case SYS_gettimeofday: {
+      struct timeval time_val;
+      struct timezone time_zone;
+      ret_val = gettimeofday(&time_val, &time_zone);
+      // We actually have to translate the stat structure: we can't just assume it has the same layout
+      // on the host as on the simulator.
+      SIM_ASSERT(false);
+      break;
+    }
+    case SYS_times: {
+      struct tms time_buf;
+      ret_val = times(&time_buf);
+      // We actually have to translate the stat structure: we can't just assume it has the same layout
+      // on the host as on the simulator.
+      SIM_ASSERT(false);
+      break;
+    }
+    case SYS_link:
+      str1 = sim_core_read_str(sd, scpu, arg1);
+      str2 = sim_core_read_str(sd, scpu, arg2);
+      ret_val = link(str1, str2);
+      free(str1);
+      free(str2);
+      scpu->regs[4] = ret_val;
+      if (ret_val == -1)
+        SET_ERRNO(errno);
+      break;
+
+    // These are not implemented
+    case SYS_argc:
+    case SYS_argnlen:
+    case SYS_argn:
+    case SYS_reconfig:
+      TRACE_EVENTS (scpu, "Unknown SYSCALL: %d", syscall_no);
+      sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGTRAP);
+      break;
+    // Brew-specific calls:
+    case BREW_isatty:
+      ret_val = isatty(arg1);
+      scpu->regs[4] = ret_val;
+      if (ret_val == 0)
+        SET_ERRNO(errno);
+      break;
+
+    default:
+      TRACE_EVENTS (scpu, "Unknown SYSCALL: %d", syscall_no);
+      sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGTRAP);
+      break;
+  }
+}
+
 void
 sim_engine_run (SIM_DESC sd,
                 int next_cpu_nr, /* the CPU to run  */
@@ -406,7 +647,7 @@ sim_engine_run (SIM_DESC sd,
         case 0x0: /* ^ and special */
           if (pattern_match(inst_code, "0000")) { BREW_TRACE_INST("FILL"); if (scpu->is_task_mode) swap_mode = true; sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); }
           if (pattern_match(inst_code, "0110")) { BREW_TRACE_INST("BREAK"); if (scpu->is_task_mode) swap_mode = true; sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGTRAP); }
-          if (pattern_match(inst_code, "0220")) { BREW_TRACE_INST("SYSCALL"); if (scpu->is_task_mode) swap_mode = true; sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); } /* We should simulate syscalls here */
+          if (pattern_match(inst_code, "0220")) { uint16_t syscall_no = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), exec_map, (CPU_PC_GET(scpu)&1)+2); BREW_TRACE_INST("SYSCALL %d", syscall_no); handle_syscall(sd, scpu, syscall_no); }
           if (pattern_match(inst_code, "0330")) { if (scpu->is_task_mode) { swap_mode = true; NEXT_INST("STU"); } else sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGABRT); } /* Return to task mode --> NOP in task mode */
           if (pattern_match(inst_code, "0440")) UNKNOWN; /* This is actually known, it is the official SII exception */ 
           if (pattern_match(inst_code, "0dd0")) { NEXT_INST("FENCE"); }
