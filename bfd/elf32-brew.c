@@ -353,7 +353,7 @@ brew_elf_check_relocs (bfd *abfd,
 
 #define ELF_ARCH		bfd_arch_brew
 #define ELF_MACHINE_CODE	EM_BREW
-#define ELF_MAXPAGESIZE		0x1
+#define ELF_MAXPAGESIZE		0x1000
 
 #define TARGET_LITTLE_SYM	brew_elf32_vec
 #define TARGET_LITTLE_NAME	"elf32-brew"
