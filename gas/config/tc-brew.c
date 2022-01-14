@@ -1650,4 +1650,7 @@ void
 md_begin (void)
 {
   bfd_set_arch_mach (stdoutput, TARGET_ARCH, 0);
+  record_alignment (text_section, 1);
+  record_alignment (data_section, 2);
+  record_alignment (bss_section, 2);
 }
