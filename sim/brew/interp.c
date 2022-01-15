@@ -250,6 +250,18 @@ static INLINE void brew_trace_all(sim_cpu *scpu, const char *message)
   sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); \
 }
 
+#define FINAL_ELSE else { \
+  char inst_str[80]; \
+  if (length == 2) \
+    sprintf(inst_str, "FINAL ELSE UKN 0x%04x", inst_code); \
+  else \
+    sprintf(inst_str, "FINAL ELSE UKN 0x%04x 0x%08x", inst_code, field_e); \
+  BREW_TRACE_INST(inst_str); \
+  update_pc_before_exception = false; \
+  if (scpu->is_task_mode) swap_mode = true; \
+  sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); \
+}
+
 #define REG_D_TARGET scpu->regs_touch[FIELD_D == BREW_REG_PC ? BREW_REG_NEXT_PC : FIELD_D] = true; scpu->regs[FIELD_D == BREW_REG_PC ? BREW_REG_NEXT_PC : FIELD_D]
 #define REG_TPC_TARGET scpu->regs_touch[scpu->is_task_mode ? BREW_REG_NEXT_PC : BREW_REG_OTHER_PC] = true; scpu->regs[scpu->is_task_mode ? BREW_REG_NEXT_PC : BREW_REG_OTHER_PC]
 #define TREG_D_TARGET temp_reg_idx = FIELD_D == 0 ? scpu->is_task_mode ? BREW_REG_NEXT_PC : BREW_REG_OTHER_PC : FIELD_D == BREW_REG_PC ? BREW_REG_NEXT_PC : FIELD_D; scpu->regs_touch[temp_reg_idx] = true; scpu->regs[temp_reg_idx]
@@ -645,211 +657,228 @@ sim_engine_run (SIM_DESC sd,
       switch (FIELD_C)
         {
         case 0x0: /* ^ and special */
-          if (pattern_match(inst_code, "0000")) { BREW_TRACE_INST("FILL"); if (scpu->is_task_mode) swap_mode = true; sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); }
-          if (pattern_match(inst_code, "0110")) { BREW_TRACE_INST("BREAK"); if (scpu->is_task_mode) swap_mode = true; sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGTRAP); }
-          if (pattern_match(inst_code, "0220")) { uint16_t syscall_no = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), exec_map, (CPU_PC_GET(scpu)&1)+2); BREW_TRACE_INST("SYSCALL %d", syscall_no); handle_syscall(sd, scpu, syscall_no); }
-          if (pattern_match(inst_code, "0330")) { if (scpu->is_task_mode) { swap_mode = true; NEXT_INST("STU"); } else sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGABRT); } /* Return to task mode --> NOP in task mode */
-          if (pattern_match(inst_code, "0440")) UNKNOWN; /* This is actually known, it is the official SII exception */ 
-          if (pattern_match(inst_code, "0dd0")) { NEXT_INST("FENCE"); }
-          if (pattern_match(inst_code, "0ee0")) { NEXT_INST("WFENCE"); }
-          if (pattern_match(inst_code, "0..0")) UNKNOWN;
-          if (pattern_match(inst_code, "0ff.")) { REG_D_TARGET = field_e; BREW_TRACE_INST("%s <- %u (0x%x)", trREG_D, field_e, field_e); }
-          if (pattern_match(inst_code, "0f..")) UNKNOWN;
-          if (pattern_match(inst_code, "0.f.")) { REG_D_TARGET = REG_B ^ field_e; NEXT_INST("%s <- %s ^ 0x%x", trREG_D, trREG_B, field_e); }
-          if (pattern_match(inst_code, "0...")) { REG_D_TARGET = REG_B ^ REG_A; NEXT_INST("%s <- %s ^ %s", trREG_D, trREG_B, trREG_A); }
+               if (pattern_match(inst_code, "0000")) { BREW_TRACE_INST("FILL"); if (scpu->is_task_mode) swap_mode = true; sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); }
+          else if (pattern_match(inst_code, "0110")) { BREW_TRACE_INST("BREAK"); if (scpu->is_task_mode) swap_mode = true; sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGTRAP); }
+          else if (pattern_match(inst_code, "0220")) { uint32_t pc = (CPU_PC_GET(scpu)&~1); uint16_t syscall_no = sim_core_read_aligned_2(scpu, pc, exec_map, pc+2); BREW_TRACE_INST("SYSCALL %d", syscall_no); handle_syscall(sd, scpu, syscall_no); }
+          else if (pattern_match(inst_code, "0330")) { if (scpu->is_task_mode) { swap_mode = true; NEXT_INST("STU"); } else sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGABRT); } /* Return to task mode --> NOP in task mode */
+          else if (pattern_match(inst_code, "0440")) { UNKNOWN; } /* This is actually known, it is the official SII exception */ 
+          else if (pattern_match(inst_code, "0dd0")) { NEXT_INST("FENCE"); }
+          else if (pattern_match(inst_code, "0ee0")) { NEXT_INST("WFENCE"); }
+          else if (pattern_match(inst_code, "0..0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "0ff.")) { REG_D_TARGET = field_e; BREW_TRACE_INST("%s <- %u (0x%x)", trREG_D, field_e, field_e); }
+          else if (pattern_match(inst_code, "0f..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "0.f.")) { REG_D_TARGET = REG_B ^ field_e; NEXT_INST("%s <- %s ^ 0x%x", trREG_D, trREG_B, field_e); }
+          else if (pattern_match(inst_code, "0...")) { REG_D_TARGET = REG_B ^ REG_A; NEXT_INST("%s <- %s ^ %s", trREG_D, trREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0x1:
-          if (pattern_match(inst_code, "1000")) { BREW_TRACE_INST("WOI"); sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); }
-          if (pattern_match(inst_code, "1f..")) UNKNOWN;
-          if (pattern_match(inst_code, "1.f.")) { REG_D_TARGET = REG_B | field_e; NEXT_INST("%s <- %s | 0x%x", trREG_D, trREG_B, field_e); }
-          if (pattern_match(inst_code, "1...")) { REG_D_TARGET = REG_B | REG_A; NEXT_INST("%s <- %s | %s", trREG_D, trREG_B, trREG_A); }
+               if (pattern_match(inst_code, "1000")) { BREW_TRACE_INST("WOI"); sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); }
+          else if (pattern_match(inst_code, "1f..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "1.f.")) { REG_D_TARGET = REG_B | field_e; NEXT_INST("%s <- %s | 0x%x", trREG_D, trREG_B, field_e); }
+          else if (pattern_match(inst_code, "1...")) { REG_D_TARGET = REG_B | REG_A; NEXT_INST("%s <- %s | %s", trREG_D, trREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0x2:
-          if (pattern_match(inst_code, "2f..")) UNKNOWN;
-          if (pattern_match(inst_code, "2.f.")) { REG_D_TARGET = REG_B & field_e; NEXT_INST("%s <- %s & 0x%x", trREG_D, trREG_B, field_e); }
-          if (pattern_match(inst_code, "2...")) { REG_D_TARGET = REG_B & REG_A; NEXT_INST("%s <- %s & %s", trREG_D, trREG_B, trREG_A); }
+               if (pattern_match(inst_code, "2f..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "2.f.")) { REG_D_TARGET = REG_B & field_e; NEXT_INST("%s <- %s & 0x%x", trREG_D, trREG_B, field_e); }
+          else if (pattern_match(inst_code, "2...")) { REG_D_TARGET = REG_B & REG_A; NEXT_INST("%s <- %s & %s", trREG_D, trREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0x3:
-          if (pattern_match(inst_code, "3f..")) { REG_D_TARGET = field_e - REG_A; NEXT_INST("%s <- %u - %s", trREG_D, field_e, trREG_A); }
-          if (pattern_match(inst_code, "3.f.")) { REG_D_TARGET = REG_B - field_e; NEXT_INST("%s <- %s - %u", trREG_D, trREG_B, field_e); }
-          if (pattern_match(inst_code, "3...")) { REG_D_TARGET = REG_B - REG_A; NEXT_INST("%s <- %s - %s", trREG_D, trREG_B, trREG_A); }
+               if (pattern_match(inst_code, "3f..")) { REG_D_TARGET = field_e - REG_A; NEXT_INST("%s <- %u - %s", trREG_D, field_e, trREG_A); }
+          else if (pattern_match(inst_code, "3.f.")) { REG_D_TARGET = REG_B - field_e; NEXT_INST("%s <- %s - %u", trREG_D, trREG_B, field_e); }
+          else if (pattern_match(inst_code, "3...")) { REG_D_TARGET = REG_B - REG_A; NEXT_INST("%s <- %s - %s", trREG_D, trREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0x4:
-          if (pattern_match(inst_code, "4f..")) UNKNOWN;
-          if (pattern_match(inst_code, "4.f.")) { REG_D_TARGET = REG_B + field_e; NEXT_INST("%s <- %s + %u", trREG_D, trREG_B, field_e); }
-          if (pattern_match(inst_code, "4...")) { REG_D_TARGET = REG_B + REG_A; NEXT_INST("%s <- %s + %s", trREG_D, trREG_B, trREG_A); }
+               if (pattern_match(inst_code, "4f..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "4.f.")) { REG_D_TARGET = REG_B + field_e; NEXT_INST("%s <- %s + %u", trREG_D, trREG_B, field_e); }
+          else if (pattern_match(inst_code, "4...")) { REG_D_TARGET = REG_B + REG_A; NEXT_INST("%s <- %s + %s", trREG_D, trREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0x5:
-          if (pattern_match(inst_code, "5f..")) { REG_D_TARGET = field_e << REG_A; NEXT_INST("%s <- %u << %s", trREG_D, field_e, trREG_A); }
-          if (pattern_match(inst_code, "5.f.")) { REG_D_TARGET = REG_B << field_e; NEXT_INST("%s <- %s << %u", trREG_D, trREG_B, field_e); }
-          if (pattern_match(inst_code, "5...")) { REG_D_TARGET = REG_B << REG_A; NEXT_INST("%s <- %s << %s", trREG_D, trREG_B, trREG_A); }
+               if (pattern_match(inst_code, "5f..")) { REG_D_TARGET = field_e << REG_A; NEXT_INST("%s <- %u << %s", trREG_D, field_e, trREG_A); }
+          else if (pattern_match(inst_code, "5.f.")) { REG_D_TARGET = REG_B << field_e; NEXT_INST("%s <- %s << %u", trREG_D, trREG_B, field_e); }
+          else if (pattern_match(inst_code, "5...")) { REG_D_TARGET = REG_B << REG_A; NEXT_INST("%s <- %s << %s", trREG_D, trREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0x6:
-          if (pattern_match(inst_code, "6f..")) { REG_D_TARGET = field_e >> REG_A; NEXT_INST("%s <- %u >> %s", trREG_D, field_e, trREG_A); }
-          if (pattern_match(inst_code, "6.f.")) { REG_D_TARGET = REG_B >> field_e; NEXT_INST("%s <- %s >> %u", trREG_D, trREG_B, field_e); }
-          if (pattern_match(inst_code, "6...")) { REG_D_TARGET = REG_B >> REG_A; NEXT_INST("%s <- %s >> %s", trREG_D, trREG_B, trREG_A); }
+               if (pattern_match(inst_code, "6f..")) { REG_D_TARGET = field_e >> REG_A; NEXT_INST("%s <- %u >> %s", trREG_D, field_e, trREG_A); }
+          else if (pattern_match(inst_code, "6.f.")) { REG_D_TARGET = REG_B >> field_e; NEXT_INST("%s <- %s >> %u", trREG_D, trREG_B, field_e); }
+          else if (pattern_match(inst_code, "6...")) { REG_D_TARGET = REG_B >> REG_A; NEXT_INST("%s <- %s >> %s", trREG_D, trREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0x7:
-          if (pattern_match(inst_code, "7f..")) { REG_D_TARGET = ((int32_t)field_e) >> REG_A; NEXT_INST("%s <- %d >> %s", trSREG_D, (int32_t)field_e, trREG_A); }
-          if (pattern_match(inst_code, "7.f.")) { REG_D_TARGET = ((int32_t)REG_B) >> field_e; NEXT_INST("%s <- %s >> %u", trSREG_D, trSREG_B, field_e); }
-          if (pattern_match(inst_code, "7...")) { REG_D_TARGET = ((int32_t)REG_B) >> REG_A; NEXT_INST("%s <- %s >> %s", trSREG_D, trSREG_B, trREG_A); }
+               if (pattern_match(inst_code, "7f..")) { REG_D_TARGET = ((int32_t)field_e) >> REG_A; NEXT_INST("%s <- %d >> %s", trSREG_D, (int32_t)field_e, trREG_A); }
+          else if (pattern_match(inst_code, "7.f.")) { REG_D_TARGET = ((int32_t)REG_B) >> field_e; NEXT_INST("%s <- %s >> %u", trSREG_D, trSREG_B, field_e); }
+          else if (pattern_match(inst_code, "7...")) { REG_D_TARGET = ((int32_t)REG_B) >> REG_A; NEXT_INST("%s <- %s >> %s", trSREG_D, trSREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0x8:
-          if (pattern_match(inst_code, "8f..")) UNKNOWN;
-          if (pattern_match(inst_code, "8ff.")) UNKNOWN;
-          if (pattern_match(inst_code, "80f.")) { TREG_D_TARGET = field_e; NEXT_INST("%s <- %u", trTREG_D, field_e); }
-          if (pattern_match(inst_code, "8.f.")) { REG_D_TARGET = REG_B * field_e; NEXT_INST("%s <- %s * %u", trREG_D, trREG_B, field_e); }
-          if (pattern_match(inst_code, "80..")) { TREG_D_TARGET = TREG_A; NEXT_INST("%s <- %s", trTREG_D, trTREG_A); }
-          if (pattern_match(inst_code, "8.0.")) UNKNOWN;
-          if (pattern_match(inst_code, "8...")) { REG_D_TARGET = REG_B * REG_A; NEXT_INST("%s <- %s * %s", trREG_D, trREG_B, trREG_A); }
+               if (pattern_match(inst_code, "8f..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "8ff.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "80f.")) { TREG_D_TARGET = field_e; NEXT_INST("%s <- %u", trTREG_D, field_e); }
+          else if (pattern_match(inst_code, "8.f.")) { REG_D_TARGET = REG_B * field_e; NEXT_INST("%s <- %s * %u", trREG_D, trREG_B, field_e); }
+          else if (pattern_match(inst_code, "80..")) { TREG_D_TARGET = TREG_A; NEXT_INST("%s <- %s", trTREG_D, trTREG_A); }
+          else if (pattern_match(inst_code, "8.0.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "8...")) { REG_D_TARGET = REG_B * REG_A; NEXT_INST("%s <- %s * %s", trREG_D, trREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0x9:
-          if (pattern_match(inst_code, "9f..")) UNKNOWN;
-          if (pattern_match(inst_code, "9ff.")) UNKNOWN;
-          if (pattern_match(inst_code, "90f.")) UNKNOWN;
-          if (pattern_match(inst_code, "9.f.")) { REG_D_TARGET = ((int32_t)REG_B) * ((int32_t)field_e); NEXT_INST("%s <- %s * %d", trSREG_D, trSREG_B, (int32_t)field_e); }
-          if (pattern_match(inst_code, "90..")) { REG_D_TARGET = REG_A + 1; NEXT_INST("%s <- %s + 1", trREG_D, trREG_A); }
-          if (pattern_match(inst_code, "9.0.")) { REG_D_TARGET = REG_B - 1; NEXT_INST("%s <- %s - 1", trREG_D, trREG_B); }
-          if (pattern_match(inst_code, "9..0")) UNKNOWN;
-          if (pattern_match(inst_code, "9...")) { REG_D_TARGET = ((int32_t)REG_B) * ((int32_t)REG_A); NEXT_INST("%s <- %s * %s", trSREG_D, trSREG_B, trSREG_A); }
+               if (pattern_match(inst_code, "9f..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "9ff.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "90f.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "9.f.")) { REG_D_TARGET = ((int32_t)REG_B) * ((int32_t)field_e); NEXT_INST("%s <- %s * %d", trSREG_D, trSREG_B, (int32_t)field_e); }
+          else if (pattern_match(inst_code, "90..")) { REG_D_TARGET = REG_A + 1; NEXT_INST("%s <- %s + 1", trREG_D, trREG_A); }
+          else if (pattern_match(inst_code, "9.0.")) { REG_D_TARGET = REG_B - 1; NEXT_INST("%s <- %s - 1", trREG_D, trREG_B); }
+          else if (pattern_match(inst_code, "9..0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "9...")) { REG_D_TARGET = ((int32_t)REG_B) * ((int32_t)REG_A); NEXT_INST("%s <- %s * %s", trSREG_D, trSREG_B, trSREG_A); }
+          FINAL_ELSE;
           break;
         case 0xa:
-          if (pattern_match(inst_code, "af..")) UNKNOWN;
-          if (pattern_match(inst_code, "aff.")) UNKNOWN;
-          if (pattern_match(inst_code, "a0f.")) UNKNOWN;
-          if (pattern_match(inst_code, "a.f.")) { REG_D_TARGET = (((uint64_t)REG_B) * ((uint64_t)field_e)) >> 32; NEXT_INST("%s <- upper %s * %u", trREG_D, trREG_B, field_e); }
-          if (pattern_match(inst_code, "a0..")) { REG_D_TARGET = -(int32_t)REG_A; NEXT_INST("%s <- -%s", trSREG_D, trSREG_A); }
-          if (pattern_match(inst_code, "a.0.")) { REG_D_TARGET = ~REG_B; NEXT_INST("%s <- ~%s", trREG_D, trREG_B); }
-          if (pattern_match(inst_code, "a..0")) UNKNOWN;
-          if (pattern_match(inst_code, "a...")) { REG_D_TARGET = (((uint64_t)REG_B) * ((uint64_t)REG_A)) >> 32; NEXT_INST("%s <- upper %s * %s", trREG_D, trREG_B, trREG_A); }
+               if (pattern_match(inst_code, "af..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "aff.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "a0f.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "a.f.")) { REG_D_TARGET = (((uint64_t)REG_B) * ((uint64_t)field_e)) >> 32; NEXT_INST("%s <- upper %s * %u", trREG_D, trREG_B, field_e); }
+          else if (pattern_match(inst_code, "a0..")) { REG_D_TARGET = -(int32_t)REG_A; NEXT_INST("%s <- -%s", trSREG_D, trSREG_A); }
+          else if (pattern_match(inst_code, "a.0.")) { REG_D_TARGET = ~REG_B; NEXT_INST("%s <- ~%s", trREG_D, trREG_B); }
+          else if (pattern_match(inst_code, "a..0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "a...")) { REG_D_TARGET = (((uint64_t)REG_B) * ((uint64_t)REG_A)) >> 32; NEXT_INST("%s <- upper %s * %s", trREG_D, trREG_B, trREG_A); }
+          FINAL_ELSE;
           break;
         case 0xb:
-          if (pattern_match(inst_code, "bf..")) UNKNOWN;
-          if (pattern_match(inst_code, "bff.")) UNKNOWN;
-          if (pattern_match(inst_code, "b0f.")) UNKNOWN;
-          if (pattern_match(inst_code, "b.f.")) { REG_D_TARGET = (((int64_t)REG_B) * ((int64_t)field_e)) >> 32; NEXT_INST("%s <- %s * %d", trSREG_D, trSREG_B, (int32_t)field_e); }
-          if (pattern_match(inst_code, "b0..")) { REG_D_TARGET = bswap(REG_A); NEXT_INST("%s <- bswap %s", trREG_D, trREG_A); }
-          if (pattern_match(inst_code, "b.0.")) { REG_D_TARGET = wswap(REG_B); NEXT_INST("%s <- wswap %s", trREG_D, trREG_B); }
-          if (pattern_match(inst_code, "b..0")) UNKNOWN;
-          if (pattern_match(inst_code, "b...")) { REG_D_TARGET = (((int64_t)REG_B) * ((int64_t)REG_A)) >> 32; NEXT_INST("%s <- %s * %s", trSREG_D, trSREG_B, trSREG_A); }
+               if (pattern_match(inst_code, "bf..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "bff.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "b0f.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "b.f.")) { REG_D_TARGET = (((int64_t)REG_B) * ((int64_t)field_e)) >> 32; NEXT_INST("%s <- %s * %d", trSREG_D, trSREG_B, (int32_t)field_e); }
+          else if (pattern_match(inst_code, "b0..")) { REG_D_TARGET = bswap(REG_A); NEXT_INST("%s <- bswap %s", trREG_D, trREG_A); }
+          else if (pattern_match(inst_code, "b.0.")) { REG_D_TARGET = wswap(REG_B); NEXT_INST("%s <- wswap %s", trREG_D, trREG_B); }
+          else if (pattern_match(inst_code, "b..0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "b...")) { REG_D_TARGET = (((int64_t)REG_B) * ((int64_t)REG_A)) >> 32; NEXT_INST("%s <- %s * %s", trSREG_D, trSREG_B, trSREG_A); }
+          FINAL_ELSE;
           break;
         case 0xc:
-          if (pattern_match(inst_code, "cf..")) UNKNOWN;
-          if (pattern_match(inst_code, "c0f.")) UNKNOWN;
-          if (pattern_match(inst_code, "c.f0")) UNKNOWN;
-          if (pattern_match(inst_code, "cff.")) UNKNOWN;
-          if (pattern_match(inst_code, "c.f.")) { REG_D_TARGET = as_int(as_float(REG_B) + as_float(field_e)); NEXT_INST("%s <- %s + %f", trFREG_D, trFREG_B, as_float(field_e)); }
-          if (pattern_match(inst_code, "c..0")) UNKNOWN;
-          if (pattern_match(inst_code, "c.0.")) { REG_D_TARGET = wsi(REG_B); NEXT_INST("%s <- wsi %s", trREG_D, trREG_B); }
-          if (pattern_match(inst_code, "c0..")) { REG_D_TARGET = bsi(REG_A); NEXT_INST("%s <- bsi %s", trREG_D, trREG_A); }
-          if (pattern_match(inst_code, "c...")) { REG_D_TARGET = as_int(as_float(REG_B) + as_float(REG_A)); NEXT_INST("%s <- %s + %s", trFREG_D, trFREG_B, trFREG_A); }
+               if (pattern_match(inst_code, "cf..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "c0f.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "c.f0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "cff.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "c.f.")) { REG_D_TARGET = as_int(as_float(REG_B) + as_float(field_e)); NEXT_INST("%s <- %s + %f", trFREG_D, trFREG_B, as_float(field_e)); }
+          else if (pattern_match(inst_code, "c..0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "c.0.")) { REG_D_TARGET = wsi(REG_B); NEXT_INST("%s <- wsi %s", trREG_D, trREG_B); }
+          else if (pattern_match(inst_code, "c0..")) { REG_D_TARGET = bsi(REG_A); NEXT_INST("%s <- bsi %s", trREG_D, trREG_A); }
+          else if (pattern_match(inst_code, "c...")) { REG_D_TARGET = as_int(as_float(REG_B) + as_float(REG_A)); NEXT_INST("%s <- %s + %s", trFREG_D, trFREG_B, trFREG_A); }
+          FINAL_ELSE;
           break;
         case 0xd:
-          if (pattern_match(inst_code, "df..")) { REG_D_TARGET = as_int(as_float(field_e) + as_float(REG_A)); NEXT_INST("%s <- %f - %s", trFREG_D, as_float(field_e), trFREG_A); }
-          if (pattern_match(inst_code, "d0f.")) UNKNOWN;
-          if (pattern_match(inst_code, "d.f0")) UNKNOWN;
-          if (pattern_match(inst_code, "dff.")) UNKNOWN;
-          if (pattern_match(inst_code, "d.f.")) { REG_D_TARGET = as_int(as_float(REG_B) - as_float(field_e)); NEXT_INST("%s <- %s - %f", trFREG_D, trFREG_B, as_float(field_e)); }
-          if (pattern_match(inst_code, "d..0")) UNKNOWN;
-          if (pattern_match(inst_code, "d.0.")) { REG_D_TARGET = as_int((float)REG_B); NEXT_INST("%s <- %s", trFREG_D, trSREG_B); }
-          if (pattern_match(inst_code, "d0..")) { REG_D_TARGET = floorf(as_float(REG_A)); NEXT_INST("%s <- floor %s", trSREG_D, trFREG_A); }
-          if (pattern_match(inst_code, "d...")) { REG_D_TARGET = as_int(as_float(REG_B) - as_float(REG_A)); NEXT_INST("%s <- %s - %s", trFREG_D, trFREG_B, trFREG_A); }
+               if (pattern_match(inst_code, "df..")) { REG_D_TARGET = as_int(as_float(field_e) + as_float(REG_A)); NEXT_INST("%s <- %f - %s", trFREG_D, as_float(field_e), trFREG_A); }
+          else if (pattern_match(inst_code, "d0f.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "d.f0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "dff.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "d.f.")) { REG_D_TARGET = as_int(as_float(REG_B) - as_float(field_e)); NEXT_INST("%s <- %s - %f", trFREG_D, trFREG_B, as_float(field_e)); }
+          else if (pattern_match(inst_code, "d..0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "d.0.")) { REG_D_TARGET = as_int((float)REG_B); NEXT_INST("%s <- %s", trFREG_D, trSREG_B); }
+          else if (pattern_match(inst_code, "d0..")) { REG_D_TARGET = floorf(as_float(REG_A)); NEXT_INST("%s <- floor %s", trSREG_D, trFREG_A); }
+          else if (pattern_match(inst_code, "d...")) { REG_D_TARGET = as_int(as_float(REG_B) - as_float(REG_A)); NEXT_INST("%s <- %s - %s", trFREG_D, trFREG_B, trFREG_A); }
+          FINAL_ELSE;
           break;
         case 0xe:
-          if (pattern_match(inst_code, "ef..")) UNKNOWN;
-          if (pattern_match(inst_code, "e0f.")) UNKNOWN;
-          if (pattern_match(inst_code, "e.f0")) UNKNOWN;
-          if (pattern_match(inst_code, "eff.")) UNKNOWN;
-          if (pattern_match(inst_code, "e.f.")) { REG_D_TARGET = as_int(as_float(REG_B) * as_float(field_e)); NEXT_INST("R <- FR * FI"); }
-          if (pattern_match(inst_code, "e..0")) UNKNOWN;
-          if (pattern_match(inst_code, "e.0.")) { if (REG_A <= 0.0f) { if (scpu->is_task_mode) { swap_mode = true; update_pc_before_exception = false; } sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGFPE); } REG_D_TARGET = as_int(1.0f / sqrtf(as_float(REG_B))); NEXT_INST("%s <- rsqrt %s", trFREG_D, trFREG_B); }
-          if (pattern_match(inst_code, "e0..")) { if (REG_A == 0.0f) { if (scpu->is_task_mode) { swap_mode = true; update_pc_before_exception = false; } sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGFPE); } REG_D_TARGET = as_int(1.0f / as_float(REG_A)); NEXT_INST("%s <- 1 / %s", trFREG_D, trFREG_A); }
-          if (pattern_match(inst_code, "e...")) { REG_D_TARGET = as_int(as_float(REG_B) * as_float(REG_A)); NEXT_INST("R <- FR * FR"); }
+               if (pattern_match(inst_code, "ef..")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "e0f.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "e.f0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "eff.")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "e.f.")) { REG_D_TARGET = as_int(as_float(REG_B) * as_float(field_e)); NEXT_INST("R <- FR * FI"); }
+          else if (pattern_match(inst_code, "e..0")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "e.0.")) { if (REG_A <= 0.0f) { if (scpu->is_task_mode) { swap_mode = true; update_pc_before_exception = false; } sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGFPE); } REG_D_TARGET = as_int(1.0f / sqrtf(as_float(REG_B))); NEXT_INST("%s <- rsqrt %s", trFREG_D, trFREG_B); }
+          else if (pattern_match(inst_code, "e0..")) { if (REG_A == 0.0f) { if (scpu->is_task_mode) { swap_mode = true; update_pc_before_exception = false; } sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGFPE); } REG_D_TARGET = as_int(1.0f / as_float(REG_A)); NEXT_INST("%s <- 1 / %s", trFREG_D, trFREG_A); }
+          else if (pattern_match(inst_code, "e...")) { REG_D_TARGET = as_int(as_float(REG_B) * as_float(REG_A)); NEXT_INST("R <- FR * FR"); }
+          FINAL_ELSE;
           break;
         case 0xf:
-          if (pattern_match(inst_code, "f0..")) { REG_D_TARGET = (int32_t)read_int8(scpu, REG_A); NEXT_INST("%s <- MEM8[%s]", trSREG_D, trREG_A); }
-          if (pattern_match(inst_code, "f1..")) { REG_D_TARGET = read_uint8(scpu, REG_A); NEXT_INST("%s <- MEM8[%s]", trREG_D, trREG_A); }
-          if (pattern_match(inst_code, "f2..")) { TEST_ALIGN(REG_A, 2); REG_D_TARGET = (int32_t)read_int16(scpu, REG_A); NEXT_INST("%s <- MEM16[%s]", trSREG_D, trREG_A); }
-          if (pattern_match(inst_code, "f3..")) { TEST_ALIGN(REG_A, 2); REG_D_TARGET = read_uint16(scpu, REG_A); NEXT_INST("%s <- MEM16[%s]", trREG_D, trREG_A); }
-          if (pattern_match(inst_code, "f4..")) { TEST_ALIGN(REG_A, 4); REG_D_TARGET = read_uint32(scpu, REG_A); NEXT_INST("%s <- MEM32[%s]", trREG_D, trREG_A); }
-          if (pattern_match(inst_code, "f5..")) { write_uint8(scpu, REG_A, REG_D); NEXT_INST("MEM8[%s] <- %s", trREG_A, trREG_D); }
-          if (pattern_match(inst_code, "f6..")) { TEST_ALIGN(REG_A, 2); write_uint16(scpu, REG_A, REG_D); NEXT_INST("MEM16[%s] <- %s", trREG_A, trREG_D); }
-          if (pattern_match(inst_code, "f7..")) { TEST_ALIGN(REG_A, 4); write_uint32(scpu, REG_A, REG_D); NEXT_INST("MEM32[%s] <- %s", trREG_A, trREG_D); }
-          if (pattern_match(inst_code, "f7.f")) UNKNOWN;
-          if (pattern_match(inst_code, "f7f.")) UNKNOWN;
+               if (pattern_match(inst_code, "f0..")) { REG_D_TARGET = (int32_t)read_int8(scpu, REG_A); NEXT_INST("%s <- MEM8[%s]", trSREG_D, trREG_A); }
+          else if (pattern_match(inst_code, "f1..")) { REG_D_TARGET = read_uint8(scpu, REG_A); NEXT_INST("%s <- MEM8[%s]", trREG_D, trREG_A); }
+          else if (pattern_match(inst_code, "f2..")) { TEST_ALIGN(REG_A, 2); REG_D_TARGET = (int32_t)read_int16(scpu, REG_A); NEXT_INST("%s <- MEM16[%s]", trSREG_D, trREG_A); }
+          else if (pattern_match(inst_code, "f3..")) { TEST_ALIGN(REG_A, 2); REG_D_TARGET = read_uint16(scpu, REG_A); NEXT_INST("%s <- MEM16[%s]", trREG_D, trREG_A); }
+          else if (pattern_match(inst_code, "f4..")) { TEST_ALIGN(REG_A, 4); REG_D_TARGET = read_uint32(scpu, REG_A); NEXT_INST("%s <- MEM32[%s]", trREG_D, trREG_A); }
+          else if (pattern_match(inst_code, "f5..")) { write_uint8(scpu, REG_A, REG_D); NEXT_INST("MEM8[%s] <- %s", trREG_A, trREG_D); }
+          else if (pattern_match(inst_code, "f6..")) { TEST_ALIGN(REG_A, 2); write_uint16(scpu, REG_A, REG_D); NEXT_INST("MEM16[%s] <- %s", trREG_A, trREG_D); }
+          else if (pattern_match(inst_code, "f7..")) { TEST_ALIGN(REG_A, 4); write_uint32(scpu, REG_A, REG_D); NEXT_INST("MEM32[%s] <- %s", trREG_A, trREG_D); }
+          else if (pattern_match(inst_code, "f7.f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "f7f.")) { UNKNOWN; }
 
-          if (pattern_match(inst_code, "f8f.")) { REG_D_TARGET = (int32_t)read_int8(scpu, field_e); NEXT_INST("%s <- MEM8[0x%x]", trSREG_D, field_e); }
-          if (pattern_match(inst_code, "f8ff")) { REG_TPC_TARGET = (int32_t)read_int8(scpu, field_e); NEXT_INST("$stpc <- MEM8[0x%x]", field_e); }
-          if (pattern_match(inst_code, "f9f.")) { REG_D_TARGET = read_uint8(scpu, field_e); NEXT_INST("%s <- MEM8[0x%x]", trREG_D, field_e); }
-          if (pattern_match(inst_code, "f9ff")) { REG_TPC_TARGET = read_uint8(scpu, field_e); NEXT_INST("$tpc <- MEM8[0x%x]", field_e); }
-          if (pattern_match(inst_code, "faf.")) { TEST_ALIGN(field_e, 2); REG_D_TARGET = (int32_t)read_int16(scpu, field_e); NEXT_INST("%s <- MEM16[0x%x]", trSREG_D, field_e); }
-          if (pattern_match(inst_code, "faff")) { TEST_ALIGN(field_e, 2); REG_TPC_TARGET = (int32_t)read_int16(scpu, field_e); NEXT_INST("$stpc <- MEM16[0x%x]", field_e); }
-          if (pattern_match(inst_code, "fbf.")) { TEST_ALIGN(field_e, 2); REG_D_TARGET = read_uint16(scpu, field_e); NEXT_INST("%s <- MEM16[0x%x]", trREG_D, field_e); }
-          if (pattern_match(inst_code, "fbff")) { TEST_ALIGN(field_e, 2); REG_TPC_TARGET = read_uint16(scpu, field_e); NEXT_INST("$tpc <- MEM16[0x%x]", field_e); }
-          if (pattern_match(inst_code, "fcf.")) { TEST_ALIGN(field_e, 4); REG_D_TARGET = read_uint32(scpu, field_e); NEXT_INST("%s <- MEM32[0x%x]", trREG_D, field_e); }
-          if (pattern_match(inst_code, "fcff")) { TEST_ALIGN(field_e, 4); REG_TPC_TARGET = read_uint32(scpu, field_e); NEXT_INST("$tpc <- MEM32[0x%x]", field_e); }
-          if (pattern_match(inst_code, "fdf.")) { write_uint8(scpu, field_e, REG_D); NEXT_INST("MEM8[0x%x] <- %s", field_e, trREG_D); }
-          if (pattern_match(inst_code, "fdff")) { write_uint8(scpu, field_e, REG_TPC); NEXT_INST("MEM8[0x%x] <- $tpc", field_e); }
-          if (pattern_match(inst_code, "fef.")) { TEST_ALIGN(field_e, 2); write_uint16(scpu, field_e, REG_D); NEXT_INST("MEM16[0x%x] <- %s", field_e, trREG_D); }
-          if (pattern_match(inst_code, "feff")) { TEST_ALIGN(field_e, 2); write_uint16(scpu, field_e, REG_TPC); NEXT_INST("MEM16[0x%x] <- $tpc", field_e); }
-          if (pattern_match(inst_code, "fff.")) { TEST_ALIGN(field_e, 4); write_uint32(scpu, field_e, REG_D); NEXT_INST("MEM32[0x%x] <- %s", field_e, trREG_D); }
-          if (pattern_match(inst_code, "ffff")) { TEST_ALIGN(field_e, 4); write_uint32(scpu, field_e, REG_TPC); NEXT_INST("MEM32[0x%x] <- $tpc", field_e); }
+          else if (pattern_match(inst_code, "f8f.")) { REG_D_TARGET = (int32_t)read_int8(scpu, field_e); NEXT_INST("%s <- MEM8[0x%x]", trSREG_D, field_e); }
+          else if (pattern_match(inst_code, "f8ff")) { REG_TPC_TARGET = (int32_t)read_int8(scpu, field_e); NEXT_INST("$stpc <- MEM8[0x%x]", field_e); }
+          else if (pattern_match(inst_code, "f9f.")) { REG_D_TARGET = read_uint8(scpu, field_e); NEXT_INST("%s <- MEM8[0x%x]", trREG_D, field_e); }
+          else if (pattern_match(inst_code, "f9ff")) { REG_TPC_TARGET = read_uint8(scpu, field_e); NEXT_INST("$tpc <- MEM8[0x%x]", field_e); }
+          else if (pattern_match(inst_code, "faf.")) { TEST_ALIGN(field_e, 2); REG_D_TARGET = (int32_t)read_int16(scpu, field_e); NEXT_INST("%s <- MEM16[0x%x]", trSREG_D, field_e); }
+          else if (pattern_match(inst_code, "faff")) { TEST_ALIGN(field_e, 2); REG_TPC_TARGET = (int32_t)read_int16(scpu, field_e); NEXT_INST("$stpc <- MEM16[0x%x]", field_e); }
+          else if (pattern_match(inst_code, "fbf.")) { TEST_ALIGN(field_e, 2); REG_D_TARGET = read_uint16(scpu, field_e); NEXT_INST("%s <- MEM16[0x%x]", trREG_D, field_e); }
+          else if (pattern_match(inst_code, "fbff")) { TEST_ALIGN(field_e, 2); REG_TPC_TARGET = read_uint16(scpu, field_e); NEXT_INST("$tpc <- MEM16[0x%x]", field_e); }
+          else if (pattern_match(inst_code, "fcf.")) { TEST_ALIGN(field_e, 4); REG_D_TARGET = read_uint32(scpu, field_e); NEXT_INST("%s <- MEM32[0x%x]", trREG_D, field_e); }
+          else if (pattern_match(inst_code, "fcff")) { TEST_ALIGN(field_e, 4); REG_TPC_TARGET = read_uint32(scpu, field_e); NEXT_INST("$tpc <- MEM32[0x%x]", field_e); }
+          else if (pattern_match(inst_code, "fdf.")) { write_uint8(scpu, field_e, REG_D); NEXT_INST("MEM8[0x%x] <- %s", field_e, trREG_D); }
+          else if (pattern_match(inst_code, "fdff")) { write_uint8(scpu, field_e, REG_TPC); NEXT_INST("MEM8[0x%x] <- $tpc", field_e); }
+          else if (pattern_match(inst_code, "fef.")) { TEST_ALIGN(field_e, 2); write_uint16(scpu, field_e, REG_D); NEXT_INST("MEM16[0x%x] <- %s", field_e, trREG_D); }
+          else if (pattern_match(inst_code, "feff")) { TEST_ALIGN(field_e, 2); write_uint16(scpu, field_e, REG_TPC); NEXT_INST("MEM16[0x%x] <- $tpc", field_e); }
+          else if (pattern_match(inst_code, "fff.")) { TEST_ALIGN(field_e, 4); write_uint32(scpu, field_e, REG_D); NEXT_INST("MEM32[0x%x] <- %s", field_e, trREG_D); }
+          else if (pattern_match(inst_code, "ffff")) { TEST_ALIGN(field_e, 4); write_uint32(scpu, field_e, REG_TPC); NEXT_INST("MEM32[0x%x] <- $tpc", field_e); }
 
-          if (pattern_match(inst_code, "f8..")) { REG_D_TARGET = (int32_t)read_int8(scpu, REG_A+field_e); NEXT_INST("%s <- MEM8[%s,0x%x]", trSREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "f8.f")) { REG_TPC_TARGET = (int32_t)read_int8(scpu, REG_A+field_e); NEXT_INST("$stpc <- MEM8[%s,0x%x]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "f9..")) { REG_D_TARGET = read_uint8(scpu, REG_A+field_e); NEXT_INST("%s <- MEM8[%s,0x%x]", trREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "f9.f")) { REG_TPC_TARGET = read_uint8(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM8[%s,0x%x]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fa..")) { TEST_ALIGN(REG_A+field_e, 2); REG_D_TARGET = (int32_t)read_int16(scpu, REG_A+field_e); NEXT_INST("%s <- MEM16[%s,0x%x]", trSREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "fa.f")) { TEST_ALIGN(REG_A+field_e, 2); REG_TPC_TARGET = (int32_t)read_int16(scpu, REG_A+field_e); NEXT_INST("$stpc <- MEM16[%s,0x%x]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fb..")) { TEST_ALIGN(REG_A+field_e, 2); REG_D_TARGET = read_uint16(scpu, REG_A+field_e); NEXT_INST("%s <- MEM16[%s,0x%x]", trREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "fb.f")) { TEST_ALIGN(REG_A+field_e, 2); REG_TPC_TARGET = read_uint16(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM16[%s,0x%x]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fc..")) { TEST_ALIGN(REG_A+field_e, 4); REG_D_TARGET = read_uint32(scpu, REG_A+field_e); NEXT_INST("%s <- MEM32[%s,0x%x]", trREG_D, trREG_A, field_e); }
-          if (pattern_match(inst_code, "fc.f")) { TEST_ALIGN(REG_A+field_e, 4); REG_TPC_TARGET = read_uint32(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM32[%s,0x%x]", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fd..")) { write_uint8(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM8[%s,0x%x] <- %s", trREG_A, field_e, trREG_D); }
-          if (pattern_match(inst_code, "fd.f")) { write_uint8(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM8[%s,0x%x] <- $tpc", trREG_A, field_e); }
-          if (pattern_match(inst_code, "fe..")) { TEST_ALIGN(REG_A+field_e, 2); write_uint16(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM16[%s,0x%x] <- %s", trREG_A, field_e, trREG_D); }
-          if (pattern_match(inst_code, "fe.f")) { TEST_ALIGN(REG_A+field_e, 2); write_uint16(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM16[%s,0x%x] <- $tpc", trREG_A, field_e); }
-          if (pattern_match(inst_code, "ff..")) { TEST_ALIGN(REG_A+field_e, 4); write_uint32(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM32[%s,0x%x] <- %s", trREG_A, field_e, trREG_D); }
-          if (pattern_match(inst_code, "ff.f")) { TEST_ALIGN(REG_A+field_e, 4); write_uint32(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM32[%s,0x%x] <- $tpc", trREG_A, field_e); }
+          else if (pattern_match(inst_code, "f8..")) { REG_D_TARGET = (int32_t)read_int8(scpu, REG_A+field_e); NEXT_INST("%s <- MEM8[%s,0x%x]", trSREG_D, trREG_A, field_e); }
+          else if (pattern_match(inst_code, "f8.f")) { REG_TPC_TARGET = (int32_t)read_int8(scpu, REG_A+field_e); NEXT_INST("$stpc <- MEM8[%s,0x%x]", trREG_A, field_e); }
+          else if (pattern_match(inst_code, "f9..")) { REG_D_TARGET = read_uint8(scpu, REG_A+field_e); NEXT_INST("%s <- MEM8[%s,0x%x]", trREG_D, trREG_A, field_e); }
+          else if (pattern_match(inst_code, "f9.f")) { REG_TPC_TARGET = read_uint8(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM8[%s,0x%x]", trREG_A, field_e); }
+          else if (pattern_match(inst_code, "fa..")) { TEST_ALIGN(REG_A+field_e, 2); REG_D_TARGET = (int32_t)read_int16(scpu, REG_A+field_e); NEXT_INST("%s <- MEM16[%s,0x%x]", trSREG_D, trREG_A, field_e); }
+          else if (pattern_match(inst_code, "fa.f")) { TEST_ALIGN(REG_A+field_e, 2); REG_TPC_TARGET = (int32_t)read_int16(scpu, REG_A+field_e); NEXT_INST("$stpc <- MEM16[%s,0x%x]", trREG_A, field_e); }
+          else if (pattern_match(inst_code, "fb..")) { TEST_ALIGN(REG_A+field_e, 2); REG_D_TARGET = read_uint16(scpu, REG_A+field_e); NEXT_INST("%s <- MEM16[%s,0x%x]", trREG_D, trREG_A, field_e); }
+          else if (pattern_match(inst_code, "fb.f")) { TEST_ALIGN(REG_A+field_e, 2); REG_TPC_TARGET = read_uint16(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM16[%s,0x%x]", trREG_A, field_e); }
+          else if (pattern_match(inst_code, "fc..")) { TEST_ALIGN(REG_A+field_e, 4); REG_D_TARGET = read_uint32(scpu, REG_A+field_e); NEXT_INST("%s <- MEM32[%s,0x%x]", trREG_D, trREG_A, field_e); }
+          else if (pattern_match(inst_code, "fc.f")) { TEST_ALIGN(REG_A+field_e, 4); REG_TPC_TARGET = read_uint32(scpu, REG_A+field_e); NEXT_INST("$tpc <- MEM32[%s,0x%x]", trREG_A, field_e); }
+          else if (pattern_match(inst_code, "fd..")) { write_uint8(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM8[%s,0x%x] <- %s", trREG_A, field_e, trREG_D); }
+          else if (pattern_match(inst_code, "fd.f")) { write_uint8(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM8[%s,0x%x] <- $tpc", trREG_A, field_e); }
+          else if (pattern_match(inst_code, "fe..")) { TEST_ALIGN(REG_A+field_e, 2); write_uint16(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM16[%s,0x%x] <- %s", trREG_A, field_e, trREG_D); }
+          else if (pattern_match(inst_code, "fe.f")) { TEST_ALIGN(REG_A+field_e, 2); write_uint16(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM16[%s,0x%x] <- $tpc", trREG_A, field_e); }
+          else if (pattern_match(inst_code, "ff..")) { TEST_ALIGN(REG_A+field_e, 4); write_uint32(scpu, REG_A+field_e, REG_D); NEXT_INST("MEM32[%s,0x%x] <- %s", trREG_A, field_e, trREG_D); }
+          else if (pattern_match(inst_code, "ff.f")) { TEST_ALIGN(REG_A+field_e, 4); write_uint32(scpu, REG_A+field_e, REG_TPC); NEXT_INST("MEM32[%s,0x%x] <- $tpc", trREG_A, field_e); }
+          FINAL_ELSE;
           break;
         default:
           SIM_ASSERT(false);
         }
       if (FIELD_D == 0xf)
         {
-          if (pattern_match(inst_code, "0.0f")) { if (REG_B == 0) branch_to(scpu, field_e); NEXT_INST("if %s == 0 $pc %s", trREG_B, branch_target(field_e)); }
-          if (pattern_match(inst_code, "0.1f")) { if (REG_B != 0) branch_to(scpu, field_e); NEXT_INST("if %s != 0 $pc %s", trREG_B, branch_target(field_e)); }
-          if (pattern_match(inst_code, "0.2f")) { if ((int32_t)REG_B < 0) branch_to(scpu, field_e); NEXT_INST("if %s < 0 $pc %s", trSREG_B, branch_target(field_e)); }
-          if (pattern_match(inst_code, "0.3f")) { if ((int32_t)REG_B >= 0) branch_to(scpu, field_e); NEXT_INST("if %s >= 0 $pc %s", trSREG_B, branch_target(field_e)); }
-          if (pattern_match(inst_code, "0.4f")) { if ((int32_t)REG_B > 0) branch_to(scpu, field_e); NEXT_INST("if %s > 0 $pc %s", trSREG_B, branch_target(field_e)); }
-          if (pattern_match(inst_code, "0.5f")) { if ((int32_t)REG_B <= 0) branch_to(scpu, field_e); NEXT_INST("if %s <= 0 $pc %s", trSREG_B, branch_target(field_e)); }
-          if (pattern_match(inst_code, "0.6f")) UNKNOWN;
-          if (pattern_match(inst_code, "0.7f")) UNKNOWN;
-          if (pattern_match(inst_code, "0.8f")) UNKNOWN;
-          if (pattern_match(inst_code, "0.9f")) UNKNOWN;
-          if (pattern_match(inst_code, "0.af")) UNKNOWN;
-          if (pattern_match(inst_code, "0.bf")) { if (as_float(REG_B) < 0.0f) branch_to(scpu, field_e); NEXT_INST("if %s < 0 $pc %s", trFREG_B, branch_target(field_e)); }
-          if (pattern_match(inst_code, "0.cf")) { if (as_float(REG_B) >= 0.0f) branch_to(scpu, field_e); NEXT_INST("if %s >= 0 $pc %s", trFREG_B, branch_target(field_e)); }
-          if (pattern_match(inst_code, "0.df")) { if (as_float(REG_B) > 0.0f) branch_to(scpu, field_e); NEXT_INST("if %s > 0 $pc %s", trFREG_B, branch_target(field_e)); }
-          if (pattern_match(inst_code, "0.ef")) { if (as_float(REG_B) <= 0.0f) branch_to(scpu, field_e); NEXT_INST("if %s <= 0 $pc %s", trFREG_B, branch_target(field_e)); }
+               if (pattern_match(inst_code, "0.0f")) { if (REG_B == 0) branch_to(scpu, field_e); NEXT_INST("if %s == 0 $pc %s", trREG_B, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "0.1f")) { if (REG_B != 0) branch_to(scpu, field_e); NEXT_INST("if %s != 0 $pc %s", trREG_B, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "0.2f")) { if ((int32_t)REG_B < 0) branch_to(scpu, field_e); NEXT_INST("if %s < 0 $pc %s", trSREG_B, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "0.3f")) { if ((int32_t)REG_B >= 0) branch_to(scpu, field_e); NEXT_INST("if %s >= 0 $pc %s", trSREG_B, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "0.4f")) { if ((int32_t)REG_B > 0) branch_to(scpu, field_e); NEXT_INST("if %s > 0 $pc %s", trSREG_B, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "0.5f")) { if ((int32_t)REG_B <= 0) branch_to(scpu, field_e); NEXT_INST("if %s <= 0 $pc %s", trSREG_B, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "0.6f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "0.7f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "0.8f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "0.9f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "0.af")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "0.bf")) { if (as_float(REG_B) < 0.0f) branch_to(scpu, field_e); NEXT_INST("if %s < 0 $pc %s", trFREG_B, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "0.cf")) { if (as_float(REG_B) >= 0.0f) branch_to(scpu, field_e); NEXT_INST("if %s >= 0 $pc %s", trFREG_B, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "0.df")) { if (as_float(REG_B) > 0.0f) branch_to(scpu, field_e); NEXT_INST("if %s > 0 $pc %s", trFREG_B, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "0.ef")) { if (as_float(REG_B) <= 0.0f) branch_to(scpu, field_e); NEXT_INST("if %s <= 0 $pc %s", trFREG_B, branch_target(field_e)); }
 
-          if (pattern_match(inst_code, "1..f")) { if (REG_B == REG_A) branch_to(scpu, field_e); NEXT_INST("if %s == %s $pc %s", trREG_B, trREG_A, branch_target(field_e)); }
-          if (pattern_match(inst_code, "2..f")) { if (REG_B != REG_A) branch_to(scpu, field_e); NEXT_INST("if %s != %s $pc %s", trREG_B, trREG_A, branch_target(field_e)); }
-          if (pattern_match(inst_code, "3..f")) { if ((int32_t)REG_B < (int32_t)REG_A) branch_to(scpu, field_e); NEXT_INST("if %s < %s $pc %s", trSREG_B, trSREG_A, branch_target(field_e)); }
-          if (pattern_match(inst_code, "4..f")) { if ((int32_t)REG_B >= (int32_t)REG_A) branch_to(scpu, field_e); NEXT_INST("if %s >= %s $pc %s", trSREG_B, trSREG_A, branch_target(field_e)); }
-          if (pattern_match(inst_code, "5..f")) { if (REG_B < REG_A) branch_to(scpu, field_e); NEXT_INST("if %s < %s $pc %s", trREG_B, trREG_A, branch_target(field_e)); }
-          if (pattern_match(inst_code, "6..f")) { if (REG_B >= REG_A) branch_to(scpu, field_e); NEXT_INST("if %s >= %s $pc %s", trREG_B, trREG_A, branch_target(field_e)); }
-          if (pattern_match(inst_code, "7..f")) UNKNOWN;
-          if (pattern_match(inst_code, "8..f")) UNKNOWN;
-          if (pattern_match(inst_code, "9..f")) UNKNOWN;
-          if (pattern_match(inst_code, "a..f")) UNKNOWN;
-          if (pattern_match(inst_code, "b..f")) UNKNOWN;
-          if (pattern_match(inst_code, "c..f")) UNKNOWN;
-          if (pattern_match(inst_code, "d..f")) { if (as_float(REG_B) < as_float(REG_A)) branch_to(scpu, field_e); NEXT_INST("if %s < %s $pc %s", trFREG_B, trFREG_A, branch_target(field_e)); }
-          if (pattern_match(inst_code, "e..f")) { if (as_float(REG_B) >= as_float(REG_A)) branch_to(scpu, field_e); NEXT_INST("if %s >= %s $pc %s", trFREG_B, trFREG_A, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "1..f")) { if (REG_B == REG_A) branch_to(scpu, field_e); NEXT_INST("if %s == %s $pc %s", trREG_B, trREG_A, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "2..f")) { if (REG_B != REG_A) branch_to(scpu, field_e); NEXT_INST("if %s != %s $pc %s", trREG_B, trREG_A, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "3..f")) { if ((int32_t)REG_B < (int32_t)REG_A) branch_to(scpu, field_e); NEXT_INST("if %s < %s $pc %s", trSREG_B, trSREG_A, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "4..f")) { if ((int32_t)REG_B >= (int32_t)REG_A) branch_to(scpu, field_e); NEXT_INST("if %s >= %s $pc %s", trSREG_B, trSREG_A, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "5..f")) { if (REG_B < REG_A) branch_to(scpu, field_e); NEXT_INST("if %s < %s $pc %s", trREG_B, trREG_A, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "6..f")) { if (REG_B >= REG_A) branch_to(scpu, field_e); NEXT_INST("if %s >= %s $pc %s", trREG_B, trREG_A, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "7..f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "8..f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "9..f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "a..f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "b..f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "c..f")) { UNKNOWN; }
+          else if (pattern_match(inst_code, "d..f")) { if (as_float(REG_B) < as_float(REG_A)) branch_to(scpu, field_e); NEXT_INST("if %s < %s $pc %s", trFREG_B, trFREG_A, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "e..f")) { if (as_float(REG_B) >= as_float(REG_A)) branch_to(scpu, field_e); NEXT_INST("if %s >= %s $pc %s", trFREG_B, trFREG_A, branch_target(field_e)); }
 
-          if (pattern_match(inst_code, ".f.f")) { if ((REG_A & (1 << FIELD_C)) != 0) branch_to(scpu, field_e); NEXT_INST("if %s[%d] == 1 $pc %s", trREG_A, FIELD_C, branch_target(field_e)); }
-          if (pattern_match(inst_code, "..ff")) { if ((REG_A & (1 << FIELD_C)) == 0) branch_to(scpu, field_e); NEXT_INST("if %s[%d] == 0 $pc %s", trREG_B, FIELD_C, branch_target(field_e)); }
+          else if (pattern_match(inst_code, ".f.f")) { if ((REG_A & (1 << FIELD_C)) != 0) branch_to(scpu, field_e); NEXT_INST("if %s[%d] == 1 $pc %s", trREG_A, FIELD_C, branch_target(field_e)); }
+          else if (pattern_match(inst_code, "..ff")) { if ((REG_A & (1 << FIELD_C)) == 0) branch_to(scpu, field_e); NEXT_INST("if %s[%d] == 0 $pc %s", trREG_B, FIELD_C, branch_target(field_e)); }
+          FINAL_ELSE;
         }
 
     next_inst:
