@@ -1,4 +1,4 @@
-# check subtraction
+# check addition
 # mach: brew
 
 .include "framework/macros.s"
@@ -15,8 +15,7 @@
   .macro test_rr RD, RA, RB
   # Set up registers to unique values
   .irp R,1,2,3,4,5,6,7,8,9,10,11,12,13,14
-  .set IN_R$r\R, (1 << \R)
-  $r\R <- (1 << \R)
+  $r\R <- IN_R$r\R
   .endr
   \RD <- \RB - \RA
   .set EXP_VAL, (IN_R\RB - IN_R\RA) & 0xffffffff
@@ -26,8 +25,7 @@
   .macro test_ri RD, RB, IMM
   # Set up registers to unique values
   .irp R,1,2,3,4,5,6,7,8,9,10,11,12,13,14
-  .set IN_R$r\R, (1 << \R)
-  $r\R <- (1 << \R)
+  $r\R <- IN_R$r\R
   .endr
   \RD <- \RB - (\IMM)
   .set EXP_VAL, (IN_R\RB - \IMM) & 0xffffffff
@@ -37,8 +35,7 @@
   .macro test_ir RD, IMM, RA
   # Set up registers to unique values
   .irp R,1,2,3,4,5,6,7,8,9,10,11,12,13,14
-  .set IN_R$r\R, (1 << \R)
-  $r\R <- (1 << \R)
+  $r\R <- IN_R$r\R
   .endr
   \RD <- (\IMM) - \RA
   .set EXP_VAL, (\IMM - IN_R\RA) & 0xffffffff
