@@ -1,4 +1,4 @@
-# check addition
+# check subtraction
 # mach: brew
 
 .include "framework/macros.s"
@@ -18,8 +18,8 @@
   .set IN_R$r\R, (1 << \R)
   $r\R <- (1 << \R)
   .endr
-  \RD <- \RB + \RA
-  .set EXP_VAL, (IN_R\RB + IN_R\RA) & 0xffffffff
+  \RD <- \RB - \RA
+  .set EXP_VAL, (IN_R\RB - IN_R\RA) & 0xffffffff
   TEST \RD, EXP_VAL
   .endm
 
@@ -29,8 +29,8 @@
   .set IN_R$r\R, (1 << \R)
   $r\R <- (1 << \R)
   .endr
-  \RD <- \RB + (\IMM)
-  .set EXP_VAL, (IN_R\RB + \IMM) & 0xffffffff
+  \RD <- \RB - (\IMM)
+  .set EXP_VAL, (IN_R\RB - \IMM) & 0xffffffff
   TEST \RD, EXP_VAL
   .endm
 
@@ -40,8 +40,8 @@
   .set IN_R$r\R, (1 << \R)
   $r\R <- (1 << \R)
   .endr
-  \RD <- (\IMM) + \RA
-  .set EXP_VAL, (\IMM + IN_R\RA) & 0xffffffff
+  \RD <- (\IMM) - \RA
+  .set EXP_VAL, (\IMM - IN_R\RA) & 0xffffffff
   TEST \RD, EXP_VAL
   .endm
 

@@ -1,4 +1,4 @@
-# check addition
+# check subtraction
 # mach: brew
 
 .include "framework/macros.s"
@@ -8,7 +8,7 @@
 
   # Create a set of initial values for all registers
   .irp R,1,2,3,4,5,6,7,8,9,10,11,12,13,14
-  .set IN_R$r\R, (1 << \R)
+  .set IN_R$r\R, (1 << \R) | (1 << 30)
   .endr
 
   # Macro for a single reg-reg test
@@ -18,8 +18,8 @@
   .set IN_R$r\R, (1 << \R)
   $r\R <- (1 << \R)
   .endr
-  \RD <- \RB + \RA
-  .set EXP_VAL, (IN_R\RB + IN_R\RA) & 0xffffffff
+  \RD <- \RB & \RA
+  .set EXP_VAL, (IN_R\RB & IN_R\RA) & 0xffffffff
   TEST \RD, EXP_VAL
   .endm
 
@@ -29,8 +29,8 @@
   .set IN_R$r\R, (1 << \R)
   $r\R <- (1 << \R)
   .endr
-  \RD <- \RB + (\IMM)
-  .set EXP_VAL, (IN_R\RB + \IMM) & 0xffffffff
+  \RD <- \RB & (\IMM)
+  .set EXP_VAL, (IN_R\RB & \IMM) & 0xffffffff
   TEST \RD, EXP_VAL
   .endm
 
@@ -40,25 +40,27 @@
   .set IN_R$r\R, (1 << \R)
   $r\R <- (1 << \R)
   .endr
-  \RD <- (\IMM) + \RA
-  .set EXP_VAL, (\IMM + IN_R\RA) & 0xffffffff
+  \RD <- (\IMM) & \RA
+  .set EXP_VAL, (\IMM & IN_R\RA) & 0xffffffff
   TEST \RD, EXP_VAL
   .endm
 
 ####################################################
   start
-  .irp IMM,0,1,-1,0x1000,0xffffffff
+  .irp R,1,2,3,4,5,6,7,8,9,10,11,12,13,14
+  .set IMM, (1 << \R) | (1 << 30) | (1 << 28)
   .irp A,1,2,3,4,5,6,7,8,9,10,11,12,13,14
   .irp D,1,2,3,4,5,6,7,8,9,10,11,12,13,14
-  test_ir $r\D, \IMM, $r\A
+  test_ir $r\D, IMM, $r\A
   .endr
   .endr
   .endr
 
-  .irp IMM,0,1,-1,0x1000,0xffffffff
+  .irp R,1,2,3,4,5,6,7,8,9,10,11,12,13,14
+  .set IMM, (1 << \R) | (1 << 30) | (1 << 28)
   .irp B,1,2,3,4,5,6,7,8,9,10,11,12,13,14
   .irp D,1,2,3,4,5,6,7,8,9,10,11,12,13,14
-  test_ri $r\D, $r\B, \IMM
+  test_ri $r\D, $r\B, IMM
   .endr
   .endr
   .endr
