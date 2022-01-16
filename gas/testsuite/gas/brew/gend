@@ -1,16 +1,16 @@
 #!/bin/sh
 # Generates a proper .d file for a .s input file
 # usage: gend <gas_source_file>
-ASPARAMS=
+AS_PARAMS="-F"
 OBDJUMP_PARAMS="-dr --prefix-address --show-raw-ins"
 D_FILE="${1%.s}.d"
 T_FILE="${1%.s}.tmp"
 O_FILE="${1%.s}.o"
 O_FILE_ESC="${1%.s}.o"
-brew-none-elf-as $1 -o "${1%.s}.o" || exit 1
+brew-none-elf-as $AS_PARAMS $1 -o "${1%.s}.o" || exit 1
 brew-none-elf-objdump $OBDJUMP_PARAMS $O_FILE > $T_FILE 2>&1 || exit 1
 echo -n > $D_FILE
-echo "#as:$ASPARAMS" >> $D_FILE
+echo "#as:$AS_PARAMS" >> $D_FILE
 echo "#objdump:$OBDJUMP_PARAMS" >> $D_FILE
 echo "#source:$1" >> $D_FILE
 cat $T_FILE | sed 's/\([$!*+^]\)/\\\1/g' | sed 's/\[/\\\[/g'  | sed 's/\]/\\\]/g' | sed s/$O_FILE_ESC/.*$O_FILE_ESC/ >>$D_FILE
