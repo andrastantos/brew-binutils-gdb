@@ -416,7 +416,7 @@ static char *sim_core_read_str(SIM_DESC sd, sim_cpu *scpu, uint32_t addr)
   return str;
 }
 
-#define SET_ERRNO(value) { TEST_ALIGN(errno_addr, 4); write_uint32(scpu, errno_addr, value); }
+#define SET_ERRNO(value) { if (errno_addr != 0) { TEST_ALIGN(errno_addr, 4); write_uint32(scpu, errno_addr, value); } }
 
 static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint16_t syscall_no)
 {
