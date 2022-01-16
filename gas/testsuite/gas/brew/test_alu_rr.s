@@ -93,10 +93,9 @@
   $r\D <- $r\A - $r\B
 
   # 0x4... group
-
   $r\D <- $r\A + $r\B
-  # 0x5... group
 
+  # 0x5... group
   $r\D <- $r\A << $r\B
 
   # 0x6... group
