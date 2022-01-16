@@ -733,7 +733,7 @@ md_assemble (char *str)
         }
       inst_code |= (reg_a & 0xf) << 4;
       /* special-case TPC stores: these only have a 48-bit variant */
-      if (reg_d == BREW_REG_TPC)
+      if ((reg_d & 0xf) == BREW_REG_TPC)
         {
           inst_code |= 0x0800;
           inst_code |= 0x000f;
@@ -986,7 +986,7 @@ md_assemble (char *str)
       IS_NEXT_TOKEN(("]", _("invalid load operation syntax ")));
       inst_code |= (reg_a & 0xf) << 4;
       /* special-case TPC stores: these only have a 48-bit variant */
-      if (reg_d == BREW_REG_TPC)
+      if ((reg_d & 0xf) == BREW_REG_TPC)
         {
           inst_code |= 0x0800;
           inst_code |= 0x000f;
