@@ -11,5 +11,9 @@
         "editor.tabSize": 2,
 	"editor.insertSpaces": true,
     },
+    "[exp]": {
+        "editor.tabSize": 8,
+	"editor.insertSpaces": true,
+    },
     "cmake.configureOnOpen": false
 }

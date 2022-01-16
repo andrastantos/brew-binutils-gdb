@@ -6,7 +6,7 @@
 	],
 	"settings": {
         "editor.detectIndentation": false,
-				"editor.tabSize": 2,
+				"editor.tabSize": 8,
 	"files.associations": {
     "brew.h": "c",
     "random": "cpp"
