@@ -206,14 +206,11 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
   /* Determine if we need field_e and read it if we do */
   if (FIELD_D == 0xf || FIELD_B == 0xf || FIELD_A == 0xf || (inst_code >> 11) == 0x1f) {
     length = 6;
-    void *x;
     if (!get_uint32(&field_e))
       {
         return -1;
       }
     memcpy(&field_e_as_float, &field_e, 4);
-    x = &field_e_as_float;
-    DEBUG("0x%08x, 0x%08x", *(int*)x, field_e);
   }
   switch (FIELD_C)
     {
