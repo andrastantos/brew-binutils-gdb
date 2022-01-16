@@ -757,12 +757,12 @@ sim_engine_run (SIM_DESC sd,
               else if (pattern_match(inst_code, "bff.")) { UNKNOWN; }
               else if (pattern_match(inst_code, "b0f.")) { UNKNOWN; }
               else if (pattern_match(inst_code, "b.f0")) { UNKNOWN; }
-              else if (pattern_match(inst_code, "b.f.")) { REG_D_TARGET = (((int64_t)REG_B) * ((int64_t)field_e)) >> 32; NEXT_INST("%s <- %s * %d", trSREG_D, trSREG_B, (int32_t)field_e); }
+              else if (pattern_match(inst_code, "b.f.")) { REG_D_TARGET = (((int64_t)(int32_t)REG_B) * ((int64_t)(int32_t)field_e)) >> 32; NEXT_INST("%s <- %s * %d", trSREG_D, trSREG_B, (int32_t)field_e); }
               else if (pattern_match(inst_code, "b00.")) { UNKNOWN; }
               else if (pattern_match(inst_code, "b0..")) { REG_D_TARGET = bswap(REG_A); NEXT_INST("%s <- bswap %s", trREG_D, trREG_A); }
               else if (pattern_match(inst_code, "b.0.")) { REG_D_TARGET = wswap(REG_B); NEXT_INST("%s <- wswap %s", trREG_D, trREG_B); }
               else if (pattern_match(inst_code, "b..0")) { UNKNOWN; }
-              else if (pattern_match(inst_code, "b...")) { REG_D_TARGET = (((int64_t)REG_B) * ((int64_t)REG_A)) >> 32; NEXT_INST("%s <- %s * %s", trSREG_D, trSREG_B, trSREG_A); }
+              else if (pattern_match(inst_code, "b...")) { REG_D_TARGET = (((int64_t)(int32_t)REG_B) * ((int64_t)(int32_t)REG_A)) >> 32; NEXT_INST("%s <- %s * %s", trSREG_D, trSREG_B, trSREG_A); }
               FINAL_ELSE;
               break;
             case 0xc:
