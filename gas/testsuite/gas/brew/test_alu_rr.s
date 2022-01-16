@@ -7,9 +7,7 @@
   #.irp A,1
   #.irp B,1
   #.irp D,1
-  .if \A != \B
   $r\D <- $r\A ^ $r\B
-  .endif
   $r\D <- $r\A | $r\B
   $r\D <- $r\A & $r\B
   $r\D <- $r\A - $r\B

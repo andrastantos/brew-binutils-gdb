@@ -101,17 +101,15 @@ static branch_tableS branch_table[] =
   { NULL,      0x0000,            false,       0x0000,          false,     0                      }
 };
 
-
-#define NO_IMM_A     (1 << 0)
-#define NO_IMM_B     (1 << 1)
-#define NO_IMM_B     (1 << 1)
-#define NO_A_EQ_B    (1 << 2)
-#define NO_A_IS_PC   (1 << 3)
-#define NO_B_IS_PC   (1 << 4)
-#define NO_D_IS_PC   (1 << 5)
-#define NO_AB_IS_PC  (1 << 6)
-#define COMMUTATIVE  (1 << 7)
-#define HAS_UPPER    (1 << 8)
+#define NO_IMM_A             (1 << 0)
+#define NO_IMM_B             (1 << 1)
+#define NO_A_EQ_B_D_IS_PC    (1 << 2)
+#define NO_A_IS_PC           (1 << 3)
+#define NO_B_IS_PC           (1 << 4)
+#define NO_D_IS_PC           (1 << 5)
+#define NO_AB_IS_PC          (1 << 6)
+#define COMMUTATIVE          (1 << 7)
+#define HAS_UPPER            (1 << 8)
 
 typedef struct
 {
@@ -123,13 +121,12 @@ typedef struct
   int type_flags_d;
 } alu_tableS;
 
-
 static alu_tableS alu_table[] =
 {
 /* BINARY OPERATIONS */
 /*  inst_name  inst_code   op_flags                                                                        type_flags_a           type_flags_b           type_flags_d*/
-  { "^",       0x0000,     NO_A_EQ_B | NO_IMM_B | COMMUTATIVE,                                             0,                     0,                     0 },
-  { "^",       0x0000,     NO_A_EQ_B | NO_IMM_B | COMMUTATIVE,                                             BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "^",       0x0000,     NO_A_EQ_B_D_IS_PC | NO_IMM_B | COMMUTATIVE,                                     0,                     0,                     0 },
+  { "^",       0x0000,     NO_A_EQ_B_D_IS_PC | NO_IMM_B | COMMUTATIVE,                                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   { "|",       0x1000,     NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                                           0,                     0,                     0 },
   { "|",       0x1000,     NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                                           BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   { "&",       0x2000,     NO_IMM_B | COMMUTATIVE,                                                         0,                     0,                     0 },
@@ -151,16 +148,6 @@ static alu_tableS alu_table[] =
   { "*",       0xe000,     NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | NO_IMM_B | COMMUTATIVE,                  BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
   { NULL,      0x0000,     0,                                                                              0,                     0,                     0 },
 };
-
-#define NO_IMM_A     (1 << 0)
-#define NO_IMM_B     (1 << 1)
-#define NO_A_EQ_B    (1 << 2)
-#define NO_A_IS_PC   (1 << 3)
-#define NO_B_IS_PC   (1 << 4)
-#define NO_D_IS_PC   (1 << 5)
-#define NO_AB_IS_PC  (1 << 6)
-#define COMMUTATIVE  (1 << 7)
-#define HAS_UPPER    (1 << 8)
 
 typedef struct
 {
@@ -1416,7 +1403,7 @@ md_assemble (char *str)
               if (strcasecmp(op, alu_table_entry->inst_name) == 0)
                 {
                   /* Can we use this entry for the {reg} {op} {reg} thing we have here? */
-                  if ((reg_a & 0xf) == (reg_b & 0xf) && (alu_table_entry->op_flags & NO_A_EQ_B) != 0)
+                  if ((reg_a & 0xf) == (reg_b & 0xf) && (reg_d & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_A_EQ_B_D_IS_PC) != 0)
                     continue;
                   if ((reg_a & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_A_IS_PC) != 0)
                     continue;
