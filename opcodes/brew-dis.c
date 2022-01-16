@@ -277,7 +277,9 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "9f..")) UNKNOWN;
       if (pattern_match(inst_code, "9ff.")) UNKNOWN;
       if (pattern_match(inst_code, "90f.")) UNKNOWN;
+      if (pattern_match(inst_code, "9.f0")) UNKNOWN;
       if (pattern_match(inst_code, "9.f.")) INST("%s <- %s * %d", SREG_D, SREG_B, (int32_t)field_e);
+      if (pattern_match(inst_code, "900.")) UNKNOWN;
       if (pattern_match(inst_code, "90..")) INST("%s <- %s + 1", REG_D, REG_A);
       if (pattern_match(inst_code, "9.0.")) INST("%s <- %s - 1", REG_D, REG_B);
       if (pattern_match(inst_code, "9..0")) UNKNOWN;
@@ -287,7 +289,9 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "af..")) UNKNOWN;
       if (pattern_match(inst_code, "aff.")) UNKNOWN;
       if (pattern_match(inst_code, "a0f.")) UNKNOWN;
+      if (pattern_match(inst_code, "a.f0")) UNKNOWN;
       if (pattern_match(inst_code, "a.f.")) INST("%s <- upper %s * %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "a00.")) UNKNOWN;
       if (pattern_match(inst_code, "a0..")) INST("%s <- -%s", SREG_D, SREG_A);
       if (pattern_match(inst_code, "a.0.")) INST("%s <- ~%s", REG_D, REG_B);
       if (pattern_match(inst_code, "a..0")) UNKNOWN;
@@ -297,7 +301,9 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "bf..")) UNKNOWN;
       if (pattern_match(inst_code, "bff.")) UNKNOWN;
       if (pattern_match(inst_code, "b0f.")) UNKNOWN;
+      if (pattern_match(inst_code, "b.f0")) UNKNOWN;
       if (pattern_match(inst_code, "b.f.")) INST("%s <- upper %s * %d", SREG_D, SREG_B, (int32_t)field_e);
+      if (pattern_match(inst_code, "b00.")) UNKNOWN;
       if (pattern_match(inst_code, "b0..")) INST("%s <- bswap %s", REG_D, REG_A);
       if (pattern_match(inst_code, "b.0.")) INST("%s <- wswap %s", REG_D, REG_B);
       if (pattern_match(inst_code, "b..0")) UNKNOWN;
@@ -310,6 +316,7 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "cff.")) UNKNOWN;
       if (pattern_match(inst_code, "c.f.")) INST("%s <- %s + %f", FREG_D, FREG_B, field_e_as_float);
       if (pattern_match(inst_code, "c..0")) UNKNOWN;
+      if (pattern_match(inst_code, "c00.")) UNKNOWN;
       if (pattern_match(inst_code, "c0..")) INST("%s <- bsi %s", REG_D, REG_A);
       if (pattern_match(inst_code, "c.0.")) INST("%s <- wsi %s", REG_D, REG_B);
       if (pattern_match(inst_code, "c...")) INST("%s <- %s + %s", FREG_D, FREG_B, FREG_A);
@@ -321,6 +328,7 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "dff.")) UNKNOWN;
       if (pattern_match(inst_code, "d.f.")) INST("%s <- %s - %f", FREG_D, FREG_B, field_e_as_float);
       if (pattern_match(inst_code, "d..0")) UNKNOWN;
+      if (pattern_match(inst_code, "d00.")) UNKNOWN;
       if (pattern_match(inst_code, "d.0.")) INST("%s <- %s", FREG_D, SREG_B);
       if (pattern_match(inst_code, "d0..")) INST("%s <- floor %s", SREG_D, FREG_A);
       if (pattern_match(inst_code, "d...")) INST("%s <- %s - %s", FREG_D, FREG_B, FREG_A);
@@ -332,6 +340,7 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "eff.")) UNKNOWN;
       if (pattern_match(inst_code, "e.f.")) INST("%s <- %s * %f", FREG_D, FREG_B, field_e_as_float);
       if (pattern_match(inst_code, "e..0")) UNKNOWN;
+      if (pattern_match(inst_code, "e00.")) UNKNOWN;
       if (pattern_match(inst_code, "e.0.")) INST("%s <- rsqrt %s", FREG_D, FREG_B);
       if (pattern_match(inst_code, "e0..")) INST("%s <- 1 / %s", FREG_D, FREG_A);
       if (pattern_match(inst_code, "e...")) INST("%s <- %s * %s", FREG_D, FREG_B, FREG_A);
