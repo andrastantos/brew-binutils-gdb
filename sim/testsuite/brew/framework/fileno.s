@@ -1,0 +1,3 @@
+  .set STDIN_FILENO,  0
+  .set STDOUT_FILENO, 1
+  .set STDERR_FILENO, 2
