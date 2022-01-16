@@ -13,7 +13,7 @@
   $r3 <- 0
   $r4 <- STDOUT_FILENO
   $r5 <- .Lstr_pass
-  $r6 <- .Lstr_pass_end
+  $r6 <- (.Lstr_pass_end - 1)
   $r6 <- $r6 - $r5
   SYSCALLM SYS_write
   $r4 <- 0
@@ -26,7 +26,7 @@
   $r3 <- 0
   $r4 <- STDOUT_FILENO
   $r5 <- .Lstr_fail
-  $r6 <- .Lstr_fail_end
+  $r6 <- (.Lstr_fail_end - 1)
   $r6 <- $r6 - $r5
   SYSCALLM SYS_write
   $r4 <- 1
@@ -39,6 +39,16 @@
   .text
 .global _start
 _start:
+  .endm
+
+# MACRO: TEST
+# tests 'actual' (a register) against an 'expected' (immediate) value
+# Fails the test in case of a mismatch, continues running in case of a match.
+  .macro TEST actual, expected
+  \actual <- \actual - \expected
+  if \actual == 0 $pc <- 1f
+  fail
+1:
   .endm
 
   .section .rodata
