@@ -270,7 +270,7 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "80f.")) INST("%s <- %u", TREG_D, field_e);
       if (pattern_match(inst_code, "8.f.")) INST("%s <- %s * %u", REG_D, REG_B, field_e);
       if (pattern_match(inst_code, "80..")) INST("%s <- %s", TREG_D, TREG_A);
-      if (pattern_match(inst_code, "8.0.")) UNKNOWN;
+      if (pattern_match(inst_code, "8.00")) UNKNOWN;
       if (pattern_match(inst_code, "8...")) INST("%s <- %s * %s", REG_D, REG_B, REG_A);
       break;
     case 0x9:
@@ -278,12 +278,12 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "9ff.")) UNKNOWN;
       if (pattern_match(inst_code, "90f.")) UNKNOWN;
       if (pattern_match(inst_code, "9.f0")) UNKNOWN;
-      if (pattern_match(inst_code, "9.f.")) INST("%s <- %s * %d", SREG_D, SREG_B, (int32_t)field_e);
+      if (pattern_match(inst_code, "9.f.")) UNKNOWN;
       if (pattern_match(inst_code, "900.")) UNKNOWN;
       if (pattern_match(inst_code, "90..")) INST("%s <- %s + 1", REG_D, REG_A);
       if (pattern_match(inst_code, "9.0.")) INST("%s <- %s - 1", REG_D, REG_B);
       if (pattern_match(inst_code, "9..0")) UNKNOWN;
-      if (pattern_match(inst_code, "9...")) INST("%s <- %s * %s", SREG_D, SREG_B, SREG_A);
+      if (pattern_match(inst_code, "9...")) UNKNOWN;
       break;
     case 0xa:
       if (pattern_match(inst_code, "af..")) UNKNOWN;

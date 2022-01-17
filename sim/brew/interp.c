@@ -722,7 +722,7 @@ sim_engine_run (SIM_DESC sd,
               else if (pattern_match(inst_code, "80f.")) { TREG_D_TARGET = field_e; NEXT_INST("%s <- %u", trTREG_D, field_e); }
               else if (pattern_match(inst_code, "8.f.")) { REG_D_TARGET = REG_B * field_e; NEXT_INST("%s <- %s * %u", trREG_D, trREG_B, field_e); }
               else if (pattern_match(inst_code, "80..")) { TREG_D_TARGET = TREG_A; NEXT_INST("%s <- %s", trTREG_D, trTREG_A); }
-              else if (pattern_match(inst_code, "8.0.")) { UNKNOWN; }
+              else if (pattern_match(inst_code, "8.00")) { UNKNOWN; }
               else if (pattern_match(inst_code, "8...")) { REG_D_TARGET = REG_B * REG_A; NEXT_INST("%s <- %s * %s", trREG_D, trREG_B, trREG_A); }
               FINAL_ELSE;
               break;
@@ -731,12 +731,12 @@ sim_engine_run (SIM_DESC sd,
               else if (pattern_match(inst_code, "9ff.")) { UNKNOWN; }
               else if (pattern_match(inst_code, "90f.")) { UNKNOWN; }
               else if (pattern_match(inst_code, "9.f0")) { UNKNOWN; }
-              else if (pattern_match(inst_code, "9.f.")) { REG_D_TARGET = ((int32_t)REG_B) * ((int32_t)field_e); NEXT_INST("%s <- %s * %d", trSREG_D, trSREG_B, (int32_t)field_e); }
+              else if (pattern_match(inst_code, "9.f.")) { UNKNOWN; }
               else if (pattern_match(inst_code, "900.")) { UNKNOWN; }
               else if (pattern_match(inst_code, "90..")) { REG_D_TARGET = REG_A + 1; NEXT_INST("%s <- %s + 1", trREG_D, trREG_A); }
               else if (pattern_match(inst_code, "9.0.")) { REG_D_TARGET = REG_B - 1; NEXT_INST("%s <- %s - 1", trREG_D, trREG_B); }
               else if (pattern_match(inst_code, "9..0")) { UNKNOWN; }
-              else if (pattern_match(inst_code, "9...")) { REG_D_TARGET = ((int32_t)REG_B) * ((int32_t)REG_A); NEXT_INST("%s <- %s * %s", trSREG_D, trSREG_B, trSREG_A); }
+              else if (pattern_match(inst_code, "9...")) { UNKNOWN; }
               FINAL_ELSE;
               break;
             case 0xa:
