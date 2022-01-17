@@ -374,7 +374,7 @@ static INLINE uint32_t wsi(uint32_t val)
       (val & 0xffff);
 }
 
-#define TEST_ALIGN(reg, alignment) if (reg % (alignment-1) != 0) sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGBUS);
+#define TEST_ALIGN(reg, alignment) if (((reg) & (alignment-1)) != 0) sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGBUS);
 
 static INLINE void branch_to(sim_cpu *scpu, uint32_t field_e)
 {
