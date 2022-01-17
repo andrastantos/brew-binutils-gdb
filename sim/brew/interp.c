@@ -699,21 +699,21 @@ sim_engine_run (SIM_DESC sd,
               FINAL_ELSE;
               break;
             case 0x5:
-                   if (pattern_match(inst_code, "5f..")) { REG_D_TARGET = field_e << REG_A; NEXT_INST("%s <- %u << %s", trREG_D, field_e, trREG_A); }
-              else if (pattern_match(inst_code, "5.f.")) { REG_D_TARGET = REG_B << field_e; NEXT_INST("%s <- %s << %u", trREG_D, trREG_B, field_e); }
-              else if (pattern_match(inst_code, "5...")) { REG_D_TARGET = REG_B << REG_A; NEXT_INST("%s <- %s << %s", trREG_D, trREG_B, trREG_A); }
+                   if (pattern_match(inst_code, "5f..")) { REG_D_TARGET = field_e << (REG_A & 31); NEXT_INST("%s <- %u << %s", trREG_D, field_e, trREG_A); }
+              else if (pattern_match(inst_code, "5.f.")) { REG_D_TARGET = REG_B << (field_e & 31); NEXT_INST("%s <- %s << %u", trREG_D, trREG_B, field_e); }
+              else if (pattern_match(inst_code, "5...")) { REG_D_TARGET = REG_B << (REG_A & 31); NEXT_INST("%s <- %s << %s", trREG_D, trREG_B, trREG_A); }
               FINAL_ELSE;
               break;
             case 0x6:
-                   if (pattern_match(inst_code, "6f..")) { REG_D_TARGET = field_e >> REG_A; NEXT_INST("%s <- %u >> %s", trREG_D, field_e, trREG_A); }
-              else if (pattern_match(inst_code, "6.f.")) { REG_D_TARGET = REG_B >> field_e; NEXT_INST("%s <- %s >> %u", trREG_D, trREG_B, field_e); }
-              else if (pattern_match(inst_code, "6...")) { REG_D_TARGET = REG_B >> REG_A; NEXT_INST("%s <- %s >> %s", trREG_D, trREG_B, trREG_A); }
+                   if (pattern_match(inst_code, "6f..")) { REG_D_TARGET = field_e >> (REG_A & 31); NEXT_INST("%s <- %u >> %s", trREG_D, field_e, trREG_A); }
+              else if (pattern_match(inst_code, "6.f.")) { REG_D_TARGET = REG_B >> (field_e & 31); NEXT_INST("%s <- %s >> %u", trREG_D, trREG_B, field_e); }
+              else if (pattern_match(inst_code, "6...")) { REG_D_TARGET = REG_B >> (REG_A & 31); NEXT_INST("%s <- %s >> %s", trREG_D, trREG_B, trREG_A); }
               FINAL_ELSE;
               break;
             case 0x7:
-                   if (pattern_match(inst_code, "7f..")) { REG_D_TARGET = ((int32_t)field_e) >> REG_A; NEXT_INST("%s <- %d >> %s", trSREG_D, (int32_t)field_e, trREG_A); }
-              else if (pattern_match(inst_code, "7.f.")) { REG_D_TARGET = ((int32_t)REG_B) >> field_e; NEXT_INST("%s <- %s >> %u", trSREG_D, trSREG_B, field_e); }
-              else if (pattern_match(inst_code, "7...")) { REG_D_TARGET = ((int32_t)REG_B) >> REG_A; NEXT_INST("%s <- %s >> %s", trSREG_D, trSREG_B, trREG_A); }
+                   if (pattern_match(inst_code, "7f..")) { REG_D_TARGET = ((int32_t)field_e) >> (REG_A & 31); NEXT_INST("%s <- %d >> %s", trSREG_D, (int32_t)field_e, trREG_A); }
+              else if (pattern_match(inst_code, "7.f.")) { REG_D_TARGET = ((int32_t)REG_B) >> (field_e & 31); NEXT_INST("%s <- %s >> %u", trSREG_D, trSREG_B, field_e); }
+              else if (pattern_match(inst_code, "7...")) { REG_D_TARGET = ((int32_t)REG_B) >> (REG_A & 31); NEXT_INST("%s <- %s >> %s", trSREG_D, trSREG_B, trREG_A); }
               FINAL_ELSE;
               break;
             case 0x8:
