@@ -515,7 +515,11 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint16_t syscall_no)
       ret_val = fstat(arg1, &statbuf);
       // We actually have to translate the stat structure: we can't just assume it has the same layout
       // on the host as on the simulator.
-      SIM_ASSERT(false);
+      // for now, simply return an error...
+      ret_val = -1;
+      scpu->regs[4] = ret_val;
+      SET_ERRNO(EOVERFLOW);
+      //SIM_ASSERT(false);
       break;
     }
 
