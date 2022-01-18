@@ -172,12 +172,12 @@ static char *branch_target(uint32_t field_e)
   if ((field_e & 0) == 0)
     {
       /* Abosolute address */
-      sprintf(branch_target_buffer, "<- %u", field_e);
+      sprintf(branch_target_buffer, "<- %u (0x%x)", field_e, field_e);
     }
   else
     {
       /* Relative address */
-      sprintf(branch_target_buffer, "<- $pc+%d", (int32_t)field_e);
+      sprintf(branch_target_buffer, "<- $pc+%d (0x%x)", (int32_t)field_e, field_e);
     }
   return branch_target_buffer;
 }
@@ -223,52 +223,52 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "0dd0")) INST("FENCE");
       if (pattern_match(inst_code, "0ee0")) INST("WFENCE");
       if (pattern_match(inst_code, "0..0")) UNKNOWN;
-      if (pattern_match(inst_code, "0ff.")) INST("%s <- %u", REG_D, field_e);
+      if (pattern_match(inst_code, "0ff.")) INST("%s <- %u (0x%x)", REG_D, field_e, field_e);
       if (pattern_match(inst_code, "0f..")) UNKNOWN;
-      if (pattern_match(inst_code, "0.f.")) INST("%s <- %s ^ %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "0.f.")) INST("%s <- %s ^ %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "0...")) INST("%s <- %s ^ %s", REG_D, REG_B, REG_A);
       break;
     case 0x1:
       if (pattern_match(inst_code, "1000")) INST("WOI");
       if (pattern_match(inst_code, "1f..")) UNKNOWN;
-      if (pattern_match(inst_code, "1.f.")) INST("%s <- %s | %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "1.f.")) INST("%s <- %s | %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "1...")) INST("%s <- %s | %s", REG_D, REG_B, REG_A);
       break;
     case 0x2:
       if (pattern_match(inst_code, "2f..")) UNKNOWN;
-      if (pattern_match(inst_code, "2.f.")) INST("%s <- %s & %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "2.f.")) INST("%s <- %s & %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "2...")) INST("%s <- %s & %s", REG_D, REG_B, REG_A);
       break;
     case 0x3:
-      if (pattern_match(inst_code, "3f..")) INST("%s <- %u - %s", REG_D, field_e, REG_A);
-      if (pattern_match(inst_code, "3.f.")) INST("%s <- %s - %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "3f..")) INST("%s <- %u (0x%x) - %s", REG_D, field_e, field_e, REG_A);
+      if (pattern_match(inst_code, "3.f.")) INST("%s <- %s - %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "3...")) INST("%s <- %s - %s", REG_D, REG_B, REG_A);
       break;
     case 0x4:
       if (pattern_match(inst_code, "4f..")) UNKNOWN;
-      if (pattern_match(inst_code, "4.f.")) INST("%s <- %s + %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "4.f.")) INST("%s <- %s + %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "4...")) INST("%s <- %s + %s", REG_D, REG_B, REG_A);
       break;
     case 0x5:
-      if (pattern_match(inst_code, "5f..")) INST("%s <- %u << %s", REG_D, field_e, REG_A);
-      if (pattern_match(inst_code, "5.f.")) INST("%s <- %s << %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "5f..")) INST("%s <- %u (0x%x) << %s", REG_D, field_e, field_e, REG_A);
+      if (pattern_match(inst_code, "5.f.")) INST("%s <- %s << %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "5...")) INST("%s <- %s << %s", REG_D, REG_B, REG_A);
       break;
     case 0x6:
-      if (pattern_match(inst_code, "6f..")) INST("%s <- %u >> %s", REG_D, field_e, REG_A);
-      if (pattern_match(inst_code, "6.f.")) INST("%s <- %s >> %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "6f..")) INST("%s <- %u (0x%x) >> %s", REG_D, field_e, field_e, REG_A);
+      if (pattern_match(inst_code, "6.f.")) INST("%s <- %s >> %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "6...")) INST("%s <- %s >> %s", REG_D, REG_B, REG_A);
       break;
     case 0x7:
-      if (pattern_match(inst_code, "7f..")) INST("%s <- %d >> %s", SREG_D, (int32_t)field_e, REG_A);
-      if (pattern_match(inst_code, "7.f.")) INST("%s <- %s >> %u", SREG_D, SREG_B, field_e);
+      if (pattern_match(inst_code, "7f..")) INST("%s <- %d (0x%x) >> %s", SREG_D, (int32_t)field_e, field_e, REG_A);
+      if (pattern_match(inst_code, "7.f.")) INST("%s <- %s >> %u (0x%x)", SREG_D, SREG_B, field_e, field_e);
       if (pattern_match(inst_code, "7...")) INST("%s <- %s >> %s", SREG_D, SREG_B, REG_A);
       break;
     case 0x8:
       if (pattern_match(inst_code, "8f..")) UNKNOWN;
       if (pattern_match(inst_code, "8ff.")) UNKNOWN;
-      if (pattern_match(inst_code, "80f.")) INST("%s <- %u", TREG_D, field_e);
-      if (pattern_match(inst_code, "8.f.")) INST("%s <- %s * %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "80f.")) INST("%s <- %u (0x%x)", TREG_D, field_e, field_e);
+      if (pattern_match(inst_code, "8.f.")) INST("%s <- %s * %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "80..")) INST("%s <- %s", TREG_D, TREG_A);
       if (pattern_match(inst_code, "8.00")) UNKNOWN;
       if (pattern_match(inst_code, "8...")) INST("%s <- %s * %s", REG_D, REG_B, REG_A);
@@ -290,7 +290,7 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "aff.")) UNKNOWN;
       if (pattern_match(inst_code, "a0f.")) UNKNOWN;
       if (pattern_match(inst_code, "a.f0")) UNKNOWN;
-      if (pattern_match(inst_code, "a.f.")) INST("%s <- upper %s * %u", REG_D, REG_B, field_e);
+      if (pattern_match(inst_code, "a.f.")) INST("%s <- upper %s * %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "a00.")) UNKNOWN;
       if (pattern_match(inst_code, "a0..")) INST("%s <- -%s", SREG_D, SREG_A);
       if (pattern_match(inst_code, "a.0.")) INST("%s <- ~%s", REG_D, REG_B);
@@ -302,7 +302,7 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "bff.")) UNKNOWN;
       if (pattern_match(inst_code, "b0f.")) UNKNOWN;
       if (pattern_match(inst_code, "b.f0")) UNKNOWN;
-      if (pattern_match(inst_code, "b.f.")) INST("%s <- upper %s * %d", SREG_D, SREG_B, (int32_t)field_e);
+      if (pattern_match(inst_code, "b.f.")) INST("%s <- upper %s * %d (0x%x)", SREG_D, SREG_B, (int32_t)field_e, field_e);
       if (pattern_match(inst_code, "b00.")) UNKNOWN;
       if (pattern_match(inst_code, "b0..")) INST("%s <- bswap %s", REG_D, REG_A);
       if (pattern_match(inst_code, "b.0.")) INST("%s <- wswap %s", REG_D, REG_B);
@@ -357,39 +357,39 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       if (pattern_match(inst_code, "f7.f")) UNKNOWN;
       if (pattern_match(inst_code, "f7f.")) UNKNOWN;
 
-      if (pattern_match(inst_code, "f8f.")) INST("%s <- MEM8[%d]", SREG_D, field_e);
-      if (pattern_match(inst_code, "f8ff")) INST("$stpc <- MEM8[%d]", field_e);
-      if (pattern_match(inst_code, "f9f.")) INST("%s <- MEM8[%d]", REG_D, field_e);
-      if (pattern_match(inst_code, "f9ff")) INST("$tpc <- MEM8[%d]", field_e);
-      if (pattern_match(inst_code, "faf.")) INST("%s <- MEM16[%d]", SREG_D, field_e);
-      if (pattern_match(inst_code, "faff")) INST("$stpc <- MEM16[%d]", field_e);
-      if (pattern_match(inst_code, "fbf.")) INST("%s <- MEM16[%d]", REG_D, field_e);
-      if (pattern_match(inst_code, "fbff")) INST("$tpc <- MEM16[%d]", field_e);
-      if (pattern_match(inst_code, "fcf.")) INST("%s <- MEM32[%d]", REG_D, field_e);
-      if (pattern_match(inst_code, "fcff")) INST("$tpc <- MEM32[%d]", field_e);
-      if (pattern_match(inst_code, "fdf.")) INST("MEM8[%d] <- %s", field_e, REG_D);
-      if (pattern_match(inst_code, "fdff")) INST("MEM8[%d] <- $tpc", field_e);
-      if (pattern_match(inst_code, "fef.")) INST("MEM16[%d] <- %s", field_e, REG_D);
-      if (pattern_match(inst_code, "feff")) INST("MEM16[%d] <- $tpc", field_e);
-      if (pattern_match(inst_code, "fff.")) INST("MEM32[%d] <- %s", field_e, REG_D);
-      if (pattern_match(inst_code, "ffff")) INST("MEM32[%d] <- $tpc", field_e);
+      if (pattern_match(inst_code, "f8f.")) INST("%s <- MEM8[%d (0x%x)]", SREG_D, field_e, field_e);
+      if (pattern_match(inst_code, "f8ff")) INST("$stpc <- MEM8[%d (0x%x)]", field_e, field_e);
+      if (pattern_match(inst_code, "f9f.")) INST("%s <- MEM8[%d (0x%x)]", REG_D, field_e, field_e);
+      if (pattern_match(inst_code, "f9ff")) INST("$tpc <- MEM8[%d (0x%x)]", field_e, field_e);
+      if (pattern_match(inst_code, "faf.")) INST("%s <- MEM16[%d (0x%x)]", SREG_D, field_e, field_e);
+      if (pattern_match(inst_code, "faff")) INST("$stpc <- MEM16[%d (0x%x)]", field_e, field_e);
+      if (pattern_match(inst_code, "fbf.")) INST("%s <- MEM16[%d (0x%x)]", REG_D, field_e, field_e);
+      if (pattern_match(inst_code, "fbff")) INST("$tpc <- MEM16[%d (0x%x)]", field_e, field_e);
+      if (pattern_match(inst_code, "fcf.")) INST("%s <- MEM32[%d (0x%x)]", REG_D, field_e, field_e);
+      if (pattern_match(inst_code, "fcff")) INST("$tpc <- MEM32[%d (0x%x)]", field_e, field_e);
+      if (pattern_match(inst_code, "fdf.")) INST("MEM8[%d (0x%x)] <- %s", field_e, field_e, REG_D);
+      if (pattern_match(inst_code, "fdff")) INST("MEM8[%d (0x%x)] <- $tpc", field_e, field_e);
+      if (pattern_match(inst_code, "fef.")) INST("MEM16[%d (0x%x)] <- %s", field_e, field_e, REG_D);
+      if (pattern_match(inst_code, "feff")) INST("MEM16[%d (0x%x)] <- $tpc", field_e, field_e);
+      if (pattern_match(inst_code, "fff.")) INST("MEM32[%d (0x%x)] <- %s", field_e, field_e, REG_D);
+      if (pattern_match(inst_code, "ffff")) INST("MEM32[%d (0x%x)] <- $tpc", field_e, field_e);
 
-      if (pattern_match(inst_code, "f8..")) INST("%s <- MEM8[%s,%d]", SREG_D, REG_A, field_e);
-      if (pattern_match(inst_code, "f8.f")) INST("$stpc <- MEM8[%s,%d]", REG_A, field_e);
-      if (pattern_match(inst_code, "f9..")) INST("%s <- MEM8[%s,%d]", REG_D, REG_A, field_e);
-      if (pattern_match(inst_code, "f9.f")) INST("$tpc <- MEM8[%s,%d]", REG_A, field_e);
-      if (pattern_match(inst_code, "fa..")) INST("%s <- MEM16[%s,%d]", SREG_D, REG_A, field_e);
-      if (pattern_match(inst_code, "fa.f")) INST("$stpc <- MEM16[%s,%d]", REG_A, field_e);
-      if (pattern_match(inst_code, "fb..")) INST("%s <- MEM16[%s,%d]", REG_D, REG_A, field_e);
-      if (pattern_match(inst_code, "fb.f")) INST("$tpc <- MEM16[%s,%d]", REG_A, field_e);
-      if (pattern_match(inst_code, "fc..")) INST("%s <- MEM32[%s,%d]", REG_D, REG_A, field_e);
-      if (pattern_match(inst_code, "fc.f")) INST("$tpc <- MEM32[%s,%d]", REG_A, field_e);
-      if (pattern_match(inst_code, "fd..")) INST("MEM8[%s,%d] <- %s", REG_A, field_e, REG_D);
-      if (pattern_match(inst_code, "fd.f")) INST("MEM8[%s,%d] <- $tpc", REG_A, field_e);
-      if (pattern_match(inst_code, "fe..")) INST("MEM16[%s,%d] <- %s", REG_A, field_e, REG_D);
-      if (pattern_match(inst_code, "fe.f")) INST("MEM16[%s,%d] <- $tpc", REG_A, field_e);
-      if (pattern_match(inst_code, "ff..")) INST("MEM32[%s,%d] <- %s", REG_A, field_e, REG_D);
-      if (pattern_match(inst_code, "ff.f")) INST("MEM32[%s,%d] <- $tpc", REG_A, field_e);
+      if (pattern_match(inst_code, "f8..")) INST("%s <- MEM8[%s,%d (0x%x)]", SREG_D, REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "f8.f")) INST("$stpc <- MEM8[%s,%d (0x%x)]", REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "f9..")) INST("%s <- MEM8[%s,%d (0x%x)]", REG_D, REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "f9.f")) INST("$tpc <- MEM8[%s,%d (0x%x)]", REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "fa..")) INST("%s <- MEM16[%s,%d (0x%x)]", SREG_D, REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "fa.f")) INST("$stpc <- MEM16[%s,%d (0x%x)]", REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "fb..")) INST("%s <- MEM16[%s,%d (0x%x)]", REG_D, REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "fb.f")) INST("$tpc <- MEM16[%s,%d (0x%x)]", REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "fc..")) INST("%s <- MEM32[%s,%d (0x%x)]", REG_D, REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "fc.f")) INST("$tpc <- MEM32[%s,%d (0x%x)]", REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "fd..")) INST("MEM8[%s,%d (0x%x)] <- %s", REG_A, field_e, field_e, REG_D);
+      if (pattern_match(inst_code, "fd.f")) INST("MEM8[%s,%d (0x%x)] <- $tpc", REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "fe..")) INST("MEM16[%s,%d (0x%x)] <- %s", REG_A, field_e, field_e, REG_D);
+      if (pattern_match(inst_code, "fe.f")) INST("MEM16[%s,%d (0x%x)] <- $tpc", REG_A, field_e, field_e);
+      if (pattern_match(inst_code, "ff..")) INST("MEM32[%s,%d (0x%x)] <- %s", REG_A, field_e, field_e, REG_D);
+      if (pattern_match(inst_code, "ff.f")) INST("MEM32[%s,%d (0x%x)] <- $tpc", REG_A, field_e, field_e);
       break;
     default:
       OPCODES_ASSERT(false);
