@@ -1,3 +1,15 @@
+2022-01-17  Nick Clifton  <nickc@redhat.com>
+
+	* Makefile.in: Regenerate.
+	* configure: Regenerate.
+	* doc/Makefile.in: Regenerate.
+	* po/bfd.pot: Regenerate.
+
+2021-12-15  Nikita Popov  <npv1310@gmail.com>
+
+	PR 28687
+	* dwarf1.c (parse_die): Fix undefined behaviour in range tests.
+
 2021-11-17  Nick Clifton  <nickc@redhat.com>
 
 	PR 28452
@@ -2134,7 +2146,7 @@
 
 For older changes see ChangeLog-2020
 
-Copyright (C) 2021 Free Software Foundation, Inc.
+Copyright (C) 2021-2022 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

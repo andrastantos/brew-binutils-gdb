@@ -1,5 +1,5 @@
 /* Tracepoint code for remote server for GDB.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2022 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -3975,18 +3975,14 @@ gdb_agent_about_to_close (int pid)
 
   if (!maybe_write_ipa_not_loaded (buf))
     {
-      struct thread_info *saved_thread;
-
-      saved_thread = current_thread;
+      scoped_restore_current_thread restore_thread;
 
       /* Find any thread which belongs to process PID.  */
-      current_thread = find_any_thread_of_pid (pid);
+      switch_to_thread (find_any_thread_of_pid (pid));
 
       strcpy (buf, "close");
 
       run_inferior_command (buf, strlen (buf) + 1);
-
-      current_thread = saved_thread;
     }
 }
 
@@ -6899,8 +6895,13 @@ init_named_socket (const char *name)
 
   addr.sun_family = AF_UNIX;
 
-  strncpy (addr.sun_path, name, UNIX_PATH_MAX);
-  addr.sun_path[UNIX_PATH_MAX - 1] = '\0';
+  if (strlen (name) >= ARRAY_SIZE (addr.sun_path))
+    {
+      warning ("socket name too long for sockaddr_un::sun_path field: %s", name);
+      return -1;
+    }
+
+  strcpy (addr.sun_path, name);
 
   result = access (name, F_OK);
   if (result == 0)
@@ -6942,8 +6943,8 @@ gdb_agent_socket_init (void)
 {
   int result, fd;
 
-  result = xsnprintf (agent_socket_name, UNIX_PATH_MAX, "%s/gdb_ust%d",
-		      SOCK_DIR, getpid ());
+  result = snprintf (agent_socket_name, UNIX_PATH_MAX, "%s/gdb_ust%d",
+		     SOCK_DIR, getpid ());
   if (result >= UNIX_PATH_MAX)
     {
       trace_debug ("string overflow allocating socket name");

@@ -1,6 +1,6 @@
 /* Do various things to symbol tables (other than lookup), for GDB.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2022 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,11 +26,11 @@
 #include "objfiles.h"
 #include "breakpoint.h"
 #include "command.h"
-#include "gdb_obstack.h"
+#include "gdbsupport/gdb_obstack.h"
 #include "language.h"
 #include "bcache.h"
 #include "block.h"
-#include "gdb_regex.h"
+#include "gdbsupport/gdb_regex.h"
 #include <sys/stat.h>
 #include "dictionary.h"
 #include "typeprint.h"
@@ -38,6 +38,7 @@
 #include "source.h"
 #include "readline/tilde.h"
 #include <cli/cli-style.h>
+#include "gdbsupport/buildargv.h"
 
 /* Prototypes for local functions */
 
@@ -113,11 +114,9 @@ static void
 dump_objfile (struct objfile *objfile)
 {
   printf_filtered ("\nObject file %s:  ", objfile_name (objfile));
-  printf_filtered ("Objfile at ");
-  gdb_print_host_address (objfile, gdb_stdout);
-  printf_filtered (", bfd at ");
-  gdb_print_host_address (objfile->obfd, gdb_stdout);
-  printf_filtered (", %d minsyms\n\n",
+  printf_filtered ("Objfile at %s, bfd at %s, %d minsyms\n\n",
+		   host_address_to_string (objfile),
+		   host_address_to_string (objfile->obfd),
 		   objfile->per_bfd->minimal_symbol_count);
 
   objfile->dump ();
@@ -129,9 +128,9 @@ dump_objfile (struct objfile *objfile)
 	{
 	  for (symtab *symtab : compunit_filetabs (cu))
 	    {
-	      printf_filtered ("%s at ",
-			       symtab_to_filename_for_display (symtab));
-	      gdb_print_host_address (symtab, gdb_stdout);
+	      printf_filtered ("%s at %s",
+			       symtab_to_filename_for_display (symtab),
+			       host_address_to_string (symtab));
 	      if (SYMTAB_OBJFILE (symtab) != objfile)
 		printf_filtered (", NOT ON CHAIN!");
 	      printf_filtered ("\n");
@@ -253,10 +252,9 @@ dump_symtab_1 (struct symtab *symtab, struct ui_file *outfile)
   if (SYMTAB_DIRNAME (symtab) != NULL)
     fprintf_filtered (outfile, "Compilation directory is %s\n",
 		      SYMTAB_DIRNAME (symtab));
-  fprintf_filtered (outfile, "Read from object file %s (",
-		    objfile_name (objfile));
-  gdb_print_host_address (objfile, outfile);
-  fprintf_filtered (outfile, ")\n");
+  fprintf_filtered (outfile, "Read from object file %s (%s)\n",
+		    objfile_name (objfile),
+		    host_address_to_string (objfile));
   fprintf_filtered (outfile, "Language: %s\n",
 		    language_str (symtab->language));
 
@@ -286,14 +284,12 @@ dump_symtab_1 (struct symtab *symtab, struct ui_file *outfile)
 	{
 	  b = BLOCKVECTOR_BLOCK (bv, i);
 	  depth = block_depth (b) * 2;
-	  print_spaces (depth, outfile);
-	  fprintf_filtered (outfile, "block #%03d, object at ", i);
-	  gdb_print_host_address (b, outfile);
+	  fprintf_filtered (outfile, "%*sblock #%03d, object at %s",
+			    depth, "", i,
+			    host_address_to_string (b));
 	  if (BLOCK_SUPERBLOCK (b))
-	    {
-	      fprintf_filtered (outfile, " under ");
-	      gdb_print_host_address (BLOCK_SUPERBLOCK (b), outfile);
-	    }
+	    fprintf_filtered (outfile, " under %s",
+			      host_address_to_string (BLOCK_SUPERBLOCK (b)));
 	  /* drow/2002-07-10: We could save the total symbols count
 	     even if we're using a hashtable, but nothing else but this message
 	     wants it.  */
@@ -510,7 +506,7 @@ print_symbol (struct gdbarch *gdbarch, struct symbol *symbol,
   else
     section = NULL;
 
-  print_spaces (depth, outfile);
+  print_spaces_filtered (depth, outfile);
   if (SYMBOL_DOMAIN (symbol) == LABEL_DOMAIN)
     {
       fprintf_filtered (outfile, "label %s at ", symbol->print_name ());
@@ -633,16 +629,11 @@ print_symbol (struct gdbarch *gdbarch, struct symbol *symbol,
 	  break;
 
 	case LOC_BLOCK:
-	  fprintf_filtered (outfile, "block object ");
-	  gdb_print_host_address (SYMBOL_BLOCK_VALUE (symbol), outfile);
-	  fprintf_filtered (outfile, ", ");
-	  fputs_filtered (paddress (gdbarch,
-				    BLOCK_START (SYMBOL_BLOCK_VALUE (symbol))),
-			  outfile);
-	  fprintf_filtered (outfile, "..");
-	  fputs_filtered (paddress (gdbarch,
-				    BLOCK_END (SYMBOL_BLOCK_VALUE (symbol))),
-			  outfile);
+	  fprintf_filtered
+	    (outfile, "block object %s, %s..%s",
+	     host_address_to_string (SYMBOL_BLOCK_VALUE (symbol)),
+	     paddress (gdbarch, BLOCK_START (SYMBOL_BLOCK_VALUE (symbol))),
+	     paddress (gdbarch, BLOCK_END (SYMBOL_BLOCK_VALUE (symbol))));
 	  if (section)
 	    fprintf_filtered (outfile, " section %s",
 			      bfd_section_name (section->the_bfd_section));

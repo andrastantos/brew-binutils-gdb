@@ -1,6 +1,6 @@
 /* Native-dependent code for NetBSD.
 
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2022 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -132,7 +132,7 @@ nbsd_add_threads (nbsd_nat_target *target, pid_t pid)
   netbsd_nat::for_each_thread (pid, fn);
 }
 
-/* Implement the "post_startup_inferior" target_ops method.  */
+/* Implement the virtual inf_ptrace_target::post_startup_inferior method.  */
 
 void
 nbsd_nat_target::post_startup_inferior (ptid_t ptid)

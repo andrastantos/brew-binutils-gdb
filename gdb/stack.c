@@ -1,6 +1,6 @@
 /* Print and select stack frames for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2022 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -55,6 +55,7 @@
 #include "gdbsupport/def-vector.h"
 #include "cli/cli-option.h"
 #include "cli/cli-style.h"
+#include "gdbsupport/buildargv.h"
 
 /* The possible choices of "set print frame-arguments", and the value
    of this setting.  */

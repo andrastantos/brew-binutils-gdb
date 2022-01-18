@@ -1,6 +1,6 @@
 /* General python/gdb code
 
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2022 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -567,6 +567,16 @@ static PyObject *
 gdbpy_target_wide_charset (PyObject *self, PyObject *args)
 {
   const char *cset = target_wide_charset (python_gdbarch);
+
+  return PyUnicode_Decode (cset, strlen (cset), host_charset (), NULL);
+}
+
+/* Implement gdb.host_charset().  */
+
+static PyObject *
+gdbpy_host_charset (PyObject *self, PyObject *args)
+{
+  const char *cset = host_charset ();
 
   return PyUnicode_Decode (cset, strlen (cset), host_charset (), NULL);
 }
@@ -2281,6 +2291,9 @@ Return the name of the current target charset." },
   { "target_wide_charset", gdbpy_target_wide_charset, METH_NOARGS,
     "target_wide_charset () -> string.\n\
 Return the name of the current target wide charset." },
+  { "host_charset", gdbpy_host_charset, METH_NOARGS,
+    "host_charset () -> string.\n\
+Return the name of the current host charset." },
   { "rbreak", (PyCFunction) gdbpy_rbreak, METH_VARARGS | METH_KEYWORDS,
     "rbreak (Regex) -> List.\n\
 Return a Tuple containing gdb.Breakpoint objects that match the given Regex." },

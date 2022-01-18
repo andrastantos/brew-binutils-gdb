@@ -1,6 +1,6 @@
 /* Tracing functionality for remote targets in custom GDB protocol
 
-   Copyright (C) 1997-2021 Free Software Foundation, Inc.
+   Copyright (C) 1997-2022 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -58,6 +58,7 @@
 #include <algorithm>
 #include "cli/cli-style.h"
 #include "expop.h"
+#include "gdbsupport/buildargv.h"
 
 #include <unistd.h>
 
@@ -2195,8 +2196,8 @@ tfind_1 (enum trace_find_type type, int num,
 	}
       else
 	{
-	  printf_unfiltered (_("Found trace frame %d, tracepoint %d\n"),
-			     traceframe_number, tracepoint_number);
+	  printf_filtered (_("Found trace frame %d, tracepoint %d\n"),
+			   traceframe_number, tracepoint_number);
 	}
     }
   else
@@ -2204,9 +2205,9 @@ tfind_1 (enum trace_find_type type, int num,
       if (uiout->is_mi_like_p ())
 	uiout->field_string ("found", "0");
       else if (type == tfind_number && num == -1)
-	printf_unfiltered (_("No longer looking at any trace frame\n"));
+	printf_filtered (_("No longer looking at any trace frame\n"));
       else /* This case may never occur, check.  */
-	printf_unfiltered (_("No trace frame found\n"));
+	printf_filtered (_("No trace frame found\n"));
     }
 
   /* If we're in nonstop mode and getting out of looking at trace

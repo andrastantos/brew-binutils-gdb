@@ -1,6 +1,6 @@
 /* Select target systems and architectures at runtime for GDB.
 
-   Copyright (C) 1990-2021 Free Software Foundation, Inc.
+   Copyright (C) 1990-2022 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support.
 
@@ -298,14 +298,6 @@ void
 target_files_info ()
 {
   return current_inferior ()->top_target ()->files_info ();
-}
-
-/* See target.h.  */
-
-void
-target_post_startup_inferior (ptid_t ptid)
-{
-  return current_inferior ()->top_target ()->post_startup_inferior (ptid);
 }
 
 /* See target.h.  */
@@ -1135,7 +1127,7 @@ noprocess (void)
 static void
 default_terminal_info (struct target_ops *self, const char *args, int from_tty)
 {
-  printf_unfiltered (_("No saved terminal information.\n"));
+  printf_filtered (_("No saved terminal information.\n"));
 }
 
 /* A default implementation for the to_get_ada_task_ptid target method.
@@ -2452,8 +2444,8 @@ info_target_command (const char *args, int from_tty)
   if (current_program_space->symfile_object_file != NULL)
     {
       objfile *objf = current_program_space->symfile_object_file;
-      printf_unfiltered (_("Symbols from \"%s\".\n"),
-			 objfile_name (objf));
+      printf_filtered (_("Symbols from \"%s\".\n"),
+		       objfile_name (objf));
     }
 
   for (target_ops *t = current_inferior ()->top_target ();
@@ -2466,9 +2458,9 @@ info_target_command (const char *args, int from_tty)
       if ((int) (t->stratum ()) <= (int) dummy_stratum)
 	continue;
       if (has_all_mem)
-	printf_unfiltered (_("\tWhile running this, "
-			     "GDB does not access memory from...\n"));
-      printf_unfiltered ("%s:\n", t->longname ());
+	printf_filtered (_("\tWhile running this, "
+			   "GDB does not access memory from...\n"));
+      printf_filtered ("%s:\n", t->longname ());
       t->files_info ();
       has_all_mem = t->has_all_memory ();
     }
@@ -3636,13 +3628,32 @@ target_announce_detach (int from_tty)
   if (!from_tty)
     return;
 
-  exec_file = get_exec_file (0);
-  if (exec_file == NULL)
-    exec_file = "";
-
   pid = inferior_ptid.pid ();
-  printf_unfiltered (_("Detaching from program: %s, %s\n"), exec_file,
-		     target_pid_to_str (ptid_t (pid)).c_str ());
+  exec_file = get_exec_file (0);
+  if (exec_file == nullptr)
+    printf_unfiltered ("Detaching from pid %s\n",
+		       target_pid_to_str (ptid_t (pid)).c_str ());
+  else
+    printf_unfiltered (_("Detaching from program: %s, %s\n"), exec_file,
+		       target_pid_to_str (ptid_t (pid)).c_str ());
+}
+
+/* See target.h  */
+
+void
+target_announce_attach (int from_tty, int pid)
+{
+  if (!from_tty)
+    return;
+
+  const char *exec_file = get_exec_file (0);
+
+  if (exec_file != nullptr)
+    printf_unfiltered ("Attaching to program: %s, %s\n", exec_file,
+		       target_pid_to_str (ptid_t (pid)).c_str ());
+  else
+    printf_unfiltered ("Attaching to %s\n",
+		       target_pid_to_str (ptid_t (pid)).c_str ());
 }
 
 /* The inferior process has died.  Long live the inferior!  */

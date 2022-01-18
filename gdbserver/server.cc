@@ -1,5 +1,5 @@
 /* Main code for remote server for GDB.
-   Copyright (C) 1989-2021 Free Software Foundation, Inc.
+   Copyright (C) 1989-2022 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1250,6 +1250,35 @@ handle_detach (char *own_buf)
   /* We'll need this after PROCESS has been destroyed.  */
   int pid = process->pid;
 
+  /* If this process has an unreported fork child, that child is not known to
+     GDB, so GDB won't take care of detaching it.  We must do it here.
+
+     Here, we specifically don't want to use "safe iteration", as detaching
+     another process might delete the next thread in the iteration, which is
+     the one saved by the safe iterator.  We will never delete the currently
+     iterated on thread, so standard iteration should be safe.  */
+  for (thread_info *thread : all_threads)
+    {
+      /* Only threads that are of the process we are detaching.  */
+      if (thread->id.pid () != pid)
+	continue;
+
+      /* Only threads that have a pending fork event.  */
+      thread_info *child = target_thread_pending_child (thread);
+      if (child == nullptr)
+	continue;
+
+      process_info *fork_child_process = get_thread_process (child);
+      gdb_assert (fork_child_process != nullptr);
+
+      int fork_child_pid = fork_child_process->pid;
+
+      if (detach_inferior (fork_child_process) != 0)
+	warning (_("Failed to detach fork child %s, child of %s"),
+		 target_pid_to_str (ptid_t (fork_child_pid)).c_str (),
+		 target_pid_to_str (thread->id).c_str ());
+    }
+
   if (detach_inferior (process) != 0)
     write_enn (own_buf);
   else
@@ -1265,7 +1294,7 @@ handle_detach (char *own_buf)
 	  cs.last_status.set_exited (0);
 	  cs.last_ptid = ptid_t (pid);
 
-	  current_thread = NULL;
+	  switch_to_thread (nullptr);
 	}
       else
 	{
@@ -1656,6 +1685,12 @@ handle_qxfer_threads_worker (thread_info *thread, struct buffer *buffer)
   gdb_byte *handle;
   bool handle_status = target_thread_handle (ptid, &handle, &handle_len);
 
+  /* If this is a fork or vfork child (has a fork parent), GDB does not yet
+     know about this process, and must not know about it until it gets the
+     corresponding (v)fork event.  Exclude this thread from the list.  */
+  if (target_thread_pending_parent (thread) != nullptr)
+    return;
+
   write_ptid (ptid_s, ptid);
 
   buffer_xml_printf (buffer, "<thread id=\"%s\"", ptid_s);
@@ -1687,8 +1722,7 @@ handle_qxfer_threads_proper (struct buffer *buffer)
 {
   client_state &cs = get_client_state ();
 
-  scoped_restore save_current_thread
-    = make_scoped_restore (&current_thread);
+  scoped_restore_current_thread restore_thread;
   scoped_restore save_current_general_thread
     = make_scoped_restore (&cs.general_thread);
 
@@ -2223,7 +2257,7 @@ handle_query (char *own_buf, int packet_len, int *new_packet_len_p)
 
   if (strcmp ("qSymbol::", own_buf) == 0)
     {
-      struct thread_info *save_thread = current_thread;
+      scoped_restore_current_thread restore_thread;
 
       /* For qSymbol, GDB only changes the current thread if the
 	 previous current thread was of a different process.  So if
@@ -2232,15 +2266,15 @@ handle_query (char *own_buf, int packet_len, int *new_packet_len_p)
 	 exec in a non-leader thread.  */
       if (current_thread == NULL)
 	{
-	  current_thread
+	  thread_info *any_thread
 	    = find_any_thread_of_pid (cs.general_thread.pid ());
+	  switch_to_thread (any_thread);
 
 	  /* Just in case, if we didn't find a thread, then bail out
 	     instead of crashing.  */
 	  if (current_thread == NULL)
 	    {
 	      write_enn (own_buf);
-	      current_thread = save_thread;
 	      return;
 	    }
 	}
@@ -2262,8 +2296,6 @@ handle_query (char *own_buf, int packet_len, int *new_packet_len_p)
 
       if (current_thread != NULL)
 	the_target->look_up_symbols ();
-
-      current_thread = save_thread;
 
       strcpy (own_buf, "OK");
       return;
@@ -3447,7 +3479,7 @@ static void
 gdbserver_version (void)
 {
   printf ("GNU gdbserver %s%s\n"
-	  "Copyright (C) 2021 Free Software Foundation, Inc.\n"
+	  "Copyright (C) 2022 Free Software Foundation, Inc.\n"
 	  "gdbserver is free software, covered by the "
 	  "GNU General Public License.\n"
 	  "This gdbserver was configured as \"%s\"\n",

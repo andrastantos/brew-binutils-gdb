@@ -1,6 +1,6 @@
 /* Header file for GDB command decoding library.
 
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2022 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,10 +23,11 @@
 
 /* Include the public interfaces.  */
 #include "command.h"
-#include "gdb_regex.h"
+#include "gdbsupport/gdb_regex.h"
 #include "cli-script.h"
 #include "completer.h"
 #include "gdbsupport/intrusive_list.h"
+#include "gdbsupport/buildargv.h"
 
 /* Not a set/show command.  Note that some commands which begin with
    "set" or "show" might be in this category, if their syntax does

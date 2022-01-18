@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux i386.
 
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2022 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -466,9 +466,10 @@ i386_linux_intx80_sysenter_syscall_record (struct regcache *regcache)
 
   if (syscall_gdb < 0)
     {
-      printf_unfiltered (_("Process record and replay target doesn't "
-			   "support syscall number %s\n"), 
-			 plongest (syscall_native));
+      fprintf_unfiltered (gdb_stderr,
+			  _("Process record and replay target doesn't "
+			    "support syscall number %s\n"), 
+			  plongest (syscall_native));
       return -1;
     }
 

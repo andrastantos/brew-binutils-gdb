@@ -1,6 +1,6 @@
 /* Support for GDB maintenance commands.
 
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2022 Free Software Foundation, Inc.
 
    Written by Fred Fish at Cygnus Support.
 
@@ -116,7 +116,7 @@ static void
 maintenance_time_display (const char *args, int from_tty)
 {
   if (args == NULL || *args == '\0')
-    printf_unfiltered (_("\"maintenance time\" takes a numeric argument.\n"));
+    printf_filtered (_("\"maintenance time\" takes a numeric argument.\n"));
   else
     set_per_command_time (strtol (args, NULL, 10));
 }
@@ -125,7 +125,7 @@ static void
 maintenance_space_display (const char *args, int from_tty)
 {
   if (args == NULL || *args == '\0')
-    printf_unfiltered ("\"maintenance space\" takes a numeric argument.\n");
+    printf_filtered ("\"maintenance space\" takes a numeric argument.\n");
   else
     set_per_command_space (strtol (args, NULL, 10));
 }
@@ -329,7 +329,7 @@ print_objfile_section_info (bfd *abfd, struct obj_section *asect,
    from ABFD.  It might be that no such wrapper exists (for example debug
    sections don't have such wrappers) in which case nullptr is returned.  */
 
-static obj_section *
+obj_section *
 maint_obj_section_from_bfd_section (bfd *abfd,
 				    asection *asection,
 				    objfile *ofile)
@@ -632,7 +632,7 @@ maintenance_deprecate (const char *args, int from_tty)
 {
   if (args == NULL || *args == '\0')
     {
-      printf_unfiltered (_("\"maintenance deprecate\" takes an argument,\n\
+      printf_filtered (_("\"maintenance deprecate\" takes an argument,\n\
 the command you want to deprecate, and optionally the replacement command\n\
 enclosed in quotes.\n"));
     }
@@ -646,7 +646,7 @@ maintenance_undeprecate (const char *args, int from_tty)
 {
   if (args == NULL || *args == '\0')
     {
-      printf_unfiltered (_("\"maintenance undeprecate\" takes an argument, \n\
+      printf_filtered (_("\"maintenance undeprecate\" takes an argument, \n\
 the command you want to undeprecate.\n"));
     }
 

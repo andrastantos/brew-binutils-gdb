@@ -1,6 +1,6 @@
 /* Base/prototype target for default child (native) targets.
 
-   Copyright (C) 1988-2021 Free Software Foundation, Inc.
+   Copyright (C) 1988-2022 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -200,13 +200,6 @@ inf_child_target::maybe_unpush_target ()
 {
   if (!inf_child_explicitly_opened)
     current_inferior ()->unpush_target (this);
-}
-
-void
-inf_child_target::post_startup_inferior (ptid_t ptid)
-{
-  /* This target doesn't require a meaningful "post startup inferior"
-     operation by a debugger.  */
 }
 
 bool
