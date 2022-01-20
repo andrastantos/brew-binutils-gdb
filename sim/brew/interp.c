@@ -144,21 +144,64 @@ set_initial_gprs (sim_cpu *scpu)
   */
 }
 
-static INLINE void write_uint8 (sim_cpu *scpu, uint32_t addr, uint8_t  val) { sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
-static INLINE void write_uint16(sim_cpu *scpu, uint32_t addr, uint16_t val) { sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
-static INLINE void write_uint32(sim_cpu *scpu, uint32_t addr, uint32_t val) { sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+typedef struct {
+  uint32_t addr;
+  int access_size;
+  bool sign_extend;
+  bool is_write;
+  uint32_t value;
+  bool is_valid;
+} mem_trace_s;
+mem_trace_s mem_trace;
 
-static INLINE uint8_t  read_uint8 (sim_cpu *scpu, uint32_t addr) { return sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, addr); }
-static INLINE uint16_t read_uint16(sim_cpu *scpu, uint32_t addr) { return sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, addr); }
-static INLINE uint32_t read_uint32(sim_cpu *scpu, uint32_t addr) { return sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, addr); }
+static void record_mem_trace(uint32_t addr, int access_size, bool sign_extend, bool is_write, uint32_t value)
+{
+  mem_trace.addr = addr;
+  mem_trace.access_size = access_size;
+  mem_trace.sign_extend = sign_extend;
+  mem_trace.is_write = is_write;
+  mem_trace.value = value;
+  mem_trace.is_valid = true;
+}
 
-static INLINE void write_int8 (sim_cpu *scpu, uint32_t addr, uint8_t  val) { sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
-static INLINE void write_int16(sim_cpu *scpu, uint32_t addr, uint16_t val) { sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
-static INLINE void write_int32(sim_cpu *scpu, uint32_t addr, uint32_t val) { sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+static void mem_trace_to_str(mem_trace_s *mem_trace, char *buffer)
+{
+  if (mem_trace->is_valid)
+    {
+      mem_trace->is_valid = false;
+      if (mem_trace->is_write)
+        {
+          sprintf(buffer, "mem%d[%d (0x%x)] <- %d (0x%x)", mem_trace->access_size, mem_trace->addr, mem_trace->addr, mem_trace->value, mem_trace->value);
+          return;
+        }
+      else
+        {
+          sprintf(buffer, "%d (0x%x) <- mem%d[%d (0x%x)]", mem_trace->value, mem_trace->value, mem_trace->access_size, mem_trace->addr, mem_trace->addr);
+          return;
+        }
+    }
+  else
+    {
+      buffer[0] = 0;
+      return;
+    }
+}
 
-static INLINE int8_t  read_int8 (sim_cpu *scpu, uint32_t addr) { return (int8_t)sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, addr); }
-static INLINE int16_t read_int16(sim_cpu *scpu, uint32_t addr) { return (int16_t)sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, addr); }
-static INLINE int32_t read_int32(sim_cpu *scpu, uint32_t addr) { return (int32_t)sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, addr); }
+static INLINE void write_uint8 (sim_cpu *scpu, uint32_t addr, uint8_t  val) { record_mem_trace(addr, 8,  false, true, val); sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+static INLINE void write_uint16(sim_cpu *scpu, uint32_t addr, uint16_t val) { record_mem_trace(addr, 16, false, true, val); sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+static INLINE void write_uint32(sim_cpu *scpu, uint32_t addr, uint32_t val) { record_mem_trace(addr, 32, false, true, val); sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+
+static INLINE uint8_t  read_uint8 (sim_cpu *scpu, uint32_t addr) { uint8_t  val = sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, addr); record_mem_trace(addr, 8,  false, false, val); return val; }
+static INLINE uint16_t read_uint16(sim_cpu *scpu, uint32_t addr) { uint16_t val = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, addr); record_mem_trace(addr, 16, false, false, val); return val; }
+static INLINE uint32_t read_uint32(sim_cpu *scpu, uint32_t addr) { uint32_t val = sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, addr); record_mem_trace(addr, 32, false, false, val); return val; }
+
+static INLINE void write_int8 (sim_cpu *scpu, uint32_t addr, uint8_t  val) { record_mem_trace(addr, 8,  false, true, val); sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+static INLINE void write_int16(sim_cpu *scpu, uint32_t addr, uint16_t val) { record_mem_trace(addr, 16, false, true, val); sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+static INLINE void write_int32(sim_cpu *scpu, uint32_t addr, uint32_t val) { record_mem_trace(addr, 32, false, true, val); sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, addr, val); }
+
+static INLINE int8_t  read_int8 (sim_cpu *scpu, uint32_t addr) { int8_t  val = (int8_t) sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, addr); record_mem_trace(addr, 8,  true, false, val); return val; }
+static INLINE int16_t read_int16(sim_cpu *scpu, uint32_t addr) { int16_t val = (int16_t)sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, addr); record_mem_trace(addr, 16, true, false, val); return val; }
+static INLINE int32_t read_int32(sim_cpu *scpu, uint32_t addr) { int32_t val = (int32_t)sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, addr); record_mem_trace(addr, 32, true, false, val); return val; }
 
 #if 0
 #define CHECK_FLAG(T,H) if (tflags & T) { hflags |= H; tflags ^= T; }
@@ -218,6 +261,18 @@ static INLINE void brew_trace(sim_cpu *scpu, const char *fmt, ...)
           message[sizeof(message)-1] = 0;
         }
     }
+    mem_trace_to_str(&mem_trace, fragment);
+    if (fragment[0] != 0)
+      {
+        if (first)
+          {
+              strncat(message, side_effect_delim, MIN(sizeof(message) - strlen(message) - 1, 40-strlen(message)));
+              first = false;
+          }
+          strncat(message, " | ", sizeof(message) - strlen(message) - 1);
+          strncat(message, fragment, sizeof(message) - strlen(message) - 1);
+          message[sizeof(message)-1] = 0;
+      }
   TRACE_INSN(scpu, "%s", message);
 }
 
