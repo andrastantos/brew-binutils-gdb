@@ -4,7 +4,8 @@
 # MACRO: exit
   .macro exit nr
   $r4 <- nr
-  SYSCALLM SYS_exit
+  syscall
+  .hword SYS_exit
   .endm
 
 # MACRO: pass
@@ -15,9 +16,11 @@
   $r5 <- .Lstr_pass
   $r6 <- (.Lstr_pass_end - 1)
   $r6 <- $r6 - $r5
-  SYSCALLM SYS_write
+  syscall
+  .hword SYS_write
   $r4 <- 0
-  SYSCALLM SYS_exit
+  syscall
+  .hword SYS_exit
   .endm
 
 # MACRO: fail
@@ -28,9 +31,11 @@
   $r5 <- .Lstr_fail
   $r6 <- (.Lstr_fail_end - 1)
   $r6 <- $r6 - $r5
-  SYSCALLM SYS_write
+  syscall
+  .hword SYS_write
   $r4 <- 1
-  SYSCALLM SYS_exit
+  syscall
+  .hword SYS_exit
   .endm
 
 # MACRO: start

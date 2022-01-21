@@ -1,7 +1,6 @@
 # check load/store operators
 # mach: brew
 
-.include "framework/macros.s"
 .include "framework/syscall.s"
 .include "framework/fileno.s"
 .include "framework/framework.s"
