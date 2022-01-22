@@ -515,7 +515,10 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint16_t syscall_no)
         SET_ERRNO(errno);
       break;
     case SYS_close:
-      ret_val = close(arg1);
+      if (arg1 > 2)
+        ret_val = close(arg1);
+      else
+        ret_val = 0;
       scpu->regs[4] = ret_val;
       if (ret_val == -1)
         SET_ERRNO(errno);
