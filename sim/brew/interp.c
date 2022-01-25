@@ -460,6 +460,7 @@ static char *sim_core_read_str(SIM_DESC sd, sim_cpu *scpu, uint32_t addr)
         break;
       ++c;
       ++str_len;
+      ++addr;
       if (str_len >= alloc_size)
         {
           alloc_size *= 2;
@@ -467,11 +468,44 @@ static char *sim_core_read_str(SIM_DESC sd, sim_cpu *scpu, uint32_t addr)
           SIM_ASSERT(str != NULL);
           c = str+str_len;
         }
-    } while (false);
+    } while (true);
   return str;
 }
 
 #define SET_ERRNO(value) { if (errno_addr != 0) { TEST_ALIGN(errno_addr, 4); write_uint32(scpu, errno_addr, value); } }
+
+static int marshal_o_flags_from_sim(int oflags)
+{
+  #define  NEWLIB_O_RDONLY    0x000000
+  #define  NEWLIB_O_WRONLY    0x000001
+  #define  NEWLIB_O_RDWR      0x000002
+  #define  NEWLIB_O_APPEND    0x000008
+  #define  NEWLIB_O_CREAT     0x000200
+  #define  NEWLIB_O_TRUNC     0x000400
+  #define  NEWLIB_O_EXCL      0x000800
+  #define  NEWLIB_O_SYNC      0x002000
+  #define  NEWLIB_O_NONBLOCK  0x004000
+  #define  NEWLIB_O_NOCTTY    0x008000
+  #define  NEWLIB_O_CLOEXEC   0x040000
+  #define  NEWLIB_O_NOFOLLOW  0x100000
+  #define  NEWLIB_O_DIRECTORY 0x200000
+  //#define  NEWLIB_O_EXEC      0x400000 - no direct equivalent on host?
+  int ret_val = 0;
+  if ((oflags & NEWLIB_O_RDONLY) != 0)    ret_val |= O_RDONLY;
+  if ((oflags & NEWLIB_O_WRONLY) != 0)    ret_val |= O_WRONLY;
+  if ((oflags & NEWLIB_O_RDWR) != 0)      ret_val |= O_RDWR;
+  if ((oflags & NEWLIB_O_APPEND) != 0)    ret_val |= O_APPEND;
+  if ((oflags & NEWLIB_O_CREAT) != 0)     ret_val |= O_CREAT;
+  if ((oflags & NEWLIB_O_TRUNC) != 0)     ret_val |= O_TRUNC;
+  if ((oflags & NEWLIB_O_EXCL) != 0)      ret_val |= O_EXCL;
+  if ((oflags & NEWLIB_O_SYNC) != 0)      ret_val |= O_SYNC;
+  if ((oflags & NEWLIB_O_NONBLOCK) != 0)  ret_val |= O_NONBLOCK;
+  if ((oflags & NEWLIB_O_NOCTTY) != 0)    ret_val |= O_NOCTTY;
+  if ((oflags & NEWLIB_O_CLOEXEC) != 0)   ret_val |= O_CLOEXEC;
+  if ((oflags & NEWLIB_O_NOFOLLOW) != 0)  ret_val |= O_NOFOLLOW;
+  if ((oflags & NEWLIB_O_DIRECTORY) != 0) ret_val |= O_DIRECTORY;
+  return ret_val;
+}
 
 static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint16_t syscall_no)
 {
@@ -498,7 +532,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint16_t syscall_no)
   char *str1;
   char *str2;
   int ret_val;
-
+  int flags;
   REG_TPC_TARGET = REG_TPC + 4; // PC at this point still points
   switch (syscall_no) {
     case SYS_exit:
@@ -506,14 +540,23 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint16_t syscall_no)
       exit(arg1);
       break;
     case SYS_open:
-      // FIXME: handle the VA_ARG portion of the call!!
+    {
+      // mode is a VAARG argument, so it's on the stack. Originally it's at offset 8 from $sp, but
+      // the syscall wrapper pushes the return address ($r3) on there so, it really is at offset 12
+      // by the time we get involved.
+      uint32_t mode = sim_core_read_4(scpu, CPU_PC_GET(scpu), read_map, scpu->regs[1]+8+4);
       str1 = sim_core_read_str(sd, scpu, arg1);
-      ret_val = open(str1, arg2);
+      // We need to map some flags
+      flags = marshal_o_flags_from_sim(arg2);
+      //printf("SIM OPEN: %s with flags: %x, local flags are: %x and mode 0%o\n", str1, arg2, flags, mode);
+      ret_val = open(str1, flags, mode);
+      //printf("SIM OPEN returned: %d, errno: %d\n", ret_val, errno);
       free(str1);
       scpu->regs[4] = ret_val;
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
+    }
     case SYS_close:
       if (arg1 > 2)
         ret_val = close(arg1);
