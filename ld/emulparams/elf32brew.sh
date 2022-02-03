@@ -8,6 +8,8 @@ TEXT_START_ADDR=0x1000
 MAXPAGESIZE="CONSTANT (MAXPAGESIZE)"
 ARCH=brew
 EMBEDDED=yes
-STACK_ADDR=0x400000
+# Start stack at 2GB and grow down from there.
+# FIXME: this eventually should come from the executive, not from the linker script.
+STACK_ADDR=0x80000000
 OTHER_BSS_SYMBOLS="__bss_start__ = . ;"
 OTHER_BSS_END_SYMBOLS="__bss_end__ = . ;"

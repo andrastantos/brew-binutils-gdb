@@ -253,7 +253,13 @@ static INLINE void brew_trace(sim_cpu *scpu, const char *fmt, ...)
         {
           if (first)
             {
-              strncat(message, side_effect_delim, MIN(sizeof(message) - strlen(message) - 1, 40-strlen(message)));
+              int size_so_far = strlen(message);
+              int side_effect_indent = 80 - size_so_far;
+              if (side_effect_indent < 0) side_effect_indent = 0;
+              #pragma GCC diagnostic push
+              #pragma GCC diagnostic ignored "-Wstringop-truncation"
+              strncat(message, side_effect_delim, MIN(sizeof(message) - strlen(message) - 1, side_effect_indent));
+              #pragma GCC diagnostic pop
               first = false;
             }
           snprintf(fragment, sizeof(fragment)-1, " %s <- 0x%x", reg_names[i] == NULL ? pc_name : reg_names[i], scpu->regs[i]);
@@ -266,7 +272,13 @@ static INLINE void brew_trace(sim_cpu *scpu, const char *fmt, ...)
       {
         if (first)
           {
-              strncat(message, side_effect_delim, MIN(sizeof(message) - strlen(message) - 1, 40-strlen(message)));
+              int size_so_far = strlen(message);
+              int side_effect_indent = 80 - size_so_far;
+              if (side_effect_indent < 0) side_effect_indent = 0;
+              #pragma GCC diagnostic push
+              #pragma GCC diagnostic ignored "-Wstringop-truncation"
+              strncat(message, side_effect_delim, MIN(sizeof(message) - strlen(message) - 1, side_effect_indent));
+              #pragma GCC diagnostic pop
               first = false;
           }
           strncat(message, " | ", sizeof(message) - strlen(message) - 1);
@@ -780,6 +792,7 @@ sim_engine_run (SIM_DESC sd,
               break;
             case 0x1:
                    if (pattern_match(inst_code, "1000")) { BREW_TRACE_INST("WOI"); sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_stopped, SIM_SIGILL); }
+              else if (pattern_match(inst_code, "1111")) { NEXT_INST("NOP"); }
               else if (pattern_match(inst_code, "1f..")) { UNKNOWN; }
               else if (pattern_match(inst_code, "1.f.")) { REG_D_TARGET = REG_B | field_e; NEXT_INST("%s <- %s | 0x%x", trREG_D, trREG_B, field_e); }
               else if (pattern_match(inst_code, "1...")) { REG_D_TARGET = REG_B | REG_A; NEXT_INST("%s <- %s | %s", trREG_D, trREG_B, trREG_A); }
@@ -1131,7 +1144,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
     }
 
   /* FIXME: not sure what these do. Probably create and allocate some memory */
-  sim_do_command(sd," memory region 0x00000000,0x4000000"); /* main memory for program storage */
+  sim_do_command(sd," memory region 0x00000000,0x80000000"); /* main memory for program storage */
   //sim_do_command(sd," memory region 0xE0000000,0x10000"); /* this is where the DTB goes, if loaded */
 
   /* Check for/establish the a reference program image.  */

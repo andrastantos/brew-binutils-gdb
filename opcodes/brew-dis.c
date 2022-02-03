@@ -230,6 +230,7 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
       break;
     case 0x1:
       if (pattern_match(inst_code, "1000")) INST("WOI");
+      if (pattern_match(inst_code, "1111")) INST("NOP");
       if (pattern_match(inst_code, "1f..")) UNKNOWN;
       if (pattern_match(inst_code, "1.f.")) INST("%s <- %s | %u (0x%x)", REG_D, REG_B, field_e, field_e);
       if (pattern_match(inst_code, "1...")) INST("%s <- %s | %s", REG_D, REG_B, REG_A);
