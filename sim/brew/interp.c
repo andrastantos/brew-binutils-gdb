@@ -553,13 +553,15 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint16_t syscall_no)
       break;
     case SYS_open:
     {
-      // mode is a VAARG argument, so it's on the stack. Originally it's at offset 16 from $sp, but
-      // the syscall wrapper pushes the return address ($r3) on there so, it really is at offset 20
-      // by the time we get involved.
-      uint32_t mode = sim_core_read_4(scpu, CPU_PC_GET(scpu), read_map, scpu->regs[1]+16+4);
+      uint32_t mode;
       str1 = sim_core_read_str(sd, scpu, arg1);
       // We need to map some flags
       flags = marshal_o_flags_from_sim(arg2);
+      // mode is a VAARG argument. Even so, those come through registers as well, just as regular arguments.
+      mode = arg3;
+
+      fflush(stdout);
+
       //printf("SIM OPEN: %s with flags: %x, local flags are: %x and mode 0%o\n", str1, arg2, flags, mode);
       ret_val = open(str1, flags, mode);
       //printf("SIM OPEN returned: %d, errno: %d\n", ret_val, errno);
