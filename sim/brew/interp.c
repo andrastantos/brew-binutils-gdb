@@ -286,6 +286,8 @@ static INLINE void brew_trace(sim_cpu *scpu, const char *fmt, ...)
           message[sizeof(message)-1] = 0;
       }
   TRACE_INSN(scpu, "%s", message);
+  PROFILE_COUNT_INSN(scpu, scpu->regs[BREW_REG_PC], 0);
+
 }
 
 /* TODO: Split this up into finer trace levels than just insn.  */
@@ -549,7 +551,8 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint16_t syscall_no)
   switch (syscall_no) {
     case SYS_exit:
       // simulated process terminating: let's terminate too!
-      exit(arg1);
+      sim_engine_halt(sd, scpu, NULL, scpu->regs[BREW_REG_PC], sim_exited, SIM_SIGINT);
+      //exit(arg1);
       break;
     case SYS_open:
     {
@@ -1110,6 +1113,68 @@ free_state (SIM_DESC sd)
   sim_state_free (sd);
 }
 
+/* Given the instruction code, return a descriptive string */
+static const char *
+brew_insn_name (SIM_CPU *scpu, int inst_code)
+{
+  static char inst_name[200];
+
+  sprintf(inst_name, "INST %04x", inst_code);
+  return inst_name;
+}
+
+static void
+brew_model_init(SIM_CPU *cpu)
+{
+  CPU_MODEL_DATA(cpu) = NULL; // TODO: Not sure what this is, but hopefully it could be set to NULL. It appears to be something that's target specific.
+}
+
+static void
+brew_init_cpu (SIM_CPU *scpu)
+{
+  CPU_REG_FETCH(scpu) = brew_reg_fetch;
+  CPU_REG_STORE(scpu) = brew_reg_store;
+  CPU_PC_FETCH(scpu) = brew_pc_get;
+  CPU_PC_STORE(scpu) = brew_pc_set;
+  CPU_MAX_INSNS(scpu) = 0x10000; // To make is simple, every instruction code is counted separately (for now)
+  CPU_INSN_NAME(scpu) = brew_insn_name;
+  set_initial_gprs(scpu);        /* Reset the GPR registers.  */
+}
+
+static void
+brew_prepare_run (SIM_CPU *cpu)
+{
+}
+
+static const SIM_MACH_IMP_PROPERTIES brew_imp_properties =
+{
+  sizeof(SIM_CPU),
+  0,
+};
+
+static const SIM_MODEL brew_models[];
+
+#define MACH_BREW (0) // I don't think this is used
+static const SIM_MACH brew_mach =
+{
+  "brew", "brew", MACH_BREW,
+  32, 32, &brew_models[0], &brew_imp_properties,
+  brew_init_cpu,
+  brew_prepare_run
+};
+
+static const SIM_MODEL brew_models[] =
+{
+  { "brew", &brew_mach, 0, NULL, brew_model_init},
+  { 0, NULL, 0, NULL, NULL, }
+};
+
+const SIM_MACH * const brew_sim_machs[] =
+{
+  &brew_mach,
+  NULL
+};
+
 /* Starts the simulation context. Returns a 'whatever' that will be used as a context variable
    kind: SIM_OPEN_STANDALONE for standalone or SIM_OPEN_DEBUG for gdb sessions
 */
@@ -1120,6 +1185,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
   int i;
   SIM_DESC sd = sim_state_alloc (kind, cb);
   SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
+  STATE_MACHS(sd) = brew_sim_machs;
 
   /* Set default options before parsing user options.  */
   current_target_byte_order = BFD_ENDIAN_LITTLE;
@@ -1150,7 +1216,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
   //sim_do_command(sd," memory region 0xE0000000,0x10000"); /* this is where the DTB goes, if loaded */
 
   /* Check for/establish the a reference program image.  */
-  if   (sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
+  if(sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -1158,13 +1224,13 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
 
   /* Configure/verify the target byte order and other runtime
      configuration options.  */
-  if (sim_config (sd) != SIM_RC_OK)
+  if(sim_config (sd) != SIM_RC_OK)
     {
       sim_module_uninstall (sd);
       return 0;
     }
 
-  if (sim_post_argv_init (sd) != SIM_RC_OK)
+  if(sim_post_argv_init (sd) != SIM_RC_OK)
     {
       /* Uninstall the modules to avoid memory leaks,
          file descriptor leaks, etc.  */
@@ -1174,17 +1240,12 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
 
   /* CPU specific initialization. */
   /* That is: setting up callbacks for load/store registers and for get/set of PC */
-  for (i = 0; i < MAX_NR_PROCESSORS; ++i)
-    {
-      sim_cpu *scpu = STATE_CPU (sd, i);
-
-      CPU_REG_FETCH(scpu) = brew_reg_fetch;
-      CPU_REG_STORE(scpu) = brew_reg_store;
-      CPU_PC_FETCH(scpu) = brew_pc_get;
-      CPU_PC_STORE(scpu) = brew_pc_set;
-
-      set_initial_gprs(scpu);        /* Reset the GPR registers.  */
-    }
+//  for (i = 0; i < MAX_NR_PROCESSORS; ++i)
+//    {
+//      sim_cpu *scpu = STATE_CPU (sd, i);
+//
+//      brew_init_cpu(scpu);
+//    }
 
   return sd;
 }
