@@ -17,8 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-/* TODO: At this point, this is just the moxie debugger, renamed. Obviously that's wrong */
-
 #ifndef BREW_TDEP_H
 #define BREW_TDEP_H
 
@@ -31,17 +29,30 @@ struct brew_gdbarch_tdep : gdbarch_tdep
 
 enum brew_regnum
 {
-  BREW_FP_REGNUM = 0,
+  R0_REGNUM = 0,
+  R1_REGNUM = 1,
+  R2_REGNUM = 2,
+  R3_REGNUM = 3,
+  R4_REGNUM = 4,
+  R5_REGNUM = 5,
+  R6_REGNUM = 6,
+  R7_REGNUM = 7,
+  R8_REGNUM = 8,
+  R9_REGNUM = 9,
+  R10_REGNUM = 10,
+  R11_REGNUM = 11,
+  R12_REGNUM = 12,
+  R13_REGNUM = 13,
+  R14_REGNUM = 14,
+  BREW_PC_REGNUM = 0,
   BREW_SP_REGNUM = 1,
-  R0_REGNUM = 2,
-  R1_REGNUM = 3,
-  BREW_PC_REGNUM = 16,
-  BREW_CC_REGNUM = 17,
-  RET1_REGNUM = R0_REGNUM,
-  ARG1_REGNUM = R0_REGNUM,
-  ARGN_REGNUM = R1_REGNUM,
+  BREW_FP_REGNUM = 2,
+  RET1_REGNUM = R4_REGNUM,
+  RETN_REGNUM = R7_REGNUM,
+  ARG1_REGNUM = R4_REGNUM,
+  ARGN_REGNUM = R7_REGNUM,
 };
 
-#define BREW_NUM_REGS 18
+#define BREW_NUM_REGS 14
 
 #endif /* BREW_TDEP_H */
