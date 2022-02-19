@@ -20,8 +20,6 @@
 
 /* Contributed by Andras Tantos */
 
-/* TODO: right now this is not changed from the moxie baseline at all. It should be!!!! */
-
 #include "as.h"
 #include "safe-ctype.h"
 #include <stdint.h>
@@ -51,14 +49,14 @@ typedef struct
 static inst_tableS inst_table[] =
 {
   { "fill",    0x0000 },
-  { "break",   0x0110 },
-  { "syscall", 0x0220 },
-  { "stu",     0x0330 },
-  { "sii",     0x0440 },
-  { "fence",   0x0dd0 },
-  { "wfence",  0x0ee0 },
-  { "woi",     0x1000 },
-  { "nop",     0x1111 }, /* pseudo instruction: $r1 = $r1 | $r1, which is of course, a no-op */
+  { "break",   0x0001 },
+  { "syscall", 0x0002 },
+  { "stu",     0x0003 },
+  { "sii",     0x0004 },
+  { "woi",     0x0005 },
+  { "fence",   0x0010 },
+  { "wfence",  0x0011 },
+  { "nop",     0x2222 }, /* pseudo instruction: $r1 = $r1 | $r1, which is of course, a no-op */
   { NULL,      0x0000 }
 };
 
@@ -78,36 +76,29 @@ static branch_tableS branch_table[] =
 {
 /*  inst_name  two_op_inst_code   swap_ops     zero_isnt_code   complete   flags */
   { "<",       0x500f,            false,       0x200f,          true,      0                      },
-  { ">",       0x500f,            true,        0x001f,          false,     0                      },
+  { ">",       0x500f,            true,        0x010f,          false,     0                      },
   { "<=",      0x600f,            true,        0x000f,          false,     0                      },
   { ">=",      0x600f,            false,       0x100f,          true,      0                      },
   { "==",      0x100f,            false,       0x000f,          false,     0                      },
-  { "!=",      0x200f,            false,       0x001f,          false,     0                      },
+  { "!=",      0x200f,            false,       0x010f,          false,     0                      },
 
-  { "<",       0x300f,            false,       0x002f,          false,     BREW_REG_FLAG_SIGNED   },
-  { ">",       0x300f,            true,        0x004f,          false,     BREW_REG_FLAG_SIGNED   },
-  { "<=",      0x400f,            true,        0x005f,          false,     BREW_REG_FLAG_SIGNED   },
-  { ">=",      0x400f,            false,       0x003f,          false,     BREW_REG_FLAG_SIGNED   },
+  { "<",       0x300f,            false,       0x020f,          false,     BREW_REG_FLAG_SIGNED   },
+  { ">",       0x300f,            true,        0x040f,          false,     BREW_REG_FLAG_SIGNED   },
+  { "<=",      0x400f,            true,        0x050f,          false,     BREW_REG_FLAG_SIGNED   },
+  { ">=",      0x400f,            false,       0x030f,          false,     BREW_REG_FLAG_SIGNED   },
   { "==",      0x100f,            false,       0x000f,          false,     BREW_REG_FLAG_SIGNED   },
-  { "!=",      0x200f,            false,       0x001f,          false,     BREW_REG_FLAG_SIGNED   },
+  { "!=",      0x200f,            false,       0x010f,          false,     BREW_REG_FLAG_SIGNED   },
 
-  { "<",       0xd00f,            false,       0x00bf,          false,     BREW_REG_FLAG_FLOAT    },
-  { ">",       0xd00f,            true,        0x00df,          false,     BREW_REG_FLAG_FLOAT    },
-  { "<=",      0xe00f,            true,        0x00ef,          false,     BREW_REG_FLAG_FLOAT    },
-  { ">=",      0xe00f,            false,       0x00cf,          false,     BREW_REG_FLAG_FLOAT    },
+  { "<",       0xd00f,            false,       0x0b0f,          false,     BREW_REG_FLAG_FLOAT    },
+  { ">",       0xd00f,            true,        0x0d0f,          false,     BREW_REG_FLAG_FLOAT    },
+  { "<=",      0xe00f,            true,        0x0e0f,          false,     BREW_REG_FLAG_FLOAT    },
+  { ">=",      0xe00f,            false,       0x0c0f,          false,     BREW_REG_FLAG_FLOAT    },
   { "==",      0x100f,            false,       0x000f,          false,     BREW_REG_FLAG_FLOAT    },
-  { "!=",      0x200f,            false,       0x001f,          false,     BREW_REG_FLAG_FLOAT    },
+  { "!=",      0x200f,            false,       0x010f,          false,     BREW_REG_FLAG_FLOAT    },
 
   { NULL,      0x0000,            false,       0x0000,          false,     0                      }
 };
 
-#define NO_IMM_A             (1 << 0)
-#define NO_IMM_B             (1 << 1)
-#define NO_A_EQ_B_D_IS_PC    (1 << 2)
-#define NO_A_IS_PC           (1 << 3)
-#define NO_B_IS_PC           (1 << 4)
-#define NO_D_IS_PC           (1 << 5)
-#define NO_AB_IS_PC          (1 << 6)
 #define COMMUTATIVE          (1 << 7)
 #define HAS_UPPER            (1 << 8)
 
@@ -117,37 +108,37 @@ typedef struct
   uint16_t inst_code;
   uint16_t upper_inst_code;
   int op_flags;
-  int type_flags_a;
-  int type_flags_b;
+  int type_flags_arg2;
+  int type_flags_arg1;
   int type_flags_d;
 } alu_tableS;
 
 static alu_tableS alu_table[] =
 {
 /* BINARY OPERATIONS */
-/*  inst_name  inst_code   upper_inst_code    op_flags                                                                        type_flags_a           type_flags_b           type_flags_d*/
-  { "^",       0x0000,     0x0000,            NO_A_EQ_B_D_IS_PC | NO_IMM_B | COMMUTATIVE,                                     0,                     0,                     0 },
-  { "^",       0x0000,     0x0000,            NO_A_EQ_B_D_IS_PC | NO_IMM_B | COMMUTATIVE,                                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "|",       0x1000,     0x1000,            NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                                           0,                     0,                     0 },
-  { "|",       0x1000,     0x1000,            NO_IMM_B | NO_AB_IS_PC | COMMUTATIVE,                                           BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "&",       0x2000,     0x2000,            NO_IMM_B | COMMUTATIVE,                                                         0,                     0,                     0 },
-  { "&",       0x2000,     0x2000,            NO_IMM_B | COMMUTATIVE,                                                         BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "-",       0x3000,     0x3000,            0,                                                                              0,                     0,                     0 },
-  { "-",       0x3000,     0x3000,            0,                                                                              BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "+",       0x4000,     0x4000,            NO_IMM_B | COMMUTATIVE,                                                         0,                     0,                     0 },
-  { "+",       0x4000,     0x4000,            NO_IMM_B | COMMUTATIVE,                                                         BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "<<",      0x5000,     0x5000,            0,                                                                              0,                     0,                     0 },
-  { "<<",      0x5000,     0x5000,            0,                                                                              0,                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { ">>",      0x6000,     0x6000,            0,                                                                              0,                     0,                     0 },
-  { ">>",      0x7000,     0x7000,            0,                                                                              0,                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "*",       0x8000,     0xa000,            NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      0,                     0,                     0 },
-  { "*",       0x8000,     0xb000,            NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | HAS_UPPER | NO_IMM_B | COMMUTATIVE,      BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  /*           0xa000 is the unsigned 'upper' version of 0x8000 */
-  /*           0xb000 is the signed 'upper' version of 0x8000 */
-  { "+",       0xc000,     0xc000,            NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | NO_IMM_B | COMMUTATIVE,                  BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
-  { "-",       0xd000,     0xd000,            NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC,                                           BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
-  { "*",       0xe000,     0xe000,            NO_A_IS_PC | NO_B_IS_PC | NO_D_IS_PC | NO_IMM_B | COMMUTATIVE,                  BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
-  { NULL,      0x0000,     0x0000,            0,                                                                              0,                     0,                     0 },
+/*  inst_name  inst_code   upper_inst_code    op_flags                      type_flags_arg2        type_flags_arg1        type_flags_d*/
+  { "^",       0x1000,     0x1000,            COMMUTATIVE,                  0,                     0,                     0 },
+  { "^",       0x1000,     0x1000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "|",       0x2000,     0x2000,            COMMUTATIVE,                  0,                     0,                     0 },
+  { "|",       0x2000,     0x2000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "&",       0x3000,     0x3000,            COMMUTATIVE,                  0,                     0,                     0 },
+  { "&",       0x3000,     0x3000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "+",       0x4000,     0x4000,            COMMUTATIVE,                  0,                     0,                     0 },
+  { "+",       0x4000,     0x4000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "-",       0x5000,     0x5000,            0,                            0,                     0,                     0 },
+  { "-",       0x5000,     0x5000,            0,                            BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "<<",      0x6000,     0x6000,            0,                            0,                     0,                     0 },
+  { "<<",      0x6000,     0x6000,            0,                            0,                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { ">>",      0x7000,     0x7000,            0,                            0,                     0,                     0 },
+  { ">>",      0x8000,     0x8000,            0,                            0,                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "*",       0x9000,     0xa000,            HAS_UPPER | COMMUTATIVE,      0,                     0,                     0 },
+  { "*",       0x9000,     0xb000,            HAS_UPPER | COMMUTATIVE,      BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  /*           0xa000 is the unsigned 'upper' version of 0x9000 */
+  /*           0xb000 is the signed 'upper' version of 0x9000 */
+  { "+",       0xc000,     0xc000,            COMMUTATIVE,                  BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { "-",       0xd000,     0xd000,            0,                            BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { "*",       0xe000,     0xe000,            COMMUTATIVE,                  BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { NULL,      0x0000,     0x0000,            0,                            0,                     0,                     0 },
 };
 
 typedef struct
@@ -161,16 +152,23 @@ typedef struct
 
 static unary_op_tableS unary_op_table[] = {
 /*  inst_name  inst_code   op_shift  type_flags_op          type_flags_d*/
-  { "-",       0xa000,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
-  { "~",       0xa000,     8,        0,                     0 },
-  { "bswap",   0xb000,     4,        0,                     0 },
-  { "wswap",   0xb000,     8,        0,                     0 },
-  { "bsi",     0xc000,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
-  { "wsi",     0xc000,     8,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
-  { "floor",   0xd000,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_SIGNED },
-  { "rsqrt",   0xe000,     8,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
+  { "-",       0x0300,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
+  { "~",       0x0400,     4,        0,                     0 },
+  { "bswap",   0x0500,     4,        0,                     0 },
+  { "wswap",   0x0600,     4,        0,                     0 },
+  { "bsi",     0x0700,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
+  { "wsi",     0x0800,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
+  { "floor",   0x0900,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_SIGNED },
+  { "rsqrt",   0x0c00,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
 
   { NULL,      0x0000,     0,        0,                     0 }
+};
+
+static int bit_idx_to_field_a[] = {
+  0,   1,   2,   3,   4,   5,   6,   7,
+  8,   9,  -1,  -1,  -1,  -1,  10,  11,
+ 12,  -1,  -1,  -1,  -1,  -1,  -1,  -1,
+ -1,  -1,  -1,  -1,  -1,  -1,  13,  14
 };
 
 /* This is really unfortunate that as doesn't provide a 'v' version of these routines */
@@ -228,6 +226,7 @@ const char *special_tokens[] = {
   ">=",
   ">>",
   "<<",
+  "short",
   NULL
 };
 
@@ -276,16 +275,16 @@ get_optional_next_token(const char *terminals)
   /* special 2-char tokens */
   for (special_token = special_tokens; *special_token != NULL; ++special_token)
     {
-      if (strncmp(*special_token, tok_start, 2) == 0)
+      if (strncmp(*special_token, tok_start, strlen(*special_token)) == 0)
         {
-          tok_end = tok_start+2;
+          tok_end = tok_start+strlen(*special_token);
           tok_end_holder = *tok_end;
           *tok_end = 0;
           DEBUG("                 returning %s", tok_start);
           return;
         }
     }
-  /* We need to be a bit tricky around parnethesis:
+  /* We need to be a bit tricky around parenthesis:
      we want something, like '(label + 3 *2 -1)' to
      be parsed into a single token so that the expression
      parser can get it as one go.
@@ -456,6 +455,30 @@ parse_reg_index(char *str)
   return -1;
 }
 
+static bool
+parse_int(char *str, int *int_result)
+{
+  int ret_val = 0;
+  bool negative = false;
+  char *digit = str;
+  if (*digit == '-')
+    {
+      negative = true;
+      ++digit;
+    }
+  while(*digit != 0)
+    {
+      if (*digit < '0' || *digit > '9') return false;
+      ret_val = ret_val * 10 + (*digit - '0');
+      ++digit;
+    }
+  if (negative)
+    ret_val = -ret_val;
+  *int_result = ret_val;
+  return true;
+}
+
+
 /*
    registers are named (case insensitive) as:
    $r0...$re or $r0...$r14 for unsigned scalar registers
@@ -476,18 +499,19 @@ typedef struct
   const char *name;
   int regno;
   bool is_tpc;
+  bool is_pc;
 } named_registers_s;
 
 static named_registers_s named_registers[] = {
-  {"pc",  BREW_REG_PC,  false},
-  {"tpc", BREW_REG_TPC, true},
-  {"sp",  BREW_REG_SP,  false},
-  {"fp",  BREW_REG_FP,  false},
-  {NULL,  0, false}
+  {"pc",  BREW_REG_PC,  false,  true},
+  {"tpc", BREW_REG_TPC, true,  false},
+  {"sp",  BREW_REG_SP,  false, false},
+  {"fp",  BREW_REG_FP,  false, false},
+  {NULL,  0,            false, false}
 };
 
 static int
-parse_register_operand (char *token, bool allow_tpc)
+parse_register_operand (char *token, bool allow_tpc, bool allow_pc)
 {
   int flags = 0;
   int reg_idx;
@@ -514,7 +538,11 @@ parse_register_operand (char *token, bool allow_tpc)
   
   for (named_register_entry = named_registers; named_register_entry->name != NULL; ++named_register_entry)
     {
-      if ((allow_tpc || !named_register_entry->is_tpc) && strcasecmp(token, named_register_entry->name) == 0)
+      if (
+        (allow_tpc || !named_register_entry->is_tpc) &&
+        (allow_pc || !named_register_entry->is_pc) &&
+        strcasecmp(token, named_register_entry->name) == 0
+        )
         {
           reg_idx = named_register_entry->regno;
           return flags | reg_idx;
@@ -555,7 +583,7 @@ parse_exp_save_ilp (char *s, expressionS *op)
    Returns true if an expression is found, false if not.
 */
 static bool
-parse_expression(const char *token, bool support_float)
+parse_expression(const char *token, bool support_float, bool is_short, bool is_addr)
 {
   LITTLENUM_TYPE float_store[4]; /* We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow */
   char float_as_char[4];
@@ -584,6 +612,10 @@ parse_expression(const char *token, bool support_float)
               litP += sizeof (LITTLENUM_TYPE);
             }
 
+          if (is_short || is_addr)
+            {
+              return false; // Float constant are always 32-bits.
+            }
           /* This is a floating point constant we could successfully parse */
           field_e_frag = frag_more(float_size);
           memcpy(field_e_frag, float_as_char, float_size);
@@ -593,19 +625,21 @@ parse_expression(const char *token, bool support_float)
 
   expressionS arg;
   char *end_expr;
+  size_t field_e_size = is_short ? 2 : 4;
+  int reloc_type = is_short ? is_addr ? BFD_RELOC_16_PCREL : BFD_RELOC_16 : BFD_RELOC_32;
   end_expr = parse_exp_save_ilp ((char*)token, &arg);
   if (*end_expr != 0)
   {
     return false;
   }
-  field_e_frag = frag_more (4);
+  field_e_frag = frag_more(field_e_size);
   fix_new_exp(
     frag_now,
     (field_e_frag - frag_now->fr_literal),
-    4,
+    field_e_size,
     &arg,
     0,
-    BFD_RELOC_32);
+    reloc_type);
   return true;
 }
 
@@ -636,8 +670,6 @@ void
 md_assemble (char *str)
 {
   int reg_d;
-  int reg_b;
-  int reg_a;
 
   start_token_strm(str);
 
@@ -662,6 +694,7 @@ md_assemble (char *str)
   /* Store operations */
   do
     {
+      int reg_base;
       if (strcasecmp(tok_start, "mem") == 0)
         inst_code = 0xf700;
       else if (strcasecmp(tok_start, "mem32") == 0)
@@ -675,7 +708,7 @@ md_assemble (char *str)
       IS_NEXT_TOKEN(("[", _("invalid store operation syntax ")));
       GET_NEXT_TOKEN_UNTIL("],", _("invalid store operation syntax "));
       /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
-      if (parse_expression(tok_start, false))
+      if (parse_expression(tok_start, false, false, true))
         {
           inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
           GET_NEXT_TOKEN(_("invalid store offset syntax"));
@@ -683,8 +716,8 @@ md_assemble (char *str)
             {
               /* We have the format of MEM[{expr},{reg}] = {reg} */
               GET_NEXT_TOKEN(_("invalid store offset syntax"));
-              reg_a = parse_register_operand(tok_start, false);
-              if (reg_a == -1)
+              reg_base = parse_register_operand(tok_start, false, false);
+              if (reg_base == -1)
                 {
                   as_bad(_("Invlid register offset in store"));
                   ERR_RETURN;
@@ -693,14 +726,14 @@ md_assemble (char *str)
           else
             {
               /* We have the format of MEM[{expr}] = {reg} */
-              reg_a = 0xf;
+              reg_base = 0xf;
               undo_last_token();
             }
         }
       else
         {
-          reg_a = parse_register_operand(tok_start, false);
-          if (reg_a == -1)
+          reg_base = parse_register_operand(tok_start, false, false);
+          if (reg_base == -1)
             {
               as_bad(_("Invlid register offset in store"));
               ERR_RETURN;
@@ -709,7 +742,7 @@ md_assemble (char *str)
           if (strcmp(tok_start, ",") == 0)
             {
               GET_NEXT_TOKEN_UNTIL("]",_("invalid store offset syntax"));
-              if (!parse_expression(tok_start, false))
+              if (!parse_expression(tok_start, false, false, true))
                 {
                   as_bad(_("Invalid store offset syntax: expecting expression"));
                   ERR_RETURN;
@@ -726,26 +759,14 @@ md_assemble (char *str)
       IS_NEXT_TOKEN(("]", _("invalid store operation syntax ")));
       IS_NEXT_TOKEN((ASSIGNMENT_STR, _("invalid store instruction syntax: expecting " ASSIGNMENT_STR ", got %s"), tok_start));
       GET_NEXT_TOKEN(_("invalid store operation syntax "));
-      reg_d = parse_register_operand(tok_start, true);
+      reg_d = parse_register_operand(tok_start, false, false);
       if (reg_d == -1)
         {
           as_bad(_("Invalid source register for store "));
           ERR_RETURN;
         }
-      inst_code |= (reg_a & 0xf) << 4;
-      /* special-case TPC stores: these only have a 48-bit variant */
-      if ((reg_d & 0xf) == BREW_REG_TPC)
-        {
-          inst_code |= 0x0800;
-          inst_code |= 0x000f;
-          if (field_e_frag == NULL)
-            {
-              field_e_frag = frag_more(4);
-              md_number_to_chars (field_e_frag, 0, 4);
-            }
-          RETURN(inst_code);
-        }
-      inst_code |= (reg_d & 0xf) << 0;
+      inst_code |= (reg_base & BREW_REG_GP_MASK) << 4;
+      inst_code |= (reg_d & BREW_REG_GP_MASK) << 0;
       RETURN(inst_code);
     }
   while (false);
@@ -758,7 +779,7 @@ md_assemble (char *str)
       int reg2;
 
       GET_NEXT_TOKEN(_("invalid instruction syntax"));
-      reg1 = parse_register_operand(tok_start, false);
+      reg1 = parse_register_operand(tok_start, false, false);
       if (reg1 == -1)
         {
           as_bad(_("Invalid branch instruction: expected test register"));
@@ -770,10 +791,20 @@ md_assemble (char *str)
           int bit_idx;
           /* This is a bit-test branch */
           GET_NEXT_TOKEN(_("invalid instruction syntax"));
-          bit_idx = parse_reg_index(tok_start);
+          if (!parse_int(tok_start, &bit_idx))
+            {
+              as_bad(_("Invalid bit-test branch instruction: bit-index must be an integer"));
+              ERR_RETURN;
+            }
+          if (bit_idx < 0 || bit_idx > (int)BREW_ARRAY_SIZE(bit_idx_to_field_a))
+            {
+              as_bad(_("Invalid bit-test branch instruction: bit-index must be between 0 and 31"));
+              ERR_RETURN;
+            }
+          bit_idx = bit_idx_to_field_a[bit_idx];
           if (bit_idx == -1)
             {
-              as_bad(_("Invalid bit-test branch instruction: bit-index must be between 0 and 14"));
+              as_bad(_("Invalid bit-test branch instruction: bit-index must be one of the special values allowed by the ISA"));
               ERR_RETURN;
             }
           IS_NEXT_TOKEN(("]", _("invalid bit-test branch instruction: expected ']'")));
@@ -783,13 +814,13 @@ md_assemble (char *str)
             {
               inst_code = 0x00ff;
               inst_code |= bit_idx << 12;
-              inst_code |= (reg1 & 0xf) << 8;
+              inst_code |= (reg1 & BREW_REG_GP_MASK) << 8;
             }
           else if (strcmp(tok_start, "1") == 0)
             {
               inst_code = 0x0f0f;
               inst_code |= bit_idx << 12;
-              inst_code |= (reg1 & 0xf) << 4;
+              inst_code |= (reg1 & BREW_REG_GP_MASK) << 4;
             }
           else
             {
@@ -797,8 +828,11 @@ md_assemble (char *str)
             }
           IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
           IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
+          // Even though branch target is always PC relative, the assembly source contains absolute address...
+          //IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
+          //IS_NEXT_TOKEN(("+", _("invalid bit-test branch instruction: expected '<-'")));
           GET_NEXT_TOKEN(_("invalid bit-test branch instruction: expected branch target"));
-          if (!parse_expression(tok_start, false))
+          if (!parse_expression(tok_start, false, true, true))
             {
               as_bad(_("invalid bit-test branch instruction: expected branch target"));
               ERR_RETURN;
@@ -834,12 +868,12 @@ md_assemble (char *str)
               inst_code = branch_table_entry->zero_inst_code;
               if (!branch_table_entry->complete)
                 {
-                  inst_code |= (reg1 & 0xf) << 8;
+                  inst_code |= (reg1 & BREW_REG_GP_MASK) << 4;
                 }
               IS_NEXT_TOKEN(("$pc", _("invalid comparison branch instruction: expected '$pc'")));
               IS_NEXT_TOKEN(("<-", _("invalid comparison branch instruction: expected '<-'")));
               GET_NEXT_TOKEN(_("invalid comparison branch instruction: expected branch target"));
-              if (!parse_expression(tok_start, false))
+              if (!parse_expression(tok_start, false, true, true))
                 {
                   as_bad(_("invalid comparison branch instruction: expected branch target"));
                   ERR_RETURN;
@@ -849,8 +883,10 @@ md_assemble (char *str)
           else
             {
               branch_tableS *branch_table_entry;
+              int reg_b;
+              int reg_a;
 
-              reg2 = parse_register_operand(tok_start, false);
+              reg2 = parse_register_operand(tok_start, false, false);
               if (reg2 == -1)
                 {
                   as_bad(_("invalid branch instruction: second comparison argument must be 0 or a register"));
@@ -876,20 +912,20 @@ md_assemble (char *str)
               inst_code = branch_table_entry->two_op_inst_code;
               if (branch_table_entry->swap_ops)
                 {
-                  reg_a = reg1 & 0xf;
-                  reg_b = reg2 & 0xf;
+                  reg_a = reg1 & BREW_REG_GP_MASK;
+                  reg_b = reg2 & BREW_REG_GP_MASK;
                 }
               else
                 {
-                  reg_a = reg2 & 0xf;
-                  reg_b = reg1 & 0xf;
+                  reg_a = reg2 & BREW_REG_GP_MASK;
+                  reg_b = reg1 & BREW_REG_GP_MASK;
                 }
               inst_code |= reg_b << 8;
               inst_code |= reg_a << 4;
               IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
               IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
               GET_NEXT_TOKEN(_("invalid bit-test branch instruction: expected branch target"));
-              if (!parse_expression(tok_start, false))
+              if (!parse_expression(tok_start, false, true, true))
                 {
                   as_bad(_("invalid bit-test branch instruction: expected branch target"));
                   ERR_RETURN;
@@ -902,7 +938,7 @@ md_assemble (char *str)
     }
 
   /* All other operations have the form of {reg} <- ... */
-  reg_d = parse_register_operand(tok_start, true);
+  reg_d = parse_register_operand(tok_start, true, true);
   if (reg_d == -1)
     {
       as_bad(_("Invalid target register for instruction"));
@@ -915,10 +951,16 @@ md_assemble (char *str)
   /* Load operations */
   do
     {
+      int reg_base;
       if (strcasecmp(tok_start, "mem") == 0 || strcasecmp(tok_start, "mem32") == 0)
         inst_code = 0xf400;
       else if (strcasecmp(tok_start, "mem8") == 0)
         {
+          if ((reg_d & BREW_REG_BASE_MASK) != BREW_REG_PC)
+            {
+              as_bad(_("Cannot load $pc from 8-bit memory address"));
+              ERR_RETURN;
+            }
           if ((reg_d & BREW_REG_FLAG_SIGNED) != 0)
             inst_code = 0xf000;
           else
@@ -926,6 +968,11 @@ md_assemble (char *str)
         }
       else if (strcasecmp(tok_start, "mem16") == 0)
         {
+          if ((reg_d & BREW_REG_BASE_MASK) != BREW_REG_PC)
+            {
+              as_bad(_("Cannot load $pc from 16-bit memory address"));
+              ERR_RETURN;
+            }
           if ((reg_d & BREW_REG_FLAG_SIGNED) != 0)
             inst_code = 0xf200;
           else
@@ -933,10 +980,17 @@ md_assemble (char *str)
         }
       else
         break;
+      // While we allowed to parse $pc and $tpc above, we don't
+      // actually have store operations for them.
+      if ((reg_d & BREW_REG_BASE_MASK) != BREW_REG_TPC)
+        {
+          as_bad(_("Cannot load $tpc directly from memory"));
+          ERR_RETURN;
+        }
       IS_NEXT_TOKEN(("[", _("invalid load operation syntax ")));
       GET_NEXT_TOKEN_UNTIL("],", _("invalid load operation syntax "));
       /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
-      if (parse_expression(tok_start, false))
+      if (parse_expression(tok_start, false, false, true))
         {
           inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
           GET_NEXT_TOKEN(_("invalid load offset syntax"));
@@ -944,8 +998,8 @@ md_assemble (char *str)
             {
               /* We have the format of {reg} = MEM[{expr},{reg}]*/
               GET_NEXT_TOKEN(_("invalid load offset syntax"));
-              reg_a = parse_register_operand(tok_start, false);
-              if (reg_a == -1)
+              reg_base = parse_register_operand(tok_start, false, false);
+              if (reg_base == -1)
                 {
                   as_bad(_("Invlid register offset in load"));
                   ERR_RETURN;
@@ -954,14 +1008,14 @@ md_assemble (char *str)
           else
             {
               /* We have the format of {reg} = MEM[{expr}] */
-              reg_a = 0xf;
+              reg_base = 0xf;
               undo_last_token();
             }
         }
       else
         {
-          reg_a = parse_register_operand(tok_start, false);
-          if (reg_a == -1)
+          reg_base = parse_register_operand(tok_start, false, false);
+          if (reg_base == -1)
             {
               as_bad(_("Invlid register offset in load"));
               ERR_RETURN;
@@ -970,7 +1024,7 @@ md_assemble (char *str)
           if (strcmp(tok_start, ",") == 0)
             {
               GET_NEXT_TOKEN_UNTIL("]", _("invalid load offset syntax"));
-              if (!parse_expression(tok_start, false))
+              if (!parse_expression(tok_start, false, false, true))
                 {
                   as_bad(_("Invalid load offset syntax: expecting expression"));
                   ERR_RETURN;
@@ -985,20 +1039,8 @@ md_assemble (char *str)
             }
         }
       IS_NEXT_TOKEN(("]", _("invalid load operation syntax ")));
-      inst_code |= (reg_a & 0xf) << 4;
-      /* special-case TPC stores: these only have a 48-bit variant */
-      if ((reg_d & 0xf) == BREW_REG_TPC)
-        {
-          inst_code |= 0x0800;
-          inst_code |= 0x000f;
-          if (field_e_frag == NULL)
-            {
-              field_e_frag = frag_more(4);
-              md_number_to_chars (field_e_frag, 0, 4);
-            }
-          RETURN(inst_code);
-        }
-      inst_code |= (reg_d & 0xf) << 0;
+      inst_code |= (reg_base & BREW_REG_GP_MASK) << 4;
+      inst_code |= (reg_d & BREW_REG_GP_MASK) << 0;
       RETURN(inst_code);
     }
   while (false);
@@ -1009,12 +1051,41 @@ md_assemble (char *str)
   do
     {
       bool is_upper = false;
+      bool is_short = false;
+      int reg_arg2;
+      int reg_arg1;
       unary_op_tableS *unary_op_table_entry;
-      if (strcasecmp(tok_start, "upper") == 0)
+      do
         {
-          is_upper = true;
-          GET_NEXT_TOKEN(_("unexpected end of instruction after 'upper'"));
+          if (strcasecmp(tok_start, "upper") == 0)
+            {
+              if (is_upper)
+                {
+                  as_bad(_("'upper' can appear only once"));
+                  ERR_RETURN;
+                }
+              is_upper = true;
+              GET_NEXT_TOKEN(_("unexpected end of instruction after 'upper'"));
+              continue;
+            }
+          if (strcasecmp(tok_start, "short") == 0)
+            {
+              if (is_short)
+                {
+                  as_bad(_("'short' can appear only once"));
+                  ERR_RETURN;
+                }
+              if ((reg_d & BREW_REG_FLAG_FLOAT) != 0)
+                {
+                  as_bad(_("Can't use short operations with floating point results"));
+                  ERR_RETURN;
+                }
+              is_short = true;
+              GET_NEXT_TOKEN(_("unexpected end of instruction after 'short'"));
+              continue;
+            }
         }
+      while (false);
       /* check for prefix unary operators */
       for (unary_op_table_entry = unary_op_table; unary_op_table_entry->inst_name != NULL; ++unary_op_table_entry)
         {
@@ -1028,15 +1099,15 @@ md_assemble (char *str)
                   ERR_RETURN;
                 }
               GET_NEXT_TOKEN(_("expected operand for unary operation %s"), tok_start);
-              reg_op = parse_register_operand(tok_start, false);
-              if ((reg_d & 0xf) == BREW_REG_TPC)
+              reg_op = parse_register_operand(tok_start, false, false);
+              if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_TPC)
                 {
-                  as_bad(_("unary operation %s can't target TPC"), unary_op_table_entry->inst_name);
+                  as_bad(_("unary operation %s can't target $tpc"), unary_op_table_entry->inst_name);
                   ERR_RETURN;
                 }
-              if ((reg_d & 0xf) == BREW_REG_PC)
+              if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC)
                 {
-                  as_bad(_("unary operation %s can't target PC"), unary_op_table_entry->inst_name);
+                  as_bad(_("unary operation %s can't target $pc"), unary_op_table_entry->inst_name);
                   ERR_RETURN;
                 }
               if (reg_op == -1)
@@ -1045,95 +1116,74 @@ md_assemble (char *str)
                   ERR_RETURN;
                 }
               inst_code = unary_op_table_entry->inst_code;
-              inst_code |= (reg_op & 0xf) << unary_op_table_entry->op_shift;
-              inst_code |= (reg_d & 0xf);
+              inst_code |= (reg_op & BREW_REG_GP_MASK) << unary_op_table_entry->op_shift;
+              inst_code |= (reg_d & BREW_REG_GP_MASK);
               RETURN(inst_code);
             }
         }
-      /* it's not a prefix operation. It could be a register or an expression or a few special cases. Check for those first */
-      if (strcmp(tok_start, "1") == 0)
+      // it's not a prefix operation. Could it be reciprocal?
+      if ((reg_d & BREW_REG_FLAG_FLOAT) != 0)
         {
-          if (is_upper)
+          if (strcmp(tok_start, "1") == 0)
             {
-              as_bad(_("unexpected 'upper'"));
-              ERR_RETURN;
+              if (is_upper)
+                {
+                  as_bad(_("unexpected 'upper'"));
+                  ERR_RETURN;
+                }
+              char *back_track_point = tok_start;
+              do
+                {
+                  get_optional_next_token(NULL);
+                  if (tok_start == NULL)
+                    break;
+                  if (strcasecmp(tok_start, "/") != 0)
+                    {
+                      as_bad(_("expected division (/) operator, got %s"), tok_start);
+                      ERR_RETURN;
+                    }
+                  if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_TPC)
+                    {
+                      as_bad(_("reciprocal operation can't target $tpc"));
+                      ERR_RETURN;
+                    }
+                  if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC)
+                    {
+                      as_bad(_("reciprocal operation can't target $pc"));
+                      ERR_RETURN;
+                    }
+                  int reg_op;
+                  GET_NEXT_TOKEN(_("expected operand for reciprocal"));
+                  reg_op = parse_register_operand(tok_start, false, false);
+                  if (reg_op == -1)
+                    {
+                      as_bad(_("expected register operand for reciprocal"));
+                      ERR_RETURN;
+                    }
+                  if ((reg_op & BREW_REG_FLAG_FLOAT) == 0)
+                    {
+                      as_bad(_("reciprocal operand must be a floating point register"));
+                      ERR_RETURN;
+                    }
+                  inst_code = 0x0b00;
+                  inst_code |= (reg_op & BREW_REG_GP_MASK) << 4;
+                  inst_code |= (reg_d & BREW_REG_GP_MASK) << 0;
+                  RETURN(inst_code);
+                }
+              while (false);
+              // back-track to further processing...
+              back_track_to(back_track_point);
             }
-          char *back_track_point = tok_start;
-          get_optional_next_token(NULL);
-          if (tok_start == NULL)
-            {
-              /* This is simply {reg} <- 1. We need to handle that here even though load immediate is usually handled elsewhere, but we're too far down the road to back out. */
-              if ((reg_d & BREW_REG_FLAG_FLOAT) != 0)
-                {
-                  ABORT(("FIXME: we need to create a float constant for 1.0f"));
-                }
-              else
-                {
-                  parse_expression("1", false);
-                }
-              if ((reg_d & 0xf) == BREW_REG_TPC)
-                inst_code = 0x80f0;
-              else
-                {
-                  inst_code = 0x0ff0;
-                  inst_code |= (reg_d & 0xf);
-                }
-              RETURN(inst_code);
-            }
-          if ((reg_d & BREW_REG_FLAG_FLOAT) != 0)
-            {
-              if ((reg_d & 0xf) == BREW_REG_TPC)
-                {
-                  as_bad(_("reciprocal operation can't target TPC"));
-                  ERR_RETURN;
-                }
-              if ((reg_d & 0xf) == BREW_REG_PC)
-                {
-                  as_bad(_("reciprocal operation can't target PC"));
-                  ERR_RETURN;
-                }
-              int reg_op;
-              if (strcasecmp(tok_start, "/") != 0)
-                {
-                  as_bad(_("expected division (/) operator, got %s"), tok_start);
-                  ERR_RETURN;
-                }
-              GET_NEXT_TOKEN(_("expected operand for reciprocal"));
-              reg_op = parse_register_operand(tok_start, false);
-              if (reg_op == -1)
-                {
-                  as_bad(_("expected register operand for reciprocal"));
-                  ERR_RETURN;
-                }
-              if ((reg_op & BREW_REG_FLAG_FLOAT) == 0)
-                {
-                  as_bad(_("reciprocal operand must be a floating point register"));
-                  ERR_RETURN;
-                }
-              if ((reg_op & 0xf) == BREW_REG_PC)
-                {
-                  as_bad(_("reciprocal operand can't be PC"));
-                  ERR_RETURN;
-                }
-              inst_code = 0xe000;
-              inst_code |= (reg_op & 0xf) << 4;
-              inst_code |= (reg_d & 0xf) << 0;
-              RETURN(inst_code);
-            }
-            /* back-track to further processing... */
-            back_track_to(back_track_point);
-            GET_NEXT_TOKEN(_("Unable to get next token after undo?!"));
         }
-      /* It could be a negative immediate ($r1 <- -1), which would fail the previous check for prefix operations, so check for that. */
+      // It could be a negative immediate ($r1 <- -1), which would fail the previous check for prefix operations, so check for that. */
       if (strcmp(tok_start, "-") == 0)
         {
           char *real_start = tok_start;
           get_optional_next_token(NULL); // This will advance tok_end to the next token and replace the zero-terminator
           tok_start = real_start;
         }
-      //DEBUG("trying to parse token '%s' as expression", tok_start);
-      /* let's see if this is a simple immediate load */
-      if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT))
+      // let's see if this is a simple immediate load
+      if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT, is_short, (reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC))
         {
           char op[10];
           alu_tableS *alu_table_entry;
@@ -1144,21 +1194,29 @@ md_assemble (char *str)
               /* This is an immediate load */
               if (is_upper)
                 {
-                  as_bad(_("unexpected 'upper' register load"));
+                  as_bad(_("unexpected 'upper' in register load immediate"));
                   ERR_RETURN;
                 }
-              if ((reg_d & 0xf) == BREW_REG_TPC)
+              if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_TPC)
                 {
-                  inst_code = 0x80f0;
+                  as_bad(_("Can't load immediate into $tpc"));
+                  ERR_RETURN;
                 }
+              if (is_short)
+                if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC)
+                  inst_code = 0x0f1;
+                else
+                  inst_code = 0x0f0;
               else
-                {
-                  inst_code = 0x0ff0;
-                  inst_code |= (reg_d & 0xf);
-                }
+                if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC)
+                  inst_code = 0x01f;
+                else
+                  inst_code = 0x00f;
+              // NOTE: we are encoding '0' in case of $pc target.
+              inst_code |= (reg_d & BREW_REG_GP_MASK);
               RETURN(inst_code);
             }
-          /* This is not an immediate load. it must be a binary operation of the {reg} <- {expr} {op} {reg} kind. */
+          // This is not an immediate load. it must be a binary operation of the {reg} <- {expr} {op} {reg} kind.
           if (strlen(tok_start) > sizeof(op)-1)
             {
               as_bad(_("invalid binary operation: %s"), tok_start);
@@ -1166,8 +1224,8 @@ md_assemble (char *str)
             }
           strcpy(op, tok_start);
           GET_NEXT_TOKEN(_("expected second operand for binary operation '%s'"), op);
-          reg_a = parse_register_operand(tok_start, false);
-          if (reg_a == -1)
+          reg_arg2 = parse_register_operand(tok_start, false, false);
+          if (reg_arg2 == -1)
             {
               as_bad(_("second operatand for operation %s must be a register"), op);
               ERR_RETURN;
@@ -1176,32 +1234,8 @@ md_assemble (char *str)
             {
               if (strcasecmp(op, alu_table_entry->inst_name) == 0)
                 {
-                  bool swap_args = false;
-                  /* Can we use this entry for the {exp} {op} {reg} thing we have here? */
-                  if ((alu_table_entry->op_flags & NO_IMM_B) != 0)
-                    {
-                      if ((alu_table_entry->op_flags & COMMUTATIVE) == 0)
-                        continue;
-                      if ((alu_table_entry->op_flags & NO_IMM_A) != 0)
-                        continue;
-                      swap_args = true;
-                      reg_b = reg_a;
-                    }
-                  if (swap_args)
-                    {
-                      if ((reg_b & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_B_IS_PC) != 0)
-                        continue;
-                      if ((reg_b & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_b)
-                        continue;
-                    }
-                  else
-                    {
-                      if ((reg_a & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_A_IS_PC) != 0)
-                        continue;
-                      if ((reg_a & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_a)
-                        continue;
-                    }
-                  if ((reg_d & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_D_IS_PC) != 0)
+                  // We can always encode the {exop} {op} {reg} format of operations.
+                  if ((reg_arg2 & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_arg2)
                     continue;
                   if ((reg_d & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_d)
                     continue;
@@ -1212,27 +1246,25 @@ md_assemble (char *str)
                     }
                   /* operation is suitable */
                   inst_code = is_upper ? alu_table_entry->upper_inst_code : alu_table_entry->inst_code;
-                  if (swap_args)
+                  if (is_short)
                     {
-                      inst_code |= 0x00f0; /* mark OP A as immediate */
-                      inst_code |= (reg_b & 0xf) << 8;
-                      inst_code |= (reg_d & 0xf) << 0;
-                      RETURN(inst_code);
+                      inst_code |= 0x0f00; // mark OP B as immediate
+                      inst_code |= (reg_arg2 & BREW_REG_GP_MASK) << 4;
                     }
                   else
                     {
-                      inst_code |= 0x0f00; /* mark OP B as immediate */
-                      inst_code |= (reg_a & 0xf) << 4;
-                      inst_code |= (reg_d & 0xf) << 0;
-                      RETURN(inst_code);
+                      inst_code |= 0x00f0; // mark OP A as immediate
+                      inst_code |= (reg_arg2 & BREW_REG_GP_MASK) << 8;
                     }
+                  inst_code |= (reg_d & BREW_REG_GP_MASK) << 0;
+                  RETURN(inst_code);
                 }
             }
             as_bad(_("unrecognized binary operation %s"), op);
             ERR_RETURN;
         }
-      reg_b = parse_register_operand(tok_start, true);
-      if (reg_b == -1)
+      reg_arg1 = parse_register_operand(tok_start, true, true);
+      if (reg_arg1 == -1)
         {
           as_bad(_("expected source register, got %s"), tok_start);
           ERR_RETURN;
@@ -1242,50 +1274,61 @@ md_assemble (char *str)
           alu_tableS *alu_table_entry;
 
           get_optional_next_token(NULL);
+          // Check for register moves
           if (tok_start == NULL)
             {
-              /* This is a register move */
               if (is_upper)
                 {
                   as_bad(_("unexpected 'upper' for register move"));
                   ERR_RETURN;
                 }
-              if ((reg_d & 0xf) == BREW_REG_TPC || (reg_b & 0xf) == BREW_REG_TPC)
+              if (is_short)
                 {
-                  if ((reg_d & 0xf) == BREW_REG_PC || (reg_b & 0xf) == BREW_REG_PC)
+                  as_bad(_("unexpected 'short' for register move"));
+                  ERR_RETURN;
+                }
+              // Check for moves to $pc and $tpc
+              if (BREW_IS_PC_RELATED_REG(reg_d))
+                {
+                  if (!BREW_IS_GP_REG(reg_arg1))
                     {
-                      as_bad(_("direct move between $PC and $TPC is not supported"));
+                      as_bad(_("Move to $pc or $tpc is only allowed from general purpose registers"));
                       ERR_RETURN;
                     }
-                  /* This is a TPC move */
-                  reg_d = ((reg_d & 0xf) == BREW_REG_TPC) ? 0 : (reg_d & 0xf);
-                  reg_b = ((reg_b & 0xf) == BREW_REG_TPC) ? 0 : (reg_b & 0xf);
-                  inst_code = 0x8000;
-                  inst_code |= reg_b << 4;
-                  inst_code |= reg_d << 0;
+                  inst_code = ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC) ? 0x0020 : 0x0030;
+                  inst_code |= reg_arg1 << 0;
                   RETURN(inst_code);
                 }
-              if ((reg_d & BREW_REG_FLAG_MASK) != 0 && (reg_b & BREW_REG_FLAG_SIGNED) != 0)
+              gas_assert(BREW_IS_GP_REG(reg_d));
+              // Check for moves from $pc and $tpc
+              if (BREW_IS_PC_RELATED_REG(reg_d))
                 {
-                  /* This is float conversion */
-                  inst_code = 0xd000;
-                  inst_code |= (reg_b & 0xf) << 8;
-                  inst_code |= (reg_d & 0xf) << 0;
+                  inst_code = ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC) ? 0x0040 : 0x0050;
+                  inst_code |= reg_arg1 << 0;
                   RETURN(inst_code);
                 }
-              if ((reg_d & BREW_REG_FLAG_MASK) != (reg_b & BREW_REG_FLAG_MASK))
+              gas_assert(BREW_IS_GP_REG(reg_arg1));
+              // Check for float conversion
+              if ((reg_d & BREW_REG_FLAG_MASK) != 0 && (reg_arg1 & BREW_REG_FLAG_SIGNED) != 0)
+                {
+                  inst_code = 0x0a00;
+                  inst_code |= (reg_arg1 & BREW_REG_GP_MASK) << 4;
+                  inst_code |= (reg_d & BREW_REG_GP_MASK) << 0;
+                  RETURN(inst_code);
+                }
+              if ((reg_d & BREW_REG_FLAG_MASK) != (reg_arg1 & BREW_REG_FLAG_MASK))
                 {
                   as_bad(_("register moves only support identical source and destination types"));
                   ERR_RETURN;
                 }
               /* This is a simple register move -> use the AND operation with both sources being the same */
               inst_code = 0x2000;
-              inst_code |= (reg_b & 0xf) << 8;
-              inst_code |= (reg_b & 0xf) << 4;
+              inst_code |= (reg_arg1 & 0xf) << 8;
+              inst_code |= (reg_arg1 & 0xf) << 4;
               inst_code |= (reg_d & 0xf) << 0;
               RETURN(inst_code);
             }
-          /* This is not a register move. it must be a binary operation of the {reg} <- {reg} {op} [{expr}|{reg}] kind. */
+          // This is not a register move. it must be a binary operation of the {reg} <- {reg} {op} [{expr}|{reg}] kind.
           if (strlen(tok_start) > sizeof(op)-1)
             {
               as_bad(_("invalid binary operation: %s"), tok_start);
@@ -1294,67 +1337,70 @@ md_assemble (char *str)
           strcpy(op, tok_start);
           //DEBUG("getting second operand for op %s", op);
           GET_NEXT_TOKEN_UNTIL("\0", _("expected second operand for binary operation '%s'"), op);
-          /* Special-case increment and decrement operations */
+          // Special-case link instruction
+          if ((reg_arg1 & BREW_REG_BASE_MASK) == BREW_REG_PC)
+            {
+              int offset;
+              if (!parse_int(tok_start, &offset))
+                {
+                  as_bad(_("addition to $pc only supports integers"));
+                  ERR_RETURN;
+                }
+              if ((offset & 1) != 0)
+                {
+                  as_bad(_("addition to $pc only supports even numbers"));
+                  ERR_RETURN;
+                }
+              offset >>= 1;
+              if (offset < -8 || offset > 7)
+                {
+                  as_bad(_("addition to $pc out of range. Supported range is -8...7."));
+                  ERR_RETURN;
+                }
+              inst_code = 0x0d00;
+              inst_code |= (offset & BREW_REG_GP_MASK) << 4;
+              inst_code |= (reg_d & BREW_REG_GP_MASK) << 0;
+              RETURN(inst_code);
+            }
+          // Special-case increment and decrement operations
+          gas_assert(BREW_IS_GP_REG(reg_arg1));
           do
             {
               if (strcmp(tok_start, "1") == 0)
                 {
-                  if ((reg_b & 0xf) == BREW_REG_PC)
+                  if ((reg_arg1 & BREW_REG_FLAG_FLOAT) != 0)
                     break;
-                  if ((reg_b & BREW_REG_FLAG_FLOAT) != 0)
-                    break;
-                  if ((reg_b & BREW_REG_FLAG_MASK) != (reg_d & BREW_REG_FLAG_MASK))
+                  if ((reg_arg1 & BREW_REG_FLAG_MASK) != (reg_d & BREW_REG_FLAG_MASK))
                     break;
                   if (strcmp(op, "+") == 0)
                     {
-                      inst_code = 0x9000;
-                      inst_code |= (reg_b & 0xf) << 4;
+                      inst_code = 0x0100;
+                      inst_code |= (reg_arg1 & 0xf) << 4;
                       inst_code |= (reg_d & 0xf) << 0;
                       RETURN(inst_code);
                     }
                   else if (strcmp(op, "-") == 0)
                     {
-                      inst_code = 0x9000;
-                      inst_code |= (reg_b & 0xf) << 8;
+                      inst_code = 0x0200;
+                      inst_code |= (reg_arg1 & 0xf) << 4;
                       inst_code |= (reg_d & 0xf) << 0;
                       RETURN(inst_code);
                     }
                 }
             }
           while(false);
-          /* Let's see if we have a {reg} {op} {exp} type binary operation */
-          if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT))
+          // Let's see if we have a {reg} {op} {exp} type binary operation
+          // Note: all native operations are of the {exp} {op} {reg} form, so only commutative ones can be supported here
+          if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT, is_short, false))
             {
               for (alu_table_entry = alu_table; alu_table_entry->inst_name != NULL; ++alu_table_entry)
                 {
                   if (strcasecmp(op, alu_table_entry->inst_name) == 0)
                     {
-                      bool swap_args = false;
-                      /* Can we use this entry for the {reg} {op} {exp} thing we have here? */
-                      if ((alu_table_entry->op_flags & NO_IMM_A) != 0)
-                        {
-                          if ((alu_table_entry->op_flags & COMMUTATIVE) == 0)
-                            continue;
-                          if ((alu_table_entry->op_flags & NO_IMM_B) != 0)
-                            continue;
-                          swap_args = true;
-                          reg_a = reg_b;
-                        }
-                      if (swap_args)
-                        {
-                          if ((reg_a & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_A_IS_PC) != 0)
-                            continue;
-                          if ((reg_a & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_a)
-                            continue;
-                        }
-                      else
-                        {
-                          if ((reg_b & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_B_IS_PC) != 0)
-                            continue;
-                          if ((reg_b & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_b)
-                            continue;
-                        }
-                      if ((reg_d & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_D_IS_PC) != 0)
+                      // Can we use this entry for the {reg} {op} {exp} thing we have here?
+                      if ((alu_table_entry->op_flags & COMMUTATIVE) == 0)
+                        continue;
+                      if ((reg_arg1 & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_arg2)
                         continue;
                       if ((reg_d & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_d)
                         continue;
@@ -1365,27 +1411,26 @@ md_assemble (char *str)
                         }
                       /* operation is suitable */
                       inst_code = is_upper ? alu_table_entry->upper_inst_code : alu_table_entry->inst_code;
-                      if (swap_args)
+                      if (is_short)
                         {
-                          inst_code |= 0x0f00; /* mark OP B as immediate */
-                          inst_code |= (reg_a & 0xf) << 4;
-                          inst_code |= (reg_d & 0xf) << 0;
-                          RETURN(inst_code);
+                          inst_code |= 0x0f00; // mark OP B as immediate
+                          inst_code |= (reg_arg1 & BREW_REG_GP_MASK) << 4;
                         }
                       else
                         {
-                          inst_code |= 0x00f0; /* mark OP A as immediate */
-                          inst_code |= (reg_b & 0xf) << 8;
-                          inst_code |= (reg_d & 0xf) << 0;
-                          RETURN(inst_code);
+                          inst_code |= 0x00f0; // mark OP A as immediate
+                          inst_code |= (reg_arg1 & BREW_REG_GP_MASK) << 8;
                         }
+                      inst_code |= (reg_d & BREW_REG_GP_MASK) << 0;
+                      RETURN(inst_code);
                     }
                 }
                 as_bad(_("unrecognized binary operation %s"), op);
                 ERR_RETURN;
             }
-          reg_a = parse_register_operand(tok_start, false);
-          if (reg_a == -1)
+          // Last choice: this is a {reg} {op} {reg} operation
+          reg_arg2 = parse_register_operand(tok_start, false, false);
+          if (reg_arg2 == -1)
             {
               as_bad(_("second operatand for operation %s must be a register or an expression. Got: %s"), op, tok_start);
               ERR_RETURN;
@@ -1395,18 +1440,9 @@ md_assemble (char *str)
               //DEBUG("Testing for compatiblity with %s", alu_table_entry->inst_name);
               if (strcasecmp(op, alu_table_entry->inst_name) == 0)
                 {
-                  /* Can we use this entry for the {reg} {op} {reg} thing we have here? */
-                  if ((reg_a & 0xf) == (reg_b & 0xf) && (reg_d & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_A_EQ_B_D_IS_PC) != 0)
+                  if ((reg_arg2 & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_arg2)
                     continue;
-                  if ((reg_a & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_A_IS_PC) != 0)
-                    continue;
-                  if ((reg_b & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_B_IS_PC) != 0)
-                    continue;
-                  if ((reg_d & 0xf) == BREW_REG_PC && (alu_table_entry->op_flags & NO_D_IS_PC) != 0)
-                    continue;
-                  if ((reg_a & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_a)
-                    continue;
-                  if ((reg_b & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_b)
+                  if ((reg_arg1 & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_arg1)
                     continue;
                   if ((reg_d & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_d)
                     continue;
@@ -1415,10 +1451,14 @@ md_assemble (char *str)
                       as_bad(_("operation %s doesn't support 'upper'"), op);
                       ERR_RETURN;
                     }
+                  if (is_short)
+                    {
+                      as_bad(_("binary register operations don't support 'short'"));
+                    }
                   /* operation is suitable */
                   inst_code = is_upper ? alu_table_entry->upper_inst_code : alu_table_entry->inst_code;
-                  inst_code |= (reg_a & 0xf) << 4;
-                  inst_code |= (reg_b & 0xf) << 8;
+                  inst_code |= (reg_arg1 & 0xf) << 4;
+                  inst_code |= (reg_arg2 & 0xf) << 8;
                   inst_code |= (reg_d & 0xf) << 0;
                   RETURN(inst_code);
                 }
@@ -1518,7 +1558,6 @@ md_apply_fix (fixS *fixP ATTRIBUTE_UNUSED,
 {
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
   long val = *valP;
-  /*long newval;*/
   long max, min;
 
   max = min = 0;
@@ -1531,17 +1570,23 @@ md_apply_fix (fixS *fixP ATTRIBUTE_UNUSED,
       buf[0] = val >> 0;
       buf += 4;
       break;
-    /* The only reloc we can actually have is a 32-bit one
     case BFD_RELOC_16:
+      max = INT16_MAX;
+      min = INT16_MIN;
       buf[1] = val >> 8;
       buf[0] = val >> 0;
       buf += 2;
       break;
-
-    case BFD_RELOC_8:
-      *buf++ = val;
+    case BFD_RELOC_16_PCREL:
+      max = INT16_MAX;
+      min = INT16_MIN;
+      // This is a relative 17-bit offset, the LSB being 0 and not stored
+      if ((val & 1) != 0)
+        as_bad_where (fixP->fx_file, fixP->fx_line, _("$pc offset must be even"));
+      buf[1] = val >> 9;
+      buf[0] = val >> 1;
+      buf += 2;
       break;
-    */
     default:
       as_fatal("Relocation type %d is not supported on brew. Do you have an undefined symbol?", fixP->fx_r_type);
     }

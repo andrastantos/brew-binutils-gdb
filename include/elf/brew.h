@@ -34,8 +34,12 @@
 
 /* Relocation types.  */
 START_RELOC_NUMBERS (elf_brew_reloc_type)
-  RELOC_NUMBER (R_BREW_NONE, 0)
-  RELOC_NUMBER (R_BREW_32, 1)
+  RELOC_NUMBER(R_BREW_NONE,      0)
+  RELOC_NUMBER(R_BREW_32,        1)
+  RELOC_NUMBER(R_BREW_16,        2)
+  RELOC_NUMBER(R_BREW_16_SPCREL, 3)
 END_RELOC_NUMBERS (R_BREW_max)
+
+#define BREW_ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 
 #endif /* _ELF_BREW_H */
