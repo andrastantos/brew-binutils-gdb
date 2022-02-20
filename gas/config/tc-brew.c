@@ -23,6 +23,7 @@
 #include "as.h"
 #include "safe-ctype.h"
 #include <stdint.h>
+#include "dis-asm.h" // for fprintf_ftype
 #include "opcode/brew.h"
 #include "elf/brew.h"
 
@@ -1204,14 +1205,17 @@ md_assemble (char *str)
                 }
               if (is_short)
                 if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC)
-                  inst_code = 0x0f1;
+                  {
+                    as_bad(_("Unconditional short branches are not supported"));
+                    ERR_RETURN;
+                  }
                 else
-                  inst_code = 0x0f0;
+                  inst_code = 0x0f00;
               else
                 if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC)
-                  inst_code = 0x01f;
+                  inst_code = 0x01f0;
                 else
-                  inst_code = 0x00f;
+                  inst_code = 0x00f0;
               // NOTE: we are encoding '0' in case of $pc target.
               inst_code |= (reg_d & BREW_REG_GP_MASK);
               RETURN(inst_code);

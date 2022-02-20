@@ -1,4 +1,4 @@
-/* Definitions for decoding the brew opcode table.
+/* Definitions for decoding the brew instructions.
    Copyright (C) 2009-2021 Free Software Foundation, Inc.
    Contributed by Andras Tantos.
 
@@ -34,3 +34,9 @@
 #define BREW_REG_FLAG_MASK 0xf000
 #define BREW_REG_FLAG_FLOAT 0x2000 /* Used to mark register operands for F0...FE. These are aliases for R0...RE for floating point operations */
 #define BREW_REG_FLAG_SIGNED 0x4000 /* Used to mark register operands for S0...SE. These are aliases for R0...RE for signed operations */
+
+extern int brew_inst_len(uint16_t inst_code);
+extern int32_t brew_unmunge_address(uint16_t field_e);
+extern uint16_t brew_munge_address(int32_t offset);
+extern void brew_print_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t inst_code, uint32_t field_e);
+
