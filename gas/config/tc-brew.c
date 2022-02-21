@@ -628,6 +628,7 @@ parse_expression(const char *token, bool support_float, bool is_short, bool is_a
   char *end_expr;
   size_t field_e_size = is_short ? 2 : 4;
   int reloc_type = is_short ? is_addr ? BFD_RELOC_16_PCREL : BFD_RELOC_16 : BFD_RELOC_32;
+  bool pc_rel = is_short ? is_addr ? true : false : false;
   end_expr = parse_exp_save_ilp ((char*)token, &arg);
   if (*end_expr != 0)
   {
@@ -639,7 +640,7 @@ parse_expression(const char *token, bool support_float, bool is_short, bool is_a
     (field_e_frag - frag_now->fr_literal),
     field_e_size,
     &arg,
-    0,
+    pc_rel,
     reloc_type);
   return true;
 }
@@ -1645,22 +1646,10 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixP)
 long
 md_pcrel_from (fixS *fixP)
 {
-  valueT addr = fixP->fx_where + fixP->fx_frag->fr_address;
+  gas_assert(fixP->fx_r_type == BFD_RELOC_16_PCREL);
 
-  switch (fixP->fx_r_type)
-    {
-    case BFD_RELOC_32:
-      return addr + 4;
-    /* We don't have this type of relocation */
-    /*
-    case BFD_RELOC_MOXIE_10_PCREL:
-      // Offset is from the end of the instruction.
-      return addr + 2;
-    */
-    default:
-      abort ();
-      return addr;
-    }
+  valueT addr = fixP->fx_where + fixP->fx_frag->fr_address;
+  return addr;
 }
 
 void

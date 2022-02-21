@@ -77,16 +77,15 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
   addr += 2;
 
   length = brew_inst_len(inst_code);
-  printf("brew_inst_len with inst_code: 0x%04x returned %d \n", inst_code, length);
-
   switch (length)
     {
     case 2:
+      field_e = 0;
       break;
     case 4: 
       if (!get_uint16(&field_e16, infoP, addr))
         return -1;
-      field_e = (int32_t)field_e << 16 >> 16; // sign-extend
+      field_e = (int32_t)field_e16 << 16 >> 16; // sign-extend
       break;
     case 6: 
       if (!get_uint32(&field_e, infoP, addr))
@@ -95,6 +94,7 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
     default:
       OPCODES_ASSERT(false);
     }
+
   addr += length-2;
   brew_print_insn(fpr, stream, inst_code, field_e);
   return length;

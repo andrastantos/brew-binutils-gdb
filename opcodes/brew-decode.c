@@ -133,7 +133,7 @@ brew_munge_address(int32_t offset)
 }
 
 static char *
-format_branch_target(uint32_t field_e, char *buffer)
+format_branch_target(uint16_t field_e, char *buffer)
 {
   int32_t offset = brew_unmunge_address(field_e);
   if (offset < 0)
