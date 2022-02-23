@@ -228,6 +228,7 @@ const char *special_tokens[] = {
   ">>",
   "<<",
   "short",
+  "upper",
   NULL
 };
 
@@ -709,28 +710,12 @@ md_assemble (char *str)
         break;
       IS_NEXT_TOKEN(("[", _("invalid store operation syntax ")));
       GET_NEXT_TOKEN_UNTIL("],", _("invalid store operation syntax "));
-      /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
+      /* There are three formats we recognize here: {reg}; {expr}; {reg},{expr} */
       if (parse_expression(tok_start, false, false, true))
         {
+          /* We have the format of MEM[{expr}] = {reg} */
+          reg_base = 0xf;
           inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
-          GET_NEXT_TOKEN(_("invalid store offset syntax"));
-          if (strcmp(tok_start, ",") == 0)
-            {
-              /* We have the format of MEM[{expr},{reg}] = {reg} */
-              GET_NEXT_TOKEN(_("invalid store offset syntax"));
-              reg_base = parse_register_operand(tok_start, false, false);
-              if (reg_base == -1)
-                {
-                  as_bad(_("Invlid register offset in store"));
-                  ERR_RETURN;
-                }
-            }
-          else
-            {
-              /* We have the format of MEM[{expr}] = {reg} */
-              reg_base = 0xf;
-              undo_last_token();
-            }
         }
       else
         {
@@ -744,7 +729,7 @@ md_assemble (char *str)
           if (strcmp(tok_start, ",") == 0)
             {
               GET_NEXT_TOKEN_UNTIL("]",_("invalid store offset syntax"));
-              if (!parse_expression(tok_start, false, false, true))
+              if (!parse_expression(tok_start, false, true, false))
                 {
                   as_bad(_("Invalid store offset syntax: expecting expression"));
                   ERR_RETURN;
@@ -958,7 +943,7 @@ md_assemble (char *str)
         inst_code = 0xf400;
       else if (strcasecmp(tok_start, "mem8") == 0)
         {
-          if ((reg_d & BREW_REG_BASE_MASK) != BREW_REG_PC)
+          if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC)
             {
               as_bad(_("Cannot load $pc from 8-bit memory address"));
               ERR_RETURN;
@@ -970,7 +955,7 @@ md_assemble (char *str)
         }
       else if (strcasecmp(tok_start, "mem16") == 0)
         {
-          if ((reg_d & BREW_REG_BASE_MASK) != BREW_REG_PC)
+          if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC)
             {
               as_bad(_("Cannot load $pc from 16-bit memory address"));
               ERR_RETURN;
@@ -982,37 +967,21 @@ md_assemble (char *str)
         }
       else
         break;
-      // While we allowed to parse $pc and $tpc above, we don't
+      // While we allowed parsing of $pc and $tpc above, we don't
       // actually have store operations for them.
-      if ((reg_d & BREW_REG_BASE_MASK) != BREW_REG_TPC)
+      if ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_TPC)
         {
           as_bad(_("Cannot load $tpc directly from memory"));
           ERR_RETURN;
         }
       IS_NEXT_TOKEN(("[", _("invalid load operation syntax ")));
       GET_NEXT_TOKEN_UNTIL("],", _("invalid load operation syntax "));
-      /* There are four formats we recognize here: {reg}; {expr}; {reg},{expr}; {expr},{reg} */
+      /* There are three formats we recognize here: {reg}; {expr}; {reg},{expr}; */
       if (parse_expression(tok_start, false, false, true))
         {
+          /* We have the format of {reg} = MEM[{expr}] */
+          reg_base = 0xf;
           inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
-          GET_NEXT_TOKEN(_("invalid load offset syntax"));
-          if (strcmp(tok_start, ",") == 0)
-            {
-              /* We have the format of {reg} = MEM[{expr},{reg}]*/
-              GET_NEXT_TOKEN(_("invalid load offset syntax"));
-              reg_base = parse_register_operand(tok_start, false, false);
-              if (reg_base == -1)
-                {
-                  as_bad(_("Invlid register offset in load"));
-                  ERR_RETURN;
-                }
-            }
-          else
-            {
-              /* We have the format of {reg} = MEM[{expr}] */
-              reg_base = 0xf;
-              undo_last_token();
-            }
         }
       else
         {
@@ -1026,7 +995,7 @@ md_assemble (char *str)
           if (strcmp(tok_start, ",") == 0)
             {
               GET_NEXT_TOKEN_UNTIL("]", _("invalid load offset syntax"));
-              if (!parse_expression(tok_start, false, false, true))
+              if (!parse_expression(tok_start, false, true, false))
                 {
                   as_bad(_("Invalid load offset syntax: expecting expression"));
                   ERR_RETURN;
@@ -1037,12 +1006,21 @@ md_assemble (char *str)
           else
             {
               /* We have the format of {reg} = MEM[{reg}] */
+              if (!BREW_IS_GP_REG(reg_d))
+                {
+                  // for $pc loads we don't support this format, so patch it up to MEM[{reg}, 0]
+                  parse_expression("0", false, true, false);
+                  inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
+                }
               undo_last_token();
             }
         }
       IS_NEXT_TOKEN(("]", _("invalid load operation syntax ")));
       inst_code |= (reg_base & BREW_REG_GP_MASK) << 4;
-      inst_code |= (reg_d & BREW_REG_GP_MASK) << 0;
+      if (BREW_IS_GP_REG(reg_d))
+        inst_code |= (reg_d & BREW_REG_GP_MASK) << 0;
+      else
+        inst_code |= 0xf << 0;
       RETURN(inst_code);
     }
   while (false);
@@ -1086,8 +1064,9 @@ md_assemble (char *str)
               GET_NEXT_TOKEN(_("unexpected end of instruction after 'short'"));
               continue;
             }
+          break;
         }
-      while (false);
+      while (true);
       /* check for prefix unary operators */
       for (unary_op_table_entry = unary_op_table; unary_op_table_entry->inst_name != NULL; ++unary_op_table_entry)
         {
@@ -1306,10 +1285,10 @@ md_assemble (char *str)
                 }
               gas_assert(BREW_IS_GP_REG(reg_d));
               // Check for moves from $pc and $tpc
-              if (BREW_IS_PC_RELATED_REG(reg_d))
+              if (BREW_IS_PC_RELATED_REG(reg_arg1))
                 {
-                  inst_code = ((reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC) ? 0x0040 : 0x0050;
-                  inst_code |= reg_arg1 << 0;
+                  inst_code = ((reg_arg1 & BREW_REG_BASE_MASK) == BREW_REG_PC) ? 0x0040 : 0x0050;
+                  inst_code |= reg_d << 0;
                   RETURN(inst_code);
                 }
               gas_assert(BREW_IS_GP_REG(reg_arg1));
@@ -1357,9 +1336,9 @@ md_assemble (char *str)
                   ERR_RETURN;
                 }
               offset >>= 1;
-              if (offset < -8 || offset > 7)
+              if (offset < 0 || offset > 14)
                 {
-                  as_bad(_("addition to $pc out of range. Supported range is -8...7."));
+                  as_bad(_("addition to $pc out of range. Supported range is 0...28."));
                   ERR_RETURN;
                 }
               inst_code = 0x0d00;

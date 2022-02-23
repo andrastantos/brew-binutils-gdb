@@ -1,6 +1,10 @@
 #!/bin/sh
-# Generates a proper .d file for a .s input file
-# usage: gend <gas_source_file>
+if [ -z "$1" ]; then
+    echo "Generates a proper .d file for a .s input file"
+    echo "    usage: gend <gas_source_file>"
+    exit 1
+fi
+
 AS_PARAMS="-F"
 OBDJUMP_PARAMS="-dr --prefix-address --show-raw-ins"
 D_FILE="${1%.s}.d"
