@@ -962,7 +962,7 @@ sim_engine_run (SIM_DESC sd,
               else if (pattern_match(insn_code, "d..0")) { UNKNOWN; }
               else if (pattern_match(insn_code, "d00.")) { UNKNOWN; }
               else if (pattern_match(insn_code, "d.0.")) { REG_D_TARGET = as_int((float)REG_B); NEXT_INST(INSN_CLS_FP, "%s <- %s", trFREG_D, trSREG_B); }
-              else if (pattern_match(insn_code, "d0..")) { REG_D_TARGET = floorf(as_float(REG_A)); NEXT_INST(INSN_CLS_FP, "%s <- floor %s", trSREG_D, trFREG_A); }
+              else if (pattern_match(insn_code, "d0..")) { REG_D_TARGET = (int)floorf(as_float(REG_A)); NEXT_INST(INSN_CLS_FP, "%s <- floor %s", trSREG_D, trFREG_A); }
               else if (pattern_match(insn_code, "d...")) { REG_D_TARGET = as_int(as_float(REG_B) - as_float(REG_A)); NEXT_INST(INSN_CLS_FP, "%s <- %s - %s", trFREG_D, trFREG_B, trFREG_A); }
               FINAL_ELSE;
               break;

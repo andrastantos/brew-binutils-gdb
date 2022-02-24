@@ -40,3 +40,43 @@ extern int32_t brew_unmunge_address(uint16_t field_e);
 extern uint16_t brew_munge_address(int32_t offset);
 extern void brew_print_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t inst_code, uint32_t field_e);
 
+// Simulator interface
+typedef enum {
+  EXCEPTION_NONE,
+  EXCEPTION_UNALIGNED,
+  EXCEPTION_ACCESS_VIOLATION,
+  EXCEPTION_FILL,
+  EXCEPTION_BREAK,
+  EXCEPTION_SYSCALL,
+  EXCEPTION_STU,
+  EXCEPTION_SII,
+  EXCEPTION_F_DIV_BY_ZERO,
+  EXCEPTION_F_INV_RSQRT
+} exception_type;
+
+typedef exception_type (*read_mem_ftype)(void *context, uint32_t vma, int length, uint32_t *value);
+typedef exception_type (*write_mem_ftype)(void *context, uint32_t vma, int length, uint32_t value);
+typedef void (*handle_exception_ftype)(void *context, uint32_t pc, exception_type exception, bool is_scheduler_mode);
+typedef int32_t (*floor_ftype)(float);
+typedef float (*rsqrt_ftype)(float);
+typedef struct {
+  uint32_t reg[15];
+  uint32_t spc;
+  uint32_t tpc;
+  uint32_t nspc;
+  uint32_t ntpc;
+  uint32_t dirty_map;
+  bool is_scheduler_mode;
+
+  read_mem_ftype read_mem;
+  write_mem_ftype write_mem;
+  handle_exception_ftype handle_exception;
+  fprintf_ftype tracer;
+  void *tracer_strm;
+
+  // helpers for floating point operations: this avoids linking all binutils utilities against a math library
+  floor_ftype floor;
+  rsqrt_ftype rsqrt;
+} brew_sim_state;
+
+extern void brew_sim_insn(void *context, brew_sim_state *sim_state, uint16_t inst_code, uint32_t field_e);
