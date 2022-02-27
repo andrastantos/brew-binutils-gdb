@@ -43,4 +43,12 @@ struct _sim_cpu {
   mem_trace_s mem_trace;
 };
 
+// sim_engine_halt normally tries to set the PC to whatever
+// is passed in. We don't implement 'sim_pc_set' (brew_pc_set asserts).
+// On top of that, we never actually try to set the PC to
+// something else then what it already is, so we don't need
+// this hook.
+#undef SIM_ENGINE_HALT_HOOK
+#define SIM_ENGINE_HALT_HOOK(SD, LAST_CPU, CIA)
+
 #endif

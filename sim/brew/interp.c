@@ -108,14 +108,17 @@ read_mem(void *context, uint32_t vma, int length, uint32_t *value)
     {
     case 8:
       *value = sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, vma);
+      break;
     case 16:
       if ((vma & 1) != 0)
         return BREW_EXCEPTION_UNALIGNED;
       *value = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, vma);
+      break;
     case 32:
       if ((vma & 3) != 0)
         return BREW_EXCEPTION_UNALIGNED;
       *value = sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, vma);
+      break;
     default:
       SIM_ASSERT(false);
     }
@@ -133,14 +136,17 @@ write_mem(void *context, uint32_t vma, int length, uint32_t value)
     {
     case 8:
       sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, vma, value);
+      break;
     case 16:
       if ((vma & 1) != 0)
         return BREW_EXCEPTION_UNALIGNED;
       sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, vma, value);
+      break;
     case 32:
       if ((vma & 3) != 0)
         return BREW_EXCEPTION_UNALIGNED;
       sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, vma, value);
+      break;
     default:
       SIM_ASSERT(false);
     }

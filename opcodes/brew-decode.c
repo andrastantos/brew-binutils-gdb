@@ -237,7 +237,7 @@ sim_mem_load(void *context, brew_sim_state *sim_state, int ref_size, bool is_sig
 {
   uint32_t vma = sim_mem_calc_ref(context, sim_state, base_reg_idx, offset, has_offset);
   uint32_t val;
-  sim_state->insn_exception = sim_state->read_mem(context, vma, ref_size/8, &val);
+  sim_state->insn_exception = sim_state->read_mem(context, vma, ref_size, &val);
   OPCODES_ASSERT((ref_size & 7) == 0);
   if (is_signed) {
     int bits_unused = 32 - ref_size;
@@ -251,7 +251,7 @@ static void
 sim_mem_store(void *context, brew_sim_state *sim_state, int ref_size, int base_reg_idx, uint32_t offset, bool has_offset, uint32_t val)
 {
   uint32_t vma = sim_mem_calc_ref(context, sim_state, base_reg_idx, offset, has_offset);
-  sim_state->insn_exception = sim_state->write_mem(context, vma, ref_size/8, val);
+  sim_state->insn_exception = sim_state->write_mem(context, vma, ref_size, val);
   OPCODES_ASSERT((ref_size & 7) == 0);
 }
 
@@ -448,7 +448,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
               if (pattern_match(insn_code, "0006")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SII); INST("SII"); }
               if (pattern_match(insn_code, "0007")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_HWI); INST("HWI"); }
 
-              if (pattern_match(insn_code, "0008")) { CLASS(BRANCH); SIM(sim_state->nis_task_mode = true); INST("STU"); }
+              if (pattern_match(insn_code, "0008")) { CLASS(BRANCH); SIM(sim_state->nis_task_mode = true); INST("STM"); }
               if (pattern_match(insn_code, "0009")) { CLASS(POWER); INST("WOI"); }
               UNKNOWN;
             }

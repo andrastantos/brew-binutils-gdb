@@ -83,7 +83,7 @@ static inst_tableS inst_table[] =
   { "swi6",    0x0006 },
   { "hwi",     0x0007 },
   { "swi7",    0x0007 },
-  { "stu",     0x0008 },
+  { "stm",     0x0008 },
   { "woi",     0x0009 },
   { "fence",   0x0010 },
   { "wfence",  0x0011 },
@@ -240,7 +240,7 @@ start_token_strm(char *str)
 }
 
 /* Stops parsing by restoring the original character stream */
-static void 
+static void
 end_token_strm(void)
 {
   if (tok_start == NULL)
@@ -263,7 +263,7 @@ const char *special_tokens[] = {
 };
 
 
-/* Advances tok_start and tok_end to the next token. Sets tok_start to 
+/* Advances tok_start and tok_end to the next token. Sets tok_start to
    NULL if no more tokens are found. The string is in-place modified by
    putting a zero-termination into the token delimiter. The original
    character is saved in tok_end_holder */
@@ -525,7 +525,7 @@ parse_int(char *str, int *int_result)
       -1 in case of failure.
 */
 
-typedef struct 
+typedef struct
 {
   const char *name;
   int regno;
@@ -555,7 +555,7 @@ parse_register_operand (char *token, bool allow_tpc, bool allow_pc)
     }
   token++;
   /* have to special case $sp */
-  if (token[0] == 's' && !(token[1] == 'p' && token[2] == 0)) 
+  if (token[0] == 's' && !(token[1] == 'p' && token[2] == 0))
     {
       flags = BREW_REG_FLAG_SIGNED;
       token++;
@@ -566,7 +566,7 @@ parse_register_operand (char *token, bool allow_tpc, bool allow_pc)
       flags = BREW_REG_FLAG_FLOAT;
       token++;
     }
-  
+
   for (named_register_entry = named_registers; named_register_entry->name != NULL; ++named_register_entry)
     {
       if (
@@ -1482,7 +1482,7 @@ md_assemble (char *str)
       while (false);
     }
   while (false);
-  
+
   as_bad(_("Unrecognized instruction"));
   ERR_RETURN;
 
