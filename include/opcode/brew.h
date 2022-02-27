@@ -1,4 +1,4 @@
-/* Definitions for decoding the brew instructions.
+/* Definitions for decoding and simulating brew instructions.
    Copyright (C) 2009-2021 Free Software Foundation, Inc.
    Contributed by Andras Tantos.
 
@@ -16,49 +16,59 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
    02110-1301, USA.  */
+#ifndef __OPCODE_BREW_H__
+#define __OPCODE_BREW_H__
 
-#define BREW_REG_PC 0x10
-#define BREW_REG_SP 0x0 /* R1 is of course a general purpose register, but the ABI defines it as SP, so let's have an alias for that */
-#define BREW_REG_FP 0x1 /* R2 is of course a general purpose register, but the ABI defines it as FP, so let's have an alias for that */
-#define BREW_REG_R(x) (x)
-
-#define BREW_REG_TPC 0x11 /* Special register index for TPC. Not used in encoding as is all the time, but returned by the register name parser. */
-
-#define BREW_REG_GP_MASK 0xf
-#define BREW_REG_PC_RELATED 0x10
-#define BREW_REG_BASE_MASK  0x1f
-
-#define BREW_IS_GP_REG(r) (((r) & BREW_REG_BASE_MASK) == ((r) & BREW_REG_GP_MASK))
-#define BREW_IS_PC_RELATED_REG(r) (((r) & BREW_REG_PC_RELATED) != 0)
-
-#define BREW_REG_FLAG_MASK 0xf000
-#define BREW_REG_FLAG_FLOAT 0x2000 /* Used to mark register operands for F0...FE. These are aliases for R0...RE for floating point operations */
-#define BREW_REG_FLAG_SIGNED 0x4000 /* Used to mark register operands for S0...SE. These are aliases for R0...RE for signed operations */
-
-extern int brew_inst_len(uint16_t inst_code);
-extern int32_t brew_unmunge_address(uint16_t field_e);
-extern uint16_t brew_munge_address(int32_t offset);
-extern void brew_print_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t inst_code, uint32_t field_e);
-
-// Simulator interface
 typedef enum {
-  EXCEPTION_NONE,
-  EXCEPTION_UNALIGNED,
-  EXCEPTION_ACCESS_VIOLATION,
-  EXCEPTION_FILL,
-  EXCEPTION_BREAK,
-  EXCEPTION_SYSCALL,
-  EXCEPTION_STU,
-  EXCEPTION_SII,
-  EXCEPTION_F_DIV_BY_ZERO,
-  EXCEPTION_F_INV_RSQRT
-} exception_type;
+  BREW_EXCEPTION_FILL,
+  BREW_EXCEPTION_BREAK,
+  BREW_EXCEPTION_SYSCALL,
+  BREW_EXCEPTION_SWI3,
+  BREW_EXCEPTION_SWI4,
+  BREW_EXCEPTION_SWI5,
+  BREW_EXCEPTION_SII,
+  BREW_EXCEPTION_HWI,
+  BREW_EXCEPTION_UNALIGNED,
+  BREW_EXCEPTION_ACCESS_VIOLATION,
+  BREW_EXCEPTION_F_DIV_BY_ZERO,
+  BREW_EXCEPTION_F_NEG_RSQRT,
+  // We have some unused exception vector indices here.
+  BREW_EXCEPTION_NONE = 0xf
+} brew_exception_type;
 
-typedef exception_type (*read_mem_ftype)(void *context, uint32_t vma, int length, uint32_t *value);
-typedef exception_type (*write_mem_ftype)(void *context, uint32_t vma, int length, uint32_t value);
-typedef void (*handle_exception_ftype)(void *context, uint32_t pc, exception_type exception, bool is_scheduler_mode);
-typedef int32_t (*floor_ftype)(float);
-typedef float (*rsqrt_ftype)(float);
+typedef enum
+{
+  BREW_INSN_CLS_UNKNOWN,
+  BREW_INSN_CLS_EXCEPTION,
+  BREW_INSN_CLS_ATOMIC,
+  BREW_INSN_CLS_MOV,
+  BREW_INSN_CLS_IMM,
+  BREW_INSN_CLS_BIT,
+  BREW_INSN_CLS_LOGIC,
+  BREW_INSN_CLS_ARITH,
+  BREW_INSN_CLS_SHIFT,
+  BREW_INSN_CLS_MUL,
+  BREW_INSN_CLS_FP,
+  BREW_INSN_CLS_LD,
+  BREW_INSN_CLS_ST,
+  BREW_INSN_CLS_BRANCH,
+  BREW_INSN_CLS_CBRANCH,
+  BREW_INSN_CLS_CBRANCH0,
+  BREW_INSN_CLS_CBRANCHFP,
+  BREW_INSN_CLS_CBRANCH0FP,
+  BREW_INSN_CLS_CBRANCHBIT,
+  BREW_INSN_CLS_LINK,
+  BREW_INSN_CLS_POWER,
+  BREW_INSN_CLS_NOP,
+  BREW_INSN_CLS_MAX
+} brew_insn_classes;
+
+typedef brew_exception_type (*brew_read_mem_ftype)(void *context, uint32_t vma, int length, uint32_t *value);
+typedef brew_exception_type (*brew_write_mem_ftype)(void *context, uint32_t vma, int length, uint32_t value);
+typedef void (*brew_handle_stu_ftype)(void *context, uint32_t pc, bool is_task_mode);
+typedef int32_t (*brew_floor_ftype)(float);
+typedef float (*brew_rsqrt_ftype)(float);
+
 typedef struct {
   uint32_t reg[15];
   uint32_t spc;
@@ -66,17 +76,27 @@ typedef struct {
   uint32_t nspc;
   uint32_t ntpc;
   uint32_t dirty_map;
-  bool is_scheduler_mode;
+  brew_insn_classes insn_class;
+  brew_exception_type insn_exception;
+  bool is_task_mode;
+  bool nis_task_mode;
 
-  read_mem_ftype read_mem;
-  write_mem_ftype write_mem;
-  handle_exception_ftype handle_exception;
+  brew_read_mem_ftype read_mem;
+  brew_write_mem_ftype write_mem;
+  brew_handle_stu_ftype handle_stu;
   fprintf_ftype tracer;
   void *tracer_strm;
 
   // helpers for floating point operations: this avoids linking all binutils utilities against a math library
-  floor_ftype floor;
-  rsqrt_ftype rsqrt;
+  brew_floor_ftype floor;
+  brew_rsqrt_ftype rsqrt;
 } brew_sim_state;
 
-extern void brew_sim_insn(void *context, brew_sim_state *sim_state, uint16_t inst_code, uint32_t field_e);
+extern int brew_insn_len(uint16_t insn_code);
+extern int32_t brew_unmunge_address(uint16_t field_e);
+extern uint16_t brew_munge_address(int32_t offset);
+extern void brew_print_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t insn_code, uint32_t field_e);
+extern void brew_sim_insn(void *context, brew_sim_state *sim_state, uint16_t insn_code, uint32_t field_e);
+extern const char *brew_insn_class_name(brew_insn_classes cls);
+
+#endif // __OPCODE_BREW_H__

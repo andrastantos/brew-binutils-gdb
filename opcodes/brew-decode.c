@@ -37,10 +37,10 @@
 //#define DEBUG(...)
 
 /* Macros to extract operands from the instruction word.  */
-#define FIELD_C ((inst_code >> 12) & 0xf)
-#define FIELD_B ((inst_code >> 8) & 0xf)
-#define FIELD_A ((inst_code >> 4) & 0xf)
-#define FIELD_D ((inst_code >> 0) & 0xf)
+#define FIELD_C ((insn_code >> 12) & 0xf)
+#define FIELD_B ((insn_code >> 8) & 0xf)
+#define FIELD_A ((insn_code >> 4) & 0xf)
+#define FIELD_D ((insn_code >> 0) & 0xf)
 
 #define GET_NIBBLE(i, nibble) ((i >> (nibble*4)) & 0xf)
 
@@ -55,7 +55,7 @@ static int hexdigit(char digit)
   OPCODES_ASSERT(false);
 }
 
-static bool pattern_match(uint16_t inst_code, const char *pattern)
+static bool pattern_match(uint16_t insn_code, const char *pattern)
 {
   const char *p;
   int nibble;
@@ -63,13 +63,13 @@ static bool pattern_match(uint16_t inst_code, const char *pattern)
     {
       if (*p == '.')
         {
-          if (GET_NIBBLE(inst_code, nibble) == 0xf)
+          if (GET_NIBBLE(insn_code, nibble) == 0xf)
             {
               return false;
             }
           continue;
         }
-      if (hexdigit(*p) != GET_NIBBLE(inst_code, nibble))
+      if (hexdigit(*p) != GET_NIBBLE(insn_code, nibble))
         {
           return false;
         }
@@ -77,48 +77,48 @@ static bool pattern_match(uint16_t inst_code, const char *pattern)
     return true;
 }
 
-static const char * reg_names[16] =
-  { "$sp", "$fp", "$r2",  "$r3",  "$r4",  "$r5",  "$r6",  "$r7", 
+const char * brew_reg_names[16] =
+  { "$sp", "$fp", "$r2",  "$r3",  "$r4",  "$r5",  "$r6",  "$r7",
     "$r8", "$r9", "$r10", "$r11", "$r12", "$r13", "$r14", "<<<INVALID>>>"};
 
-static const char * sreg_names[16] =
-  { "$sr0", "$sr1", "$sr2",  "$sr3",  "$sr4",  "$sr5",  "$sr6",  "$sr7", 
+const char * brew_sreg_names[16] =
+  { "$sr0", "$sr1", "$sr2",  "$sr3",  "$sr4",  "$sr5",  "$sr6",  "$sr7",
     "$sr8", "$sr9", "$sr10", "$sr11", "$sr12", "$sr13", "$sr14", "<<<INVALID>>>"};
 
-static const char * freg_names[16] =
-  { "$fr0", "$fr1", "$fr2",  "$fr3",  "$fr4",  "$fr5",  "$fr6",  "$fr7", 
+const char * brew_freg_names[16] =
+  { "$fr0", "$fr1", "$fr2",  "$fr3",  "$fr4",  "$fr5",  "$fr6",  "$fr7",
     "$fr8", "$fr9", "$fr10", "$fr11", "$fr12", "$fr13", "$fr14", "<<<INVALID>>>"};
 
-#define REG_D (reg_names[FIELD_D])
-#define REG_A (reg_names[FIELD_A])
-#define REG_B (reg_names[FIELD_B])
+#define REG_D (brew_reg_names[FIELD_D])
+#define REG_A (brew_reg_names[FIELD_A])
+#define REG_B (brew_reg_names[FIELD_B])
 
-#define SREG_D (sreg_names[FIELD_D])
-#define SREG_A (sreg_names[FIELD_A])
-#define SREG_B (sreg_names[FIELD_B])
+#define SREG_D (brew_sreg_names[FIELD_D])
+#define SREG_A (brew_sreg_names[FIELD_A])
+#define SREG_B (brew_sreg_names[FIELD_B])
 
-#define FREG_D (freg_names[FIELD_D])
-#define FREG_A (freg_names[FIELD_A])
-#define FREG_B (freg_names[FIELD_B])
+#define FREG_D (brew_freg_names[FIELD_D])
+#define FREG_A (brew_freg_names[FIELD_A])
+#define FREG_B (brew_freg_names[FIELD_B])
 
 #define TYPED_REG(type, idx) (typed_reg_names[type][idx])
 
 #define SIM_REG(idx) ((uint32_t)sim_state->reg[idx])
 #define SIM_SREG(idx) ((int32_t)sim_state->reg[idx])
 #define SIM_FREG(idx) (as_float(sim_state->reg[idx]))
-#define SIM_PC (sim_state->is_scheduler_mode ? sim_state->spc : sim_state->tpc)
+#define SIM_PC (sim_state->is_task_mode ? sim_state->tpc : sim_state->spc)
 #define SIM_TPC sim_state->tpc
 
 #define SIM_REG_T(idx) sim_state->dirty_map |= (1<<idx); sim_state->reg[idx]
 #define SIM_SREG_T(idx) sim_state->dirty_map |= (1<<idx); sim_state->reg[idx]
 #define SIM_REGD_T SIM_REG_T(FIELD_D)
 #define SIM_SREGD_T SIM_SREG_T(FIELD_D)
-#define SIM_PC_T *(sim_state->is_scheduler_mode ? &sim_state->nspc : &sim_state->ntpc)
+#define SIM_PC_T *(sim_state->is_task_mode ? &sim_state->ntpc : &sim_state->nspc)
 #define SIM_TPC_T sim_state->ntpc
 
 #define SIM(...) { if(sim_state->read_mem != NULL) { __VA_ARGS__; } }
 
-#define UNKNOWN { SIM(sim_state->handle_exception(context, SIM_PC, EXCEPTION_SII, sim_state->is_scheduler_mode)); if (fpr) print_unknown_insn(fpr, strm_or_buffer, inst_code, field_e, length); return; }
+#define UNKNOWN { CLASS(UNKNOWN); SIM(sim_state->insn_exception = BREW_EXCEPTION_SII); if (fpr) print_unknown_insn(fpr, strm_or_buffer, insn_code, field_e, length); return; }
 
 
 static const int field_c_to_bit_map[] =
@@ -128,18 +128,18 @@ static const int field_c_to_bit_map[] =
   };
 
 static void
-print_unknown_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t inst_code, uint32_t field_e, int length)
+print_unknown_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t insn_code, uint32_t field_e, int length)
 {
   switch (length)
     {
     case 2:
-      fpr(strm_or_buffer, "unknown instruction 0x%04x", inst_code);
+      fpr(strm_or_buffer, "unknown instruction 0x%04x", insn_code);
       break;
     case 4:
-      fpr(strm_or_buffer, "unknown instruction 0x%04x 0x%04x", inst_code, field_e);
+      fpr(strm_or_buffer, "unknown instruction 0x%04x 0x%04x", insn_code, field_e);
       break;
     case 6:
-      fpr(strm_or_buffer, "unknown instruction 0x%04x 0x%08x", inst_code, field_e);
+      fpr(strm_or_buffer, "unknown instruction 0x%04x 0x%08x", insn_code, field_e);
       break;
     }
 }
@@ -183,7 +183,7 @@ format_branch_target(uint16_t field_e, char *buffer)
   return buffer;
 }
 
-static uint32_t 
+static uint32_t
 sim_branch_target(uint16_t field_e, uint32_t pc)
 {
   int32_t offset = brew_unmunge_address(field_e);
@@ -208,9 +208,9 @@ format_mem_ref(int ref_size, bool is_load ATTRIBUTE_UNUSED, int base_reg_idx, ui
 {
   bool has_base = base_reg_idx != 0xf;
   if (has_base && has_offset)
-    sprintf(buffer, "MEM%d[%s, %u (0x%x)]", ref_size, reg_names[base_reg_idx], offset, offset);
+    sprintf(buffer, "MEM%d[%s, %u (0x%x)]", ref_size, brew_reg_names[base_reg_idx], offset, offset);
   else if (has_base)
-    sprintf(buffer, "MEM%d[%s]", ref_size, reg_names[base_reg_idx]);
+    sprintf(buffer, "MEM%d[%s]", ref_size, brew_reg_names[base_reg_idx]);
   else if (has_offset)
     sprintf(buffer, "MEM%d[%u (0x%x)]", ref_size, offset, offset);
   else
@@ -237,12 +237,8 @@ sim_mem_load(void *context, brew_sim_state *sim_state, int ref_size, bool is_sig
 {
   uint32_t vma = sim_mem_calc_ref(context, sim_state, base_reg_idx, offset, has_offset);
   uint32_t val;
-  exception_type exception = sim_state->read_mem(context, vma, ref_size/8, &val);
+  sim_state->insn_exception = sim_state->read_mem(context, vma, ref_size/8, &val);
   OPCODES_ASSERT((ref_size & 7) == 0);
-  if (exception != EXCEPTION_NONE)
-    {
-      sim_state->handle_exception(context, SIM_PC, exception, sim_state->is_scheduler_mode);
-    }
   if (is_signed) {
     int bits_unused = 32 - ref_size;
     OPCODES_ASSERT(bits_unused >= 0 && bits_unused < 31);
@@ -255,16 +251,15 @@ static void
 sim_mem_store(void *context, brew_sim_state *sim_state, int ref_size, int base_reg_idx, uint32_t offset, bool has_offset, uint32_t val)
 {
   uint32_t vma = sim_mem_calc_ref(context, sim_state, base_reg_idx, offset, has_offset);
-  exception_type exception = sim_state->write_mem(context, vma, ref_size/8, val);
+  sim_state->insn_exception = sim_state->write_mem(context, vma, ref_size/8, val);
   OPCODES_ASSERT((ref_size & 7) == 0);
-  if (exception != EXCEPTION_NONE)
-    {
-      sim_state->handle_exception(context, SIM_PC, exception, sim_state->is_scheduler_mode);
-    }
 }
 
 
 #define INST(...) { if(fpr) fpr(strm_or_buffer, __VA_ARGS__ ); return; }
+
+#define CLASS_NAME(insn_class) BREW_INSN_CLS_##insn_class
+#define CLASS(class) { sim_state->insn_class = CLASS_NAME(class); }
 
 typedef enum
 {
@@ -273,24 +268,27 @@ typedef enum
   OPERAND_FLOAT
 } operand_type;
 
-static const char ** typed_reg_names[] = {reg_names, sreg_names, freg_names};
+static const char ** typed_reg_names[] = {brew_reg_names, brew_sreg_names, brew_freg_names};
 
 static bool
 binary_op(
   brew_sim_state *sim_state,
-  fprintf_ftype fpr, 
+  fprintf_ftype fpr,
   void *strm_or_buffer,
-  uint16_t inst_code,
+  uint16_t insn_code,
   uint32_t field_e,
   const char *operation,
   uint32_t (*sim_op)(uint32_t, uint32_t),
   operand_type type_d,
   operand_type type_a,
   operand_type type_b,
-  const char *operation_prefix
+  const char *operation_prefix,
+  brew_insn_classes insn_class
 ) {
   bool is_immedate = FIELD_A == 0xf || FIELD_B == 0xf;
   bool is_short = FIELD_B == 0xf;
+
+  sim_state->insn_class = insn_class;
 
   if (operation_prefix == NULL)
     operation_prefix = "";
@@ -308,7 +306,7 @@ binary_op(
     (FIELD_A == 0xf && FIELD_B == 0xf) ||
     (is_short && type_d == OPERAND_FLOAT) // Don't support short immediates for floating point operations
   ) {
-      print_unknown_insn(fpr, strm_or_buffer, inst_code, field_e, brew_inst_len(inst_code));
+      print_unknown_insn(fpr, strm_or_buffer, insn_code, field_e, brew_insn_len(insn_code));
       return false;
     }
   if (is_immedate)
@@ -340,17 +338,17 @@ binary_op(
   return true;
 }
 
-#define REGULAR_ALU_PATTERN_UUU(base, op, sim_op, prefix)                                                                                                                          \
-  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, inst_code, field_e, #op, sim_op, OPERAND_UNSIGNED, OPERAND_UNSIGNED, OPERAND_UNSIGNED, prefix)) break; return;     \
+#define REGULAR_ALU_PATTERN_UUU(base, op, sim_op, prefix, insn_class)                                                                                                                          \
+  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, OPERAND_UNSIGNED, OPERAND_UNSIGNED, OPERAND_UNSIGNED, prefix, CLASS_NAME(insn_class))) break; return;     \
 
-#define REGULAR_ALU_PATTERN_SSU(base, op, sim_op, prefix)                                                                                                                          \
-  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, inst_code, field_e, #op, sim_op, OPERAND_SIGNED, OPERAND_SIGNED, OPERAND_UNSIGNED, prefix)) break; return;         \
+#define REGULAR_ALU_PATTERN_SSU(base, op, sim_op, prefix, insn_class)                                                                                                                          \
+  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, OPERAND_SIGNED, OPERAND_SIGNED, OPERAND_UNSIGNED, prefix, CLASS_NAME(insn_class))) break; return;         \
 
-#define REGULAR_ALU_PATTERN_SSS(base, op, sim_op, prefix)                                                                                                                          \
-  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, inst_code, field_e, #op, sim_op, OPERAND_SIGNED, OPERAND_SIGNED, OPERAND_SIGNED, prefix)) break; return;           \
+#define REGULAR_ALU_PATTERN_SSS(base, op, sim_op, prefix, insn_class)                                                                                                                          \
+  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, OPERAND_SIGNED, OPERAND_SIGNED, OPERAND_SIGNED, prefix, CLASS_NAME(insn_class))) break; return;           \
 
-#define REGULAR_ALU_PATTERN_FFF(base, op, sim_op, prefix)                                                                                                                          \
-  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, inst_code, field_e, #op, sim_op, OPERAND_FLOAT, OPERAND_FLOAT, OPERAND_FLOAT, prefix)) break; return;              \
+#define REGULAR_ALU_PATTERN_FFF(base, op, sim_op, prefix, insn_class)                                                                                                                          \
+  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, OPERAND_FLOAT, OPERAND_FLOAT, OPERAND_FLOAT, prefix, CLASS_NAME(insn_class))) break; return;              \
 
 static INLINE uint32_t bswap(uint32_t val)
 {
@@ -402,7 +400,7 @@ static INLINE uint32_t fmul_op(uint32_t a, uint32_t b) { return as_uint(as_float
 static INLINE int get_bit(uint32_t word, int idx) { return (word >> idx) & 1; }
 
 void
-brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_t inst_code, uint32_t field_e)
+brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_t insn_code, uint32_t field_e)
 {
   int length;
 
@@ -412,7 +410,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
   fprintf_ftype fpr = sim_state->tracer;
   void *strm_or_buffer = sim_state->tracer_strm;
 
-  length = brew_inst_len(inst_code);
+  length = brew_insn_len(insn_code);
   if (length == 6)
     {
       memcpy(&field_e_as_float, &field_e, 4);
@@ -424,78 +422,101 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
   if (FIELD_D != 0xf && FIELD_C != 0xf)
     {
       // Some rather special-case pseudo-ops:
-      if (FIELD_C == 2 && FIELD_B == FIELD_A && FIELD_D == FIELD_A) { INST("NOP"); } // $rD <- $rD | $rD
-      if (FIELD_C == 1 && FIELD_B == FIELD_A) { SIM(SIM_REGD_T = 0;) INST("%s <- 0", REG_D); } // $rD <- $rX ^ $rX
-      if (FIELD_C == 2 && FIELD_B == FIELD_A) { SIM(SIM_REGD_T = SIM_REG(FIELD_B)); INST("%s <- %s", REG_D, REG_B); } // $rD <- $rX | $rX
+      if (FIELD_C == 2 && FIELD_B == FIELD_A && FIELD_D == FIELD_A) { CLASS(NOP); INST("NOP"); } // $rD <- $rD | $rD
+      if (FIELD_C == 1 && FIELD_B == FIELD_A) { CLASS(LOGIC); SIM(SIM_REGD_T = 0;) INST("%s <- 0", REG_D); } // $rD <- $rX ^ $rX
+      if (FIELD_C == 2 && FIELD_B == FIELD_A) { CLASS(LOGIC); SIM(SIM_REGD_T = SIM_REG(FIELD_B)); INST("%s <- %s", REG_D, REG_B); } // $rD <- $rX | $rX
 
       // ALU group
       switch (FIELD_C)
         {
         case 0x0: // Unary and special
           // Load immediate
-          if (pattern_match(inst_code, "00f.")) { SIM(SIM_REGD_T = field_e); INST("%s <- %u (0x%x)", REG_D, field_e, field_e); }
-          if (pattern_match(inst_code, "01f.")) { SIM(SIM_PC_T = field_e); INST("$pc <- %u (0x%x)", field_e, field_e); }
+          if (pattern_match(insn_code, "00f.")) { CLASS(IMM); SIM(SIM_REGD_T = field_e); INST("%s <- %u (0x%x)", REG_D, field_e, field_e); }
+          if (pattern_match(insn_code, "01f.")) { CLASS(BRANCH); SIM(SIM_PC_T = field_e); INST("$pc <- %u (0x%x)", field_e, field_e); }
 
-          if (pattern_match(inst_code, "0f0.")) { SIM(SIM_REGD_T = field_e); INST("%s <- short %u (0x%x)", REG_D, field_e, field_e); }
+          if (pattern_match(insn_code, "0f0.")) { CLASS(IMM); SIM(SIM_REGD_T = field_e); INST("%s <- short %u (0x%x)", REG_D, field_e, field_e); }
 
-          if ((inst_code >> 4) == 0x000)
+          if ((insn_code >> 4) == 0x000)
             {
               // Exception group
-              if (pattern_match(inst_code, "0000")) { SIM(sim_state->handle_exception(context, SIM_PC, EXCEPTION_FILL, sim_state->is_scheduler_mode)); INST("FILL"); }
-              if (pattern_match(inst_code, "0001")) { SIM(sim_state->handle_exception(context, SIM_PC, EXCEPTION_BREAK, sim_state->is_scheduler_mode)); INST("BREAK"); }
-              if (pattern_match(inst_code, "0002")) { SIM(sim_state->handle_exception(context, SIM_PC, EXCEPTION_SYSCALL,  sim_state->is_scheduler_mode)); INST("SYSCALL"); }
-              if (pattern_match(inst_code, "0003")) { SIM(sim_state->handle_exception(context, SIM_PC, EXCEPTION_STU,  sim_state->is_scheduler_mode)); INST("STU"); }
-              if (pattern_match(inst_code, "0004")) { SIM(sim_state->handle_exception(context, SIM_PC, EXCEPTION_SII,  sim_state->is_scheduler_mode)); INST("SII"); }
-              if (pattern_match(inst_code, "0005")) { INST("WOI"); }
+              if (pattern_match(insn_code, "0000")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_FILL); INST("FILL"); }
+              if (pattern_match(insn_code, "0001")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_BREAK); INST("BREAK"); }
+              if (pattern_match(insn_code, "0002")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SYSCALL); INST("SYSCALL"); }
+              if (pattern_match(insn_code, "0003")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SWI3); INST("SWI3"); }
+              if (pattern_match(insn_code, "0004")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SWI4); INST("SWI4"); }
+              if (pattern_match(insn_code, "0005")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SWI5); INST("SWI5"); }
+              if (pattern_match(insn_code, "0006")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SII); INST("SII"); }
+              if (pattern_match(insn_code, "0007")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_HWI); INST("HWI"); }
+
+              if (pattern_match(insn_code, "0008")) { CLASS(BRANCH); SIM(sim_state->nis_task_mode = true); INST("STU"); }
+              if (pattern_match(insn_code, "0009")) { CLASS(POWER); INST("WOI"); }
               UNKNOWN;
             }
-          if ((inst_code >> 4) == 0x001)
+          if ((insn_code >> 4) == 0x001)
             {
               // Atomic group
-              if (pattern_match(inst_code, "0010")) INST("FENCE");
-              if (pattern_match(inst_code, "0011")) INST("WFENCE");
+              if (pattern_match(insn_code, "0010")) { CLASS(ATOMIC); INST("FENCE"); }
+              if (pattern_match(insn_code, "0011")) { CLASS(ATOMIC); INST("WFENCE"); }
               UNKNOWN;
             }
-          if ((inst_code >> 8) == 0x00)
+          if ((insn_code >> 8) == 0x00)
             {
               // Branch group
-              if (pattern_match(inst_code, "002.")) { SIM(SIM_PC_T = SIM_REG(FIELD_D)); INST("$pc <- %s", REG_D); }
-              if (pattern_match(inst_code, "003.")) { SIM(SIM_TPC_T = SIM_REG(FIELD_D)); INST("$tpc <- %s", REG_D); }
-              if (pattern_match(inst_code, "004.")) { SIM(SIM_REGD_T = SIM_PC); INST("%s <- $pc", REG_D); }
-              if (pattern_match(inst_code, "005.")) { SIM(SIM_REGD_T = SIM_TPC); INST("%s <- $tpc", REG_D); }
+              if (pattern_match(insn_code, "002.")) { CLASS(BRANCH); SIM(SIM_PC_T = SIM_REG(FIELD_D)); INST("$pc <- %s", REG_D); }
+              if (pattern_match(insn_code, "003.")) { CLASS(MOV); SIM(SIM_TPC_T = SIM_REG(FIELD_D)); INST("$tpc <- %s", REG_D); }
+              if (pattern_match(insn_code, "004.")) { CLASS(MOV); SIM(SIM_REGD_T = SIM_PC); INST("%s <- $pc", REG_D); }
+              if (pattern_match(insn_code, "005.")) { CLASS(MOV); SIM(SIM_REGD_T = SIM_TPC); INST("%s <- $tpc", REG_D); }
               UNKNOWN;
             }
           // Unary group
-          if (pattern_match(inst_code, "01..")) { SIM(SIM_REGD_T = SIM_REG(FIELD_A) + 1); INST("%s <- %s + 1", REG_D, REG_A); }
-          if (pattern_match(inst_code, "02..")) { SIM(SIM_REGD_T = SIM_REG(FIELD_A) - 1); INST("%s <- %s - 1", REG_D, REG_A); }
-          if (pattern_match(inst_code, "03..")) { SIM(SIM_SREGD_T = -SIM_SREG(FIELD_A)); INST("%s <- -%s", SREG_D, SREG_A); }
-          if (pattern_match(inst_code, "04..")) { SIM(SIM_REGD_T = ~SIM_REG(FIELD_A)); INST("%s <- ~%s", REG_D, REG_A); }
-          if (pattern_match(inst_code, "05..")) { SIM(SIM_REGD_T = bswap(SIM_REG(FIELD_A))); INST("%s <- bswap %s", REG_D, REG_A); }
-          if (pattern_match(inst_code, "06..")) { SIM(SIM_REGD_T = wswap(SIM_REG(FIELD_A))); INST("%s <- wswap %s", REG_D, REG_A); }
-          if (pattern_match(inst_code, "07..")) { SIM(SIM_REGD_T = bsi(SIM_REG(FIELD_A))); INST("%s <- bsi %s", REG_D, REG_A); }
-          if (pattern_match(inst_code, "08..")) { SIM(SIM_REGD_T = wsi(SIM_REG(FIELD_A))); INST("%s <- wsi %s", REG_D, REG_A); }
-          if (pattern_match(inst_code, "09..")) { SIM(SIM_SREGD_T = sim_state->floor(SIM_FREG(FIELD_A))); INST("%s <- floor %s", SREG_D, FREG_A); }
-          if (pattern_match(inst_code, "0a..")) { SIM(SIM_REGD_T = as_uint(SIM_SREG(FIELD_A))); INST("%s <- %s", FREG_D, SREG_A); }
-          if (pattern_match(inst_code, "0b..")) { SIM(SIM_REGD_T = as_uint(1.0f / SIM_FREG(FIELD_A))); INST("%s <- 1 / %s", FREG_D, FREG_A); }
-          if (pattern_match(inst_code, "0c..")) { SIM(SIM_REGD_T = as_uint(sim_state->rsqrt(SIM_FREG(FIELD_A)))); INST("%s <- rsqrt %s", FREG_D, FREG_A); }
-          if (pattern_match(inst_code, "0d..")) { SIM(SIM_REGD_T = SIM_PC + sim_link_offset(FIELD_A)); INST("%s <- $pc + %s", REG_D, format_link_offset(FIELD_A, str_buffer)); }
+          if (pattern_match(insn_code, "01..")) { CLASS(ARITH); SIM(SIM_REGD_T = SIM_REG(FIELD_A) + 1); INST("%s <- %s + 1", REG_D, REG_A); }
+          if (pattern_match(insn_code, "02..")) { CLASS(ARITH); SIM(SIM_REGD_T = SIM_REG(FIELD_A) - 1); INST("%s <- %s - 1", REG_D, REG_A); }
+          if (pattern_match(insn_code, "03..")) { CLASS(ARITH); SIM(SIM_SREGD_T = -SIM_SREG(FIELD_A)); INST("%s <- -%s", SREG_D, SREG_A); }
+          if (pattern_match(insn_code, "04..")) { CLASS(BIT); SIM(SIM_REGD_T = ~SIM_REG(FIELD_A)); INST("%s <- ~%s", REG_D, REG_A); }
+          if (pattern_match(insn_code, "05..")) { CLASS(BIT); SIM(SIM_REGD_T = bswap(SIM_REG(FIELD_A))); INST("%s <- bswap %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, "06..")) { CLASS(BIT); SIM(SIM_REGD_T = wswap(SIM_REG(FIELD_A))); INST("%s <- wswap %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, "07..")) { CLASS(BIT); SIM(SIM_REGD_T = bsi(SIM_REG(FIELD_A))); INST("%s <- bsi %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, "08..")) { CLASS(BIT); SIM(SIM_REGD_T = wsi(SIM_REG(FIELD_A))); INST("%s <- wsi %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, "09..")) { CLASS(FP); SIM(SIM_REGD_T = sim_state->floor(SIM_FREG(FIELD_A))); INST("%s <- floor %s", SREG_D, FREG_A); }
+          if (pattern_match(insn_code, "0a..")) { CLASS(FP); SIM(SIM_REGD_T = as_uint(SIM_SREG(FIELD_A))); INST("%s <- %s", FREG_D, SREG_A); }
+          if (pattern_match(insn_code, "0b..")) {
+            CLASS(FP);
+            SIM(
+              if (SIM_FREG(FIELD_A) == 0.0f)
+                sim_state->insn_exception = BREW_EXCEPTION_F_DIV_BY_ZERO;
+              else
+                SIM_REGD_T = as_uint(1.0f / SIM_FREG(FIELD_A));
+            );
+            INST("%s <- 1 / %s", FREG_D, FREG_A);
+          }
+          if (pattern_match(insn_code, "0c..")) {
+            CLASS(FP);
+            SIM(
+              if (SIM_FREG(FIELD_A) <= 0.0f)
+                sim_state->insn_exception = BREW_EXCEPTION_F_NEG_RSQRT;
+              else
+                SIM_REGD_T = as_uint(sim_state->rsqrt(SIM_FREG(FIELD_A)));
+            );
+            INST("%s <- rsqrt %s", FREG_D, FREG_A);
+          }
+          if (pattern_match(insn_code, "0d..")) { CLASS(LINK); SIM(SIM_REGD_T = SIM_PC + sim_link_offset(FIELD_A)); INST("%s <- $pc + %s", REG_D, format_link_offset(FIELD_A, str_buffer)); }
 
           UNKNOWN;
           break;
-        REGULAR_ALU_PATTERN_UUU(1, ^, xor_op, "");
-        REGULAR_ALU_PATTERN_UUU(2, |, ior_op, "");
-        REGULAR_ALU_PATTERN_UUU(3, &, and_op, "");
-        REGULAR_ALU_PATTERN_UUU(4, +, add_op, "");
-        REGULAR_ALU_PATTERN_UUU(5, -, sub_op, "");
-        REGULAR_ALU_PATTERN_UUU(6, <<, lsh_op, "");
-        REGULAR_ALU_PATTERN_UUU(7, >>, rsh_op, "");
-        REGULAR_ALU_PATTERN_SSU(8, >>, srsh_op, "");
-        REGULAR_ALU_PATTERN_UUU(9, *, mul_op, "");
-        REGULAR_ALU_PATTERN_UUU(a, *, uumul_op, "upper ");
-        REGULAR_ALU_PATTERN_SSS(b, *, sumul_op, "upper ");
-        REGULAR_ALU_PATTERN_FFF(c, +, fadd_op, "");
-        REGULAR_ALU_PATTERN_FFF(d, -, fsub_op, "");
-        REGULAR_ALU_PATTERN_FFF(e, *, fmul_op, "");
+        REGULAR_ALU_PATTERN_UUU(1, ^, xor_op, "", LOGIC);
+        REGULAR_ALU_PATTERN_UUU(2, |, ior_op, "", LOGIC);
+        REGULAR_ALU_PATTERN_UUU(3, &, and_op, "", LOGIC);
+        REGULAR_ALU_PATTERN_UUU(4, +, add_op, "", ARITH);
+        REGULAR_ALU_PATTERN_UUU(5, -, sub_op, "", ARITH);
+        REGULAR_ALU_PATTERN_UUU(6, <<, lsh_op, "", SHIFT);
+        REGULAR_ALU_PATTERN_UUU(7, >>, rsh_op, "", SHIFT);
+        REGULAR_ALU_PATTERN_SSU(8, >>, srsh_op, "", SHIFT);
+        REGULAR_ALU_PATTERN_UUU(9, *, mul_op, "", MUL);
+        REGULAR_ALU_PATTERN_UUU(a, *, uumul_op, "upper ", MUL);
+        REGULAR_ALU_PATTERN_SSS(b, *, sumul_op, "upper ", MUL);
+        REGULAR_ALU_PATTERN_FFF(c, +, fadd_op, "", FP);
+        REGULAR_ALU_PATTERN_FFF(d, -, fsub_op, "", FP);
+        REGULAR_ALU_PATTERN_FFF(e, *, fmul_op, "", FP);
         }
     }
   else if (FIELD_C == 0xf)
@@ -505,70 +526,70 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
         {
           switch (FIELD_B & 0x7)
             {
-              case 0: SIM(SIM_REGD_T = sim_mem_load(context, sim_state,  8, true,  SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", SREG_D, format_mem_ref(8,  true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 1: SIM(SIM_REGD_T = sim_mem_load(context, sim_state,  8, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(8,  true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 2: SIM(SIM_REGD_T = sim_mem_load(context, sim_state, 16, true,  SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", SREG_D, format_mem_ref(16, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 3: SIM(SIM_REGD_T = sim_mem_load(context, sim_state, 16, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(16, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 4: SIM(SIM_REGD_T = sim_mem_load(context, sim_state, 32, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 5: SIM(sim_mem_store(context, sim_state,  8, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(8,  false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
-              case 6: SIM(sim_mem_store(context, sim_state, 16, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(16, false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
-              case 7: SIM(sim_mem_store(context, sim_state, 32, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(32, false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
+              case 0: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state,  8, true,  SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", SREG_D, format_mem_ref(8,  true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 1: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state,  8, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(8,  true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 2: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state, 16, true,  SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", SREG_D, format_mem_ref(16, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 3: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state, 16, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(16, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 4: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state, 32, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 5: SIM( CLASS(ST); sim_mem_store(context, sim_state,  8, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(8,  false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
+              case 6: SIM( CLASS(ST); sim_mem_store(context, sim_state, 16, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(16, false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
+              case 7: SIM( CLASS(ST); sim_mem_store(context, sim_state, 32, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(32, false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
             }
         }
       else
         {
-          if (pattern_match(inst_code, "fcff")) SIM(SIM_PC_T = sim_mem_load(context, sim_state, 32, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("$pc <- %s", format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-          if (pattern_match(inst_code, "fc.f")) SIM(SIM_PC_T = sim_mem_load(context, sim_state, 32, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("$pc <- %s", format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+          if (pattern_match(insn_code, "fcff")) { CLASS(BRANCH); SIM(SIM_PC_T = sim_mem_load(context, sim_state, 32, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("$pc <- %s", format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer)); }
+          if (pattern_match(insn_code, "fc.f")) { CLASS(BRANCH); SIM(SIM_PC_T = sim_mem_load(context, sim_state, 32, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("$pc <- %s", format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer)); }
         }
 
     }
   else if (FIELD_D == 0xf && FIELD_C != 0xf)
     {
       // conditional branch group
-      if (pattern_match(inst_code, "00.f")) SIM(if (SIM_REG(FIELD_A)  == 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "01.f")) SIM(if (SIM_REG(FIELD_A)  != 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "02.f")) SIM(if (SIM_SREG(FIELD_A)  < 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < 0 $pc %s",  SREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "03.f")) SIM(if (SIM_SREG(FIELD_A) >= 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= 0 $pc %s", SREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "04.f")) SIM(if (SIM_SREG(FIELD_A)  > 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s > 0 $pc %s",  SREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "05.f")) SIM(if (SIM_SREG(FIELD_A) <= 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s <= 0 $pc %s", SREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "06.f")) UNKNOWN;
-      if (pattern_match(inst_code, "07.f")) UNKNOWN;
-      if (pattern_match(inst_code, "08.f")) UNKNOWN;
-      if (pattern_match(inst_code, "09.f")) UNKNOWN;
-      if (pattern_match(inst_code, "0a.f")) UNKNOWN;
-      if (pattern_match(inst_code, "0b.f")) SIM(if (SIM_FREG(FIELD_A)  < 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < 0 $pc %s",  FREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "0c.f")) SIM(if (SIM_FREG(FIELD_A) >= 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= 0 $pc %s", FREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "0d.f")) SIM(if (SIM_FREG(FIELD_A)  > 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s > 0 $pc %s",  FREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "0e.f")) SIM(if (SIM_FREG(FIELD_A) <= 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s <= 0 $pc %s", FREG_A, format_branch_target(field_e, str_buffer));
+      if (pattern_match(insn_code, "00.f")) { CLASS(CBRANCH0); SIM(if (SIM_REG(FIELD_A)  == 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "01.f")) { CLASS(CBRANCH0); SIM(if (SIM_REG(FIELD_A)  != 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "02.f")) { CLASS(CBRANCH0); SIM(if (SIM_SREG(FIELD_A)  < 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < 0 $pc %s",  SREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "03.f")) { CLASS(CBRANCH0); SIM(if (SIM_SREG(FIELD_A) >= 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= 0 $pc %s", SREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "04.f")) { CLASS(CBRANCH0); SIM(if (SIM_SREG(FIELD_A)  > 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s > 0 $pc %s",  SREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "05.f")) { CLASS(CBRANCH0); SIM(if (SIM_SREG(FIELD_A) <= 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s <= 0 $pc %s", SREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "06.f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "07.f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "08.f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "09.f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "0a.f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "0b.f")) { CLASS(CBRANCH0FP); SIM(if (SIM_FREG(FIELD_A)  < 0.0f) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < 0 $pc %s",  FREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "0c.f")) { CLASS(CBRANCH0FP); SIM(if (SIM_FREG(FIELD_A) >= 0.0f) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= 0 $pc %s", FREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "0d.f")) { CLASS(CBRANCH0FP); SIM(if (SIM_FREG(FIELD_A)  > 0.0f) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s > 0 $pc %s",  FREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "0e.f")) { CLASS(CBRANCH0FP); SIM(if (SIM_FREG(FIELD_A) <= 0.0f) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s <= 0 $pc %s", FREG_A, format_branch_target(field_e, str_buffer)); }
 
-      if (pattern_match(inst_code, "1..f")) SIM(if (SIM_REG(FIELD_B)  == SIM_REG(FIELD_A))  SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == %s $pc %s",  REG_B,  REG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "2..f")) SIM(if (SIM_REG(FIELD_B)  != SIM_REG(FIELD_A))  SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != %s $pc %s",  REG_B,  REG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "3..f")) SIM(if (SIM_SREG(FIELD_B)  < SIM_SREG(FIELD_A)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s",  SREG_B, SREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "4..f")) SIM(if (SIM_SREG(FIELD_B) >= SIM_SREG(FIELD_A)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", SREG_B, SREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "5..f")) SIM(if (SIM_REG(FIELD_B)   < SIM_REG(FIELD_A))  SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s",   REG_B,  REG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "6..f")) SIM(if (SIM_REG(FIELD_B)  >= SIM_REG(FIELD_A))  SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s",  REG_B,  REG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "7..f")) UNKNOWN;
-      if (pattern_match(inst_code, "8..f")) UNKNOWN;
-      if (pattern_match(inst_code, "9..f")) UNKNOWN;
-      if (pattern_match(inst_code, "a..f")) UNKNOWN;
-      if (pattern_match(inst_code, "b..f")) UNKNOWN;
-      if (pattern_match(inst_code, "c..f")) UNKNOWN;
-      if (pattern_match(inst_code, "d..f")) SIM(if (SIM_FREG(FIELD_B)  < SIM_FREG(FIELD_A)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s",  FREG_B, FREG_A, format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "e..f")) SIM(if (SIM_FREG(FIELD_B) >= SIM_FREG(FIELD_A)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", FREG_B, FREG_A, format_branch_target(field_e, str_buffer));
+      if (pattern_match(insn_code, "1..f")) { CLASS(CBRANCH); SIM(if (SIM_REG(FIELD_B)  == SIM_REG(FIELD_A))  SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == %s $pc %s",  REG_B,  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "2..f")) { CLASS(CBRANCH); SIM(if (SIM_REG(FIELD_B)  != SIM_REG(FIELD_A))  SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != %s $pc %s",  REG_B,  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "3..f")) { CLASS(CBRANCH); SIM(if (SIM_SREG(FIELD_B)  < SIM_SREG(FIELD_A)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s",  SREG_B, SREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "4..f")) { CLASS(CBRANCH); SIM(if (SIM_SREG(FIELD_B) >= SIM_SREG(FIELD_A)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", SREG_B, SREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "5..f")) { CLASS(CBRANCH); SIM(if (SIM_REG(FIELD_B)   < SIM_REG(FIELD_A))  SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s",   REG_B,  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "6..f")) { CLASS(CBRANCH); SIM(if (SIM_REG(FIELD_B)  >= SIM_REG(FIELD_A))  SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s",  REG_B,  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "7..f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "8..f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "9..f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "a..f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "b..f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "c..f")) { UNKNOWN; }
+      if (pattern_match(insn_code, "d..f")) { CLASS(CBRANCHFP); SIM(if (SIM_FREG(FIELD_B)  < SIM_FREG(FIELD_A)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s",  FREG_B, FREG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "e..f")) { CLASS(CBRANCHFP); SIM(if (SIM_FREG(FIELD_B) >= SIM_FREG(FIELD_A)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", FREG_B, FREG_A, format_branch_target(field_e, str_buffer)); }
 
-      if (pattern_match(inst_code, ".f.f")) SIM(if (get_bit(SIM_REG(FIELD_A), field_c_to_bit_map[FIELD_C]) == 1) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 1 $pc %s", REG_A, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer));
-      if (pattern_match(inst_code, "..ff")) SIM(if (get_bit(SIM_REG(FIELD_A), field_c_to_bit_map[FIELD_C]) == 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 0 $pc %s", REG_B, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer));
+      if (pattern_match(insn_code, ".f.f")) { CLASS(CBRANCHBIT); SIM(if (get_bit(SIM_REG(FIELD_A), field_c_to_bit_map[FIELD_C]) == 1) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 1 $pc %s", REG_A, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "..ff")) { CLASS(CBRANCHBIT); SIM(if (get_bit(SIM_REG(FIELD_A), field_c_to_bit_map[FIELD_C]) == 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 0 $pc %s", REG_B, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer)); }
     }
   UNKNOWN;
 }
 
 int
-brew_inst_len(uint16_t inst_code)
+brew_insn_len(uint16_t insn_code)
 {
-  if (FIELD_D == 0xf || FIELD_B == 0xf || FIELD_A == 0xf || (inst_code >> 11) == 0x1f)
+  if (FIELD_D == 0xf || FIELD_B == 0xf || FIELD_A == 0xf || (insn_code >> 11) == 0x1f)
     // We do need FIELD_E, but what size?
     if (
-      (inst_code >> 11) == 0x1f ? (FIELD_A == 0xf) : (FIELD_A == 0xf && FIELD_D != 0xf)
+      (insn_code >> 11) == 0x1f ? (FIELD_A == 0xf) : (FIELD_A == 0xf && FIELD_D != 0xf)
     )
       return 6;
     else
@@ -579,12 +600,46 @@ brew_inst_len(uint16_t inst_code)
 
 
 void
-brew_print_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t inst_code, uint32_t field_e)
+brew_print_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t insn_code, uint32_t field_e)
 {
   brew_sim_state sim_state;
   memset(&sim_state, 0, sizeof(sim_state));
   sim_state.tracer = fpr;
   sim_state.tracer_strm = strm_or_buffer;
-  brew_sim_insn(NULL, &sim_state, inst_code, field_e);
+  brew_sim_insn(NULL, &sim_state, insn_code, field_e);
+}
+
+static const char *insn_class_names[] = {
+  "unknown",
+  "exception/syscall",
+  "atomic",
+  "move",
+  "load immediate",
+  "bit manipulation",
+  "logic",
+  "arithmetic",
+  "shift",
+  "multiply",
+  "floating point",
+  "load",
+  "store",
+  "unconditional branch",
+  "conditional branch",
+  "conditional branch with 0",
+  "floating point conditional branch",
+  "floating point conditional branch with 0",
+  "bit-test conditional branch",
+  "link setup",
+  "power management",
+  "nop",
+  "----"
+};
+
+const char *
+brew_insn_class_name(brew_insn_classes cls)
+{
+  OPCODES_ASSERT(cls < BREW_INSN_CLS_MAX);
+  OPCODES_ASSERT(cls < sizeof(insn_class_names)/sizeof(insn_class_names[0]));
+  return insn_class_names[cls];
 }
 

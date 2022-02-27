@@ -39,6 +39,8 @@
 #include "record-full.h"
 
 #include "brew-tdep.h"
+#include "sim/brew/gdb-if.h"
+#include "opcode/brew_abi.h"
 #include <algorithm>
 
 /* Use an invalid address value as 'not available' marker.  */
@@ -50,7 +52,7 @@ struct brew_frame_cache
   CORE_ADDR base;
   CORE_ADDR pc;
   LONGEST framesize;
-  CORE_ADDR saved_regs[BREW_NUM_REGS];
+  CORE_ADDR saved_regs[BREW_GDB_NUM_REGS];
   CORE_ADDR saved_sp;
 };
 
@@ -92,9 +94,10 @@ brew_register_name (struct gdbarch *gdbarch, int reg_nr)
 static struct type *
 brew_register_type (struct gdbarch *gdbarch, int reg_nr)
 {
-  if (reg_nr == BREW_PC_REGNUM)
+  // FIXME: this only supports user-mode debugging
+  if (reg_nr == BREW_GDB_REG_TPC)
     return  builtin_type (gdbarch)->builtin_func_ptr;
-  else if (reg_nr == BREW_SP_REGNUM || reg_nr == BREW_FP_REGNUM)
+  else if (reg_nr == BREW_REG_SP || reg_nr == BREW_REG_FP)
     return builtin_type (gdbarch)->builtin_data_ptr;
   else
     return builtin_type (gdbarch)->builtin_int32;
@@ -113,11 +116,11 @@ brew_store_return_value (struct type *type, struct regcache *regcache,
   CORE_ADDR regval;
   int len = TYPE_LENGTH (type);
 
-  /* Things always get returned in RET1_REGNUM onward. */
+  /* Things always get returned in argument registers onward. */
   for (int ofs = 0; ofs < len; ofs+=4)
     {
-      int regno = RET1_REGNUM + ofs / 4;
-      if (regno > RETN_REGNUM)
+      int regno = BREW_REG_ARG0 + ofs / 4;
+      if (regno > BREW_REG_ARG3)
         {
           // How to handle things that are returned on the stack??
           gdb_assert(false);
@@ -145,8 +148,8 @@ brew_analyze_prologue (CORE_ADDR start_addr, CORE_ADDR end_addr,
   int regnum;
 
   /* Record where the jsra instruction saves the PC and FP.  */
-  cache->saved_regs[BREW_PC_REGNUM] = -4;
-  cache->saved_regs[BREW_FP_REGNUM] = 0;
+  cache->saved_regs[BREW_GDB_REG_TPC] = -4;
+  cache->saved_regs[BREW_REG_FP] = 0;
   cache->framesize = 0;
 
   if (start_addr >= end_addr)
@@ -176,12 +179,12 @@ brew_analyze_prologue (CORE_ADDR start_addr, CORE_ADDR end_addr,
     {
       offset = read_memory_integer(next_addr + 2, 4, byte_order);
       inst2 = read_memory_unsigned_integer(next_addr + 6, 2, byte_order);
-      
+
       if (inst2 == 0x291e)     /* sub.l $sp, $r12 */
         {
           cache->framesize += offset;
         }
-      
+
       return (next_addr + 8);
     }
   else if ((inst & 0xff00) == 0x9100)   /* dec $sp, X */
@@ -227,10 +230,10 @@ brew_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
           struct symbol *sym;
           struct brew_frame_cache cache;
           CORE_ADDR plg_end;
-          
+
           memset (&cache, 0, sizeof cache);
-          
-          plg_end = brew_analyze_prologue (func_addr, 
+
+          plg_end = brew_analyze_prologue (func_addr,
                                             func_end, &cache, gdbarch);
           /* Found a function.  */
           sym = lookup_symbol (func_name, NULL, VAR_DOMAIN, NULL).symbol;
@@ -431,7 +434,7 @@ brew_software_single_step (struct regcache *regcache)
           break;
 
         case 0x04: /* ret */
-          regcache_cooked_read_unsigned (regcache, BREW_FP_REGNUM, &fp);
+          regcache_cooked_read_unsigned (regcache, BREW_REG_FP, &fp);
           next_pcs.push_back (brew_process_readu (fp + 4, buf, 4, byte_order));
           break;
 
@@ -451,7 +454,7 @@ brew_software_single_step (struct regcache *regcache)
   return next_pcs;
 }
 
-/* Given a return value in `regbuf' with a type `valtype', 
+/* Given a return value in `regbuf' with a type `valtype',
    extract and copy its value into `valbuf'.  */
 
 static void
@@ -465,14 +468,14 @@ brew_extract_return_value (struct type *type, struct regcache *regcache,
 
   /* By using store_unsigned_integer we avoid having to do
      anything special for small big-endian values.  */
-  regcache_cooked_read_unsigned (regcache, RET1_REGNUM, &tmp);
+  regcache_cooked_read_unsigned (regcache, BREW_REG_ARG0, &tmp);
   store_unsigned_integer (dst, (len > 4 ? len - 4 : len), byte_order, tmp);
 
   /* Ignore return values more than 8 bytes in size because the brew
      returns anything more than 8 bytes in the stack.  */
   if (len > 4)
     {
-      regcache_cooked_read_unsigned (regcache, RET1_REGNUM + 1, &tmp);
+      regcache_cooked_read_unsigned (regcache, BREW_REG_ARG0 + 1, &tmp);
       store_unsigned_integer (dst + len - 4, 4, byte_order, tmp);
     }
 }
@@ -510,7 +513,7 @@ brew_alloc_frame_cache (void)
   cache->saved_sp = 0;
   cache->pc = 0;
   cache->framesize = 0;
-  for (i = 0; i < BREW_NUM_REGS; ++i)
+  for (i = 0; i < BREW_GDB_NUM_REGS; ++i)
     cache->saved_regs[i] = REG_UNAVAIL;
 
   return cache;
@@ -531,7 +534,7 @@ brew_frame_cache (struct frame_info *this_frame, void **this_cache)
   cache = brew_alloc_frame_cache ();
   *this_cache = cache;
 
-  cache->base = get_frame_register_unsigned (this_frame, BREW_FP_REGNUM);
+  cache->base = get_frame_register_unsigned (this_frame, BREW_REG_FP);
   if (cache->base == 0)
     return cache;
 
@@ -545,7 +548,7 @@ brew_frame_cache (struct frame_info *this_frame, void **this_cache)
 
   cache->saved_sp = cache->base - cache->framesize;
 
-  for (i = 0; i < BREW_NUM_REGS; ++i)
+  for (i = 0; i < BREW_GDB_NUM_REGS; ++i)
     if (cache->saved_regs[i] != REG_UNAVAIL)
       cache->saved_regs[i] = cache->base - cache->saved_regs[i];
 
@@ -580,10 +583,10 @@ brew_frame_prev_register (struct frame_info *this_frame,
 
   gdb_assert (regnum >= 0);
 
-  if (regnum == BREW_SP_REGNUM && cache->saved_sp)
+  if (regnum == BREW_REG_SP && cache->saved_sp)
     return frame_unwind_got_constant (this_frame, regnum, cache->saved_sp);
 
-  if (regnum < BREW_NUM_REGS && cache->saved_regs[regnum] != REG_UNAVAIL)
+  if (regnum < BREW_GDB_NUM_REGS && cache->saved_regs[regnum] != REG_UNAVAIL)
     return frame_unwind_got_memory (this_frame, regnum,
                                     cache->saved_regs[regnum]);
 
@@ -645,7 +648,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
         {
           /* This is a Form 3 instruction.  */
           int opcode = (inst >> 10 & 0xf);
-          
+
           switch (opcode)
             {
             case 0x00: /* beq */
@@ -715,21 +718,21 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
         case 0x03: /* jsra */
           {
             regcache->raw_read (
-                               BREW_SP_REGNUM, (gdb_byte *) & tmpu32);
-            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+                               BREW_REG_SP, (gdb_byte *) & tmpu32);
+            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                4, byte_order);
-            if (record_full_arch_list_add_reg (regcache, BREW_FP_REGNUM)
+            if (record_full_arch_list_add_reg (regcache, BREW_REG_FP)
                 || (record_full_arch_list_add_reg (regcache,
-                                                   BREW_SP_REGNUM))
+                                                   BREW_REG_SP))
                 || record_full_arch_list_add_mem (tmpu32 - 12, 12))
               return -1;
           }
           break;
         case 0x04: /* ret */
           {
-            if (record_full_arch_list_add_reg (regcache, BREW_FP_REGNUM)
+            if (record_full_arch_list_add_reg (regcache, BREW_REG_FP)
                 || (record_full_arch_list_add_reg (regcache,
-                                                   BREW_SP_REGNUM)))
+                                                   BREW_REG_SP)))
               return -1;
           }
           break;
@@ -744,7 +747,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
           {
             int reg = (inst >> 4) & 0xf;
             regcache->raw_read (reg, (gdb_byte *) & tmpu32);
-            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                4, byte_order);
             if (record_full_arch_list_add_reg (regcache, reg)
                 || record_full_arch_list_add_mem (tmpu32 - 4, 4))
@@ -769,7 +772,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
           break;
         case 0x09: /* sta.l */
           {
-            tmpu32 = (uint32_t) brew_process_readu (addr+2, buf, 
+            tmpu32 = (uint32_t) brew_process_readu (addr+2, buf,
                                                      4, byte_order);
             if (record_full_arch_list_add_mem (tmpu32, 4))
               return -1;
@@ -786,7 +789,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
           {
             int reg = (inst >> 4) & 0xf;
             regcache->raw_read (reg, (gdb_byte *) & tmpu32);
-            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                4, byte_order);
             if (record_full_arch_list_add_mem (tmpu32, 4))
               return -1;
@@ -805,7 +808,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
             uint32_t offset = (((int16_t) brew_process_readu (addr+2, buf, 2,
                                                                byte_order)) << 16 ) >> 16;
             regcache->raw_read (reg, (gdb_byte *) & tmpu32);
-            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                4, byte_order);
             tmpu32 += offset;
             if (record_full_arch_list_add_mem (tmpu32, 4))
@@ -845,12 +848,12 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
         case 0x19: /* jsr */
           {
             regcache->raw_read (
-                               BREW_SP_REGNUM, (gdb_byte *) & tmpu32);
-            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+                               BREW_REG_SP, (gdb_byte *) & tmpu32);
+            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                4, byte_order);
-            if (record_full_arch_list_add_reg (regcache, BREW_FP_REGNUM)
+            if (record_full_arch_list_add_reg (regcache, BREW_REG_FP)
                 || (record_full_arch_list_add_reg (regcache,
-                                                   BREW_SP_REGNUM))
+                                                   BREW_REG_SP))
                 || record_full_arch_list_add_mem (tmpu32 - 12, 12))
               return -1;
           }
@@ -873,7 +876,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
           {
             int reg = (inst >> 4) & 0xf;
             regcache->raw_read (reg, (gdb_byte *) & tmpu32);
-            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                4, byte_order);
             if (record_full_arch_list_add_mem (tmpu32, 1))
               return -1;
@@ -899,7 +902,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
           {
             int reg = (inst >> 4) & 0xf;
             regcache->raw_read (reg, (gdb_byte *) & tmpu32);
-            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                4, byte_order);
             if (record_full_arch_list_add_mem (tmpu32, 2))
               return -1;
@@ -935,7 +938,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
           break;
         case 0x30: /* swi */
           {
-            /* We currently implement support for libgloss' 
+            /* We currently implement support for libgloss'
                system calls.  */
 
             int inum = brew_process_readu (addr+2, buf, 4, byte_order);
@@ -949,7 +952,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
                 break;
               case 0x2: /* SYS_open */
                 {
-                  if (record_full_arch_list_add_reg (regcache, RET1_REGNUM))
+                  if (record_full_arch_list_add_reg (regcache, BREW_REG_ARG0))
                     return -1;
                 }
                 break;
@@ -959,13 +962,13 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
 
                   /* Read buffer pointer is in $r1.  */
                   regcache->raw_read (3, (gdb_byte *) & ptr);
-                  ptr = extract_unsigned_integer ((gdb_byte *) & ptr, 
+                  ptr = extract_unsigned_integer ((gdb_byte *) & ptr,
                                                   4, byte_order);
 
                   /* String length is at 0x12($fp).  */
                   regcache->raw_read (
-                                     BREW_FP_REGNUM, (gdb_byte *) & tmpu32);
-                  tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+                                     BREW_REG_FP, (gdb_byte *) & tmpu32);
+                  tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                      4, byte_order);
                   length = brew_process_readu (tmpu32+20, buf, 4, byte_order);
 
@@ -975,7 +978,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
                 break;
               case 0x5: /* SYS_write */
                 {
-                  if (record_full_arch_list_add_reg (regcache, RET1_REGNUM))
+                  if (record_full_arch_list_add_reg (regcache, BREW_REG_ARG0))
                     return -1;
                 }
                 break;
@@ -1010,7 +1013,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
             uint32_t offset = (((int16_t) brew_process_readu (addr+2, buf, 2,
                                                                byte_order)) << 16 ) >> 16;
             regcache->raw_read (reg, (gdb_byte *) & tmpu32);
-            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                4, byte_order);
             tmpu32 += offset;
             if (record_full_arch_list_add_mem (tmpu32, 1))
@@ -1030,7 +1033,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
             uint32_t offset = (((int16_t) brew_process_readu (addr+2, buf, 2,
                                                                byte_order)) << 16 ) >> 16;
             regcache->raw_read (reg, (gdb_byte *) & tmpu32);
-            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32, 
+            tmpu32 = extract_unsigned_integer ((gdb_byte *) & tmpu32,
                                                4, byte_order);
             tmpu32 += offset;
             if (record_full_arch_list_add_mem (tmpu32, 2))
@@ -1043,7 +1046,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
         }
     }
 
-  if (record_full_arch_list_add_reg (regcache, BREW_PC_REGNUM))
+  if (record_full_arch_list_add_reg (regcache, BREW_GDB_REG_TPC))
     return -1;
   if (record_full_arch_list_add_end ())
     return -1;
@@ -1069,9 +1072,9 @@ brew_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_wchar_bit (gdbarch, 32);
   set_gdbarch_wchar_signed (gdbarch, 0);
 
-  set_gdbarch_num_regs (gdbarch, BREW_NUM_REGS);
-  set_gdbarch_sp_regnum (gdbarch, BREW_SP_REGNUM);
-  set_gdbarch_pc_regnum (gdbarch, BREW_PC_REGNUM);
+  set_gdbarch_num_regs (gdbarch, BREW_GDB_NUM_REGS);
+  set_gdbarch_sp_regnum (gdbarch, BREW_REG_SP);
+  set_gdbarch_pc_regnum (gdbarch, BREW_GDB_REG_TPC);
   set_gdbarch_register_name (gdbarch, brew_register_name);
   set_gdbarch_register_type (gdbarch, brew_register_type);
 

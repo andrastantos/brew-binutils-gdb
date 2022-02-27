@@ -1,5 +1,5 @@
 /* Target-dependent code for brew
- 
+
    Copyright (C) 2009-2021 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -21,38 +21,11 @@
 #define BREW_TDEP_H
 
 #include "gdbarch.h"
+#include "opcode/brew_abi.h"
 
 struct brew_gdbarch_tdep : gdbarch_tdep
 {
   /* gdbarch target dependent data here.  Currently unused for BREW.  */
 };
-
-enum brew_regnum
-{
-  R0_REGNUM = 0,
-  R1_REGNUM = 1,
-  R2_REGNUM = 2,
-  R3_REGNUM = 3,
-  R4_REGNUM = 4,
-  R5_REGNUM = 5,
-  R6_REGNUM = 6,
-  R7_REGNUM = 7,
-  R8_REGNUM = 8,
-  R9_REGNUM = 9,
-  R10_REGNUM = 10,
-  R11_REGNUM = 11,
-  R12_REGNUM = 12,
-  R13_REGNUM = 13,
-  R14_REGNUM = 14,
-  BREW_PC_REGNUM = 0,
-  BREW_SP_REGNUM = 1,
-  BREW_FP_REGNUM = 2,
-  RET1_REGNUM = R4_REGNUM,
-  RETN_REGNUM = R7_REGNUM,
-  ARG1_REGNUM = R4_REGNUM,
-  ARGN_REGNUM = R7_REGNUM,
-};
-
-#define BREW_NUM_REGS 14
 
 #endif /* BREW_TDEP_H */

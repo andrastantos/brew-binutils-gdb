@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include "dis-asm.h" // for fprintf_ftype
 #include "opcode/brew.h"
+#include "opcode/brew_abi.h"
 #include "elf/brew.h"
 
 #define DEBUG(...) { if (trace) {fprintf (stderr, __VA_ARGS__); fprintf(stderr, "\n");} }
@@ -33,6 +34,26 @@
 const char comment_chars[]        = "#";
 const char line_separator_chars[] = ";";
 const char line_comment_chars[]   = "#";
+
+// Throughout the code we handle all registers that can be named in assembly
+// by a simple integer. Most of the these integers correspond to the register
+// file index (FIELD_A/B/D), but there are a few special ones:
+#define BREW_REG_PC 0x10
+#define BREW_REG_TPC 0x11
+
+#define BREW_REG_GP_MASK 0xf
+#define BREW_REG_PC_RELATED 0x10
+#define BREW_REG_BASE_MASK  0x1f
+
+#define BREW_IS_GP_REG(r) (((r) & BREW_REG_BASE_MASK) == ((r) & BREW_REG_GP_MASK))
+#define BREW_IS_PC_RELATED_REG(r) (((r) & BREW_REG_PC_RELATED) != 0)
+
+// We also add flags to indicate the context of the register use: whether it is
+// referenced as a signed or a floating point register
+#define BREW_REG_FLAG_MASK 0xf000
+#define BREW_REG_FLAG_FLOAT 0x2000
+#define BREW_REG_FLAG_SIGNED 0x4000
+
 
 /* Global variables */
 static char *tok_start; /* Points to the beginning of the current token to be parsed */
@@ -50,11 +71,20 @@ typedef struct
 static inst_tableS inst_table[] =
 {
   { "fill",    0x0000 },
+  { "swi0",    0x0000 },
   { "break",   0x0001 },
+  { "swi1",    0x0001 },
   { "syscall", 0x0002 },
-  { "stu",     0x0003 },
-  { "sii",     0x0004 },
-  { "woi",     0x0005 },
+  { "swi2",    0x0002 },
+  { "swi3",    0x0003 },
+  { "swi4",    0x0004 },
+  { "swi5",    0x0005 },
+  { "sii",     0x0006 },
+  { "swi6",    0x0006 },
+  { "hwi",     0x0007 },
+  { "swi7",    0x0007 },
+  { "stu",     0x0008 },
+  { "woi",     0x0009 },
   { "fence",   0x0010 },
   { "wfence",  0x0011 },
   { "nop",     0x2222 }, /* pseudo instruction: $r1 = $r1 | $r1, which is of course, a no-op */
@@ -479,7 +509,6 @@ parse_int(char *str, int *int_result)
   *int_result = ret_val;
   return true;
 }
-
 
 /*
    registers are named (case insensitive) as:

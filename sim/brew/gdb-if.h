@@ -1,4 +1,4 @@
-/* Brew Simulator definition.
+/* Brew Simulator GDB interface definition.
    Copyright (C) 2009-2021 Free Software Foundation, Inc.
    Contributed by Anthony Green <green@moxielogic.com>,
     modified by Andras Tantos
@@ -18,29 +18,16 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-/* TODO: At this point, this is just the moxie simulator, renamed. Obviously that's wrong */
+#ifndef __SIM_BREW_GDB_IF_H__
+#define __SIM_BREW_GDB_IF_H__
 
-#ifndef SIM_MAIN_H
-#define SIM_MAIN_H
+// Most registers are seen by the same index in both the processor (simulator)
+// and in GDB. The two PCs are handled differently though. They are indexed
+// as registers normal by GDB while they're special-cased in the simulator.
+#define BREW_GDB_REG_TPC 15
+#define BREW_GDB_REG_SPC 16
 
-#include "sim-basics.h"
-#include "sim-base.h"
-#include "bfd.h"
-#include <stdint.h>
-#include "opcode/brew.h"
-
-typedef struct {
-  uint32_t addr;
-  int access_size;
-  bool is_write;
-  uint32_t value;
-  bool is_valid;
-} mem_trace_s;
-struct _sim_cpu {
-  sim_cpu_base base;
-  brew_sim_state sim_state;
-  char decode_buf[255];
-  mem_trace_s mem_trace;
-};
+// Total number of registers as seen by GDB.
+#define BREW_GDB_NUM_REGS 17
 
 #endif

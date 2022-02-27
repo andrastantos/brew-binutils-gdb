@@ -60,7 +60,7 @@ int
 print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
 {
   int length;
-  uint16_t inst_code;
+  uint16_t insn_code;
   uint32_t field_e;
   uint16_t field_e16;
   fprintf_ftype fpr;
@@ -72,11 +72,11 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
   stream = infoP->stream;
   fpr = infoP->fprintf_func;
 
-  if (!get_uint16(&inst_code, infoP, addr))
+  if (!get_uint16(&insn_code, infoP, addr))
     return -1;
   addr += 2;
 
-  length = brew_inst_len(inst_code);
+  length = brew_insn_len(insn_code);
   switch (length)
     {
     case 2:
@@ -96,6 +96,6 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
     }
 
   addr += length-2;
-  brew_print_insn(fpr, stream, inst_code, field_e);
+  brew_print_insn(fpr, stream, insn_code, field_e);
   return length;
 }
