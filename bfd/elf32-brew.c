@@ -97,8 +97,8 @@ static reloc_howto_type brew_elf_howto_table[] =
     0xffff,                     /* src_mask */
     0xffff,                     /* dst_mask */
     // TODO: not sure what the right value here is.
-    //true                        /* pcrel_offset */
-    false                       /* pcrel_offset */
+    true                        /* pcrel_offset */
+    //false                       /* pcrel_offset */
   ),
 };
 
