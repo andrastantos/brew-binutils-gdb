@@ -316,7 +316,6 @@ binary_op(
       float field_e_as_float;
       int reg_idx = is_short ? FIELD_A : FIELD_B;
 
-      if (is_short) field_e = (int32_t)field_e << 16 >> 16; // sign-extend to 32-bits
       memcpy(&field_e_as_float, &field_e, 4);
 
       switch (type_b)

@@ -1656,7 +1656,7 @@ md_pcrel_from (fixS *fixP)
 {
   gas_assert(fixP->fx_r_type == BFD_RELOC_16_PCREL);
 
-  valueT addr = fixP->fx_where + fixP->fx_frag->fr_address;
+  valueT addr = fixP->fx_where + fixP->fx_frag->fr_address - 2;
   return addr;
 }
 

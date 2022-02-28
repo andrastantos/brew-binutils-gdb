@@ -698,10 +698,9 @@ sim_engine_run(
         switch (length)
           {
             case 2:
-              field_e = sim_core_read_aligned_2(scpu, pc, exec_map, pc+2);
-              field_e = (int32_t)field_e << 16 >> 16;
             break;
             case 4:
+              field_e = sim_core_read_aligned_2(scpu, pc, exec_map, pc+2);
             break;
             case 6:
               field_e = sim_core_read_unaligned_4(scpu, pc, exec_map, pc+2);

@@ -82,12 +82,12 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
     case 2:
       field_e = 0;
       break;
-    case 4: 
+    case 4:
       if (!get_uint16(&field_e16, infoP, addr))
         return -1;
-      field_e = (int32_t)field_e16 << 16 >> 16; // sign-extend
+      field_e = field_e16;
       break;
-    case 6: 
+    case 6:
       if (!get_uint32(&field_e, infoP, addr))
         return -1;
       break;
