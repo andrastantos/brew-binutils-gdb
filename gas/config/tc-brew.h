@@ -39,3 +39,15 @@
 #define md_convert_frag(B, S, F)            as_fatal (_("convert_frag\n"))
 
 #define md_section_align(SEGMENT, SIZE)     (SIZE)
+
+// TODO: this comes from risc-v. Others (see tc-msp430.c) handle negative relocations
+//       in tc_gen_reloc.
+/* Postpone text-section label subtraction calculation until linking, since
+   linker relaxations might change the deltas.  */
+#define TC_FORCE_RELOCATION_SUB_SAME(FIX, SEG)	\
+  (GENERIC_FORCE_RELOCATION_SUB_SAME (FIX, SEG)	\
+   || ((SEG)->flags & SEC_CODE) != 0)
+#define TC_FORCE_RELOCATION_SUB_LOCAL(FIX, SEG) 1
+#define TC_VALIDATE_FIX_SUB(FIX, SEG) 1
+#define TC_FORCE_RELOCATION_LOCAL(FIX) 1
+#define DIFF_EXPR_OK 1
