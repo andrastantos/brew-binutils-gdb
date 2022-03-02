@@ -50,7 +50,7 @@ _start:
 # tests 'actual' (a register) against an 'expected' (immediate) value
 # Fails the test in case of a mismatch, continues running in case of a match.
   .macro TEST actual, expected
-  \actual <- \actual - \expected
+  \actual <- \actual + (-\expected)
   if \actual == 0 $pc <- 1f
   fail
 1:
