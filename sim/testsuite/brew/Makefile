@@ -1,4 +1,4 @@
-.PRECIOUS: %.o %.elf %.s %.log %.trace
+.PRECIOUS: %.o %.elf %.s %.log %.trace %.sdmp %.bdmp
 
 %.s: %.py
 	python $^ > $@
@@ -14,3 +14,9 @@
 
 %.trace: %.elf
 	brew-none-elf-run --trace-insn $^ 2>&1 | tee $@
+
+%.sdmp: %.o
+	brew-none-elf-objdump --prefix-address --show-raw-ins -d $^ > $@
+
+%.bdmp: %.elf
+	brew-none-elf-objdump --prefix-address --show-raw-ins -d $^ > $@

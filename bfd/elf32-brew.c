@@ -85,7 +85,7 @@ static reloc_howto_type brew_elf_howto_table[] =
   /* 16 bit PC relative offset.  */
   HOWTO (
     R_BREW_16_SPCREL,           /* type */
-    0,                          /* rightshift */
+    1,                          /* rightshift */
     1,                          /* size (0 = byte, 1 = short, 2 = long) */
     16,                         /* bitsize */
     true,                       /* pc_relative */
@@ -94,11 +94,10 @@ static reloc_howto_type brew_elf_howto_table[] =
     NULL,                       /* special_function */
     "R_BREW_16_SPCREL",         /* name */
     false,                      /* partial_inplace */
-    0xffff,                     /* src_mask */
+    0x0,                        /* src_mask */
     0xffff,                     /* dst_mask */
     // TODO: not sure what the right value here is.
     true                        /* pcrel_offset */
-    //false                       /* pcrel_offset */
   ),
 };
 
@@ -188,6 +187,17 @@ brew_final_link_relocate (
 
   switch (howto->type)
     {
+    case R_BREW_16_SPCREL:
+      r = _bfd_final_link_relocate(
+        howto,
+        input_bfd,
+        input_section,
+        contents,
+        rel->r_offset,
+        relocation + 2,
+        rel->r_addend
+      );
+      break;
     default:
       r = _bfd_final_link_relocate(
         howto,
@@ -198,6 +208,7 @@ brew_final_link_relocate (
         relocation,
         rel->r_addend
       );
+      break;
     }
 
   return r;
