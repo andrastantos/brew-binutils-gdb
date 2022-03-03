@@ -7,28 +7,37 @@ def op_prefix(in_a, in_b) -> str:
         return "short"
     return ""
 
-def test_uuu(r_d, in_a, in_b, op):
+def test_uuu(r_d, in_a, in_b, op, is_upper = False):
     for i in range(0,15):
         reg[i].set_val((-1)**i * (1 << i))
+    upper_str = "upper" if is_upper else ""
     print_header()
     setup()
     print(f"        #>>>>>>>")
-    print(f"        {r_d:gas} <- {op_prefix(in_a, in_b)} {in_a:gas} {op} {in_b:gas}")
+    print(f"        {r_d:gas} <- {upper_str} {op_prefix(in_a, in_b)} {in_a:gas} {op} {in_b:gas}")
     print(f"        #<<<<<<<")
-    raw_result = eval(f"({in_a.get_val()} {op} {in_b.get_val()})")
+    b_val = as_uint32(in_b.get_val())
+    if op == ">>" or op == "<<":
+        b_val = b_val & 31
+    raw_result = eval(f"({as_uint32(in_a.get_val())} {op} {b_val})")
+    if is_upper:
+        raw_result = (raw_result & 0xffff_ffff_ffff_ffff) >> 32
     r_d.set_val(raw_result & 0xffffffff)
     test()
     print()
 
-def test_sss(r_d, in_a, in_b, op):
+def test_sss(r_d, in_a, in_b, op, is_upper = False):
     for i in range(0,15):
         reg[i].set_val((-1)**i * (1 << i))
+    upper_str = "upper" if is_upper else ""
     print_header()
     setup()
     print(f"        #>>>>>>>")
-    print(f"        {r_d:gas_s} <- {op_prefix(in_a, in_b)} {in_a:gas_s} {op} {in_b:gas_s}")
+    print(f"        {r_d:gas_s} <- {upper_str} {op_prefix(in_a, in_b)} {in_a:gas_s} {op} {in_b:gas_s}")
     print(f"        #<<<<<<<")
     raw_result = eval(f"({as_sint32(in_a.get_val())} {op} {as_sint32(in_b.get_val())})")
+    if is_upper:
+        raw_result = raw_result >> 32
     r_d.set_val(raw_result & 0xffffffff)
     test()
     print()
@@ -41,7 +50,10 @@ def test_ssu(r_d, in_a, in_b, op):
     print(f"        #>>>>>>>")
     print(f"        {r_d:gas_s} <- {op_prefix(in_a, in_b)} {in_a:gas_s} {op} {in_b:gas_u}")
     print(f"        #<<<<<<<")
-    raw_result = eval(f"({as_sint32(in_a.get_val())} {op} {as_uint32(in_b.get_val())})")
+    b_val = as_uint32(in_b.get_val())
+    if op == ">>" or op == "<<":
+        b_val = b_val & 31
+    raw_result = eval(f"({as_sint32(in_a.get_val())} {op} {b_val})")
     r_d.set_val(raw_result & 0xffffffff)
     test()
     print()
@@ -70,11 +82,25 @@ start()
 #test_fff(reg[3], fimm(1), reg[2], "-")
 #test_fff(reg[3], fimm(-1), reg[2], "-")
 #test_fff(reg[3], reg[2], reg[14], "*")
-test_ssu(reg[3], reg[13], reg[2], ">>")
-test_uuu(reg[3], reg[13], reg[2], ">>")
+#test_ssu(reg[3], reg[13], reg[2], ">>")
+#test_uuu(reg[3], reg[13], reg[2], ">>")
+test_sss(reg[3],reg[3],reg[3],"*", True)
 
-#for r_d in range(0,14):
-#    for r_a in range(0,14):
-#        for r_b in range(0,14):
-#            test_rr(r_d,r_a,r_b,"+")
+for r_d in range(0,15,3):
+    for r_a in range(0,15,3):
+        for r_b in range(0,15,3):
+            test_uuu(reg[r_d],reg[r_a],reg[r_b],"^")
+            test_uuu(reg[r_d],reg[r_a],reg[r_b],"|")
+            test_uuu(reg[r_d],reg[r_a],reg[r_b],"&")
+            test_uuu(reg[r_d],reg[r_a],reg[r_b],"+")
+            test_uuu(reg[r_d],reg[r_a],reg[r_b],"-")
+            test_uuu(reg[r_d],reg[r_a],reg[r_b],"<<")
+            test_uuu(reg[r_d],reg[r_a],reg[r_b],">>")
+            test_ssu(reg[r_d],reg[r_a],reg[r_b],">>")
+            test_uuu(reg[r_d],reg[r_a],reg[r_b],"*")
+            test_uuu(reg[r_d],reg[r_a],reg[r_b],"*", True)
+            test_sss(reg[r_d],reg[r_a],reg[r_b],"*", True)
+            test_fff(reg[r_d],reg[r_a],reg[r_b],"+")
+            test_fff(reg[r_d],reg[r_a],reg[r_b],"-")
+            test_fff(reg[r_d],reg[r_a],reg[r_b],"*")
 final()
