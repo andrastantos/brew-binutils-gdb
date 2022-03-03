@@ -130,6 +130,8 @@ static const int field_c_to_bit_map[] =
 static void
 print_unknown_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t insn_code, uint32_t field_e, int length)
 {
+  if (!fpr)
+    return;
   switch (length)
     {
     case 2:
@@ -326,12 +328,14 @@ binary_op(
         default: OPCODES_ASSERT(false);
         }
 
-      fpr(strm_or_buffer, "%s <- %s%s%s %s %s", TYPED_REG(type_d, FIELD_D), prefix, operation_prefix, immed_str, operation, TYPED_REG(type_a, reg_idx));
+      if (fpr)
+        fpr(strm_or_buffer, "%s <- %s%s%s %s %s", TYPED_REG(type_d, FIELD_D), prefix, operation_prefix, immed_str, operation, TYPED_REG(type_a, reg_idx));
       SIM(SIM_REGD_T = sim_op(field_e, SIM_REG(reg_idx)));
     }
   else
     {
-      fpr(strm_or_buffer, "%s <- %s%s %s %s", TYPED_REG(type_d, FIELD_D), operation_prefix, TYPED_REG(type_a, FIELD_A), operation, TYPED_REG(type_b, FIELD_B));
+      if (fpr)
+        fpr(strm_or_buffer, "%s <- %s%s %s %s", TYPED_REG(type_d, FIELD_D), operation_prefix, TYPED_REG(type_a, FIELD_A), operation, TYPED_REG(type_b, FIELD_B));
       SIM(SIM_REGD_T = sim_op(SIM_REG(FIELD_A), SIM_REG(FIELD_B)));
     }
   return true;
