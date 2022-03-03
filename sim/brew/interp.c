@@ -323,7 +323,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
   int flags;
 
   syscall_no = sim_core_read_aligned_2(scpu, pc, exec_map, pc+2);
-  scpu->sim_state.ntpc += 4; // skip over syscall insn as well as the syscal number before returning.
+  scpu->sim_state.ntpc = scpu->sim_state.tpc + 4; // skip over syscall insn as well as the syscal number before returning.
   switch (syscall_no) {
     case SYS_exit:
       // simulated process terminating: let's terminate too!
@@ -633,6 +633,7 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
   // Handle exceptions
   if (scpu->sim_state.insn_exception != BREW_EXCEPTION_NONE)
     {
+      scpu->sim_state.ntpc = scpu->sim_state.tpc; // Undo any pending changes to $tpc
       // TODO: don't forget to set ntpc, nspc, nis_task_mode as appropriate
       if (!scpu->sim_state.is_task_mode)
         {
