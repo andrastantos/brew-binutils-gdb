@@ -1,4 +1,7 @@
-.PRECIOUS: %.o %.elf
+.PRECIOUS: %.o %.elf %.s %.log %.trace
+
+%.s: %.py
+	python $^ > $@
 
 %.o: %.s
 	brew-none-elf-as $^ -o $@
