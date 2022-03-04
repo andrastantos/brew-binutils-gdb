@@ -8,8 +8,7 @@ def op_prefix(in_a, in_b) -> str:
     return ""
 
 def test_uuu(r_d, in_a, in_b, op, is_upper = False):
-    for i in range(0,15):
-        reg[i].set_val((-1)**i * (1 << i))
+    init_regs(False)
     upper_str = "upper" if is_upper else ""
     print_header()
     setup()
@@ -27,8 +26,7 @@ def test_uuu(r_d, in_a, in_b, op, is_upper = False):
     print()
 
 def test_sss(r_d, in_a, in_b, op, is_upper = False):
-    for i in range(0,15):
-        reg[i].set_val((-1)**i * (1 << i))
+    init_regs(False)
     upper_str = "upper" if is_upper else ""
     print_header()
     setup()
@@ -43,8 +41,7 @@ def test_sss(r_d, in_a, in_b, op, is_upper = False):
     print()
 
 def test_ssu(r_d, in_a, in_b, op):
-    for i in range(0,15):
-        reg[i].set_val((-1)**i * (1 << i))
+    init_regs(False)
     print_header()
     setup()
     print(f"        #>>>>>>>")
@@ -59,8 +56,7 @@ def test_ssu(r_d, in_a, in_b, op):
     print()
 
 def test_fff(r_d, in_a, in_b, op):
-    for i in range(0,15):
-        reg[i].set_val(float_to_int(1.0 * i))
+    init_regs(True)
     print_header()
     setup()
     print(f"        #>>>>>>>")

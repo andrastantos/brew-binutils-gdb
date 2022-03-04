@@ -621,7 +621,8 @@ parse_expression(const char *token, bool support_float, bool is_short, bool is_a
   char *ret_val;
 
   /* The GAS expression parser happily accepts register names (such as $r0) as expressions. We don't want that. */
-  if (token[0] == '$')
+  /* In fact, we don't want any $ signs in expressions */
+  if (strchr(token, '$'))
     return false;
 
   /* GAS also doesn't support any floating point expressions. We need that for float immediates, so let's test for them */

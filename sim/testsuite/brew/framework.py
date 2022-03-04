@@ -142,10 +142,14 @@ class RegOrImm(object):
                 assert False, f"unrecognized format spec: {fmt_spec}"
 
     def set_val(self, val):
-        if self.is_short:
-            self.val = val & 0xffff
+        if isinstance(val, float):
+            assert not self.is_short, "Float values can't be stored in short values"
+            self.val = float_to_int(val)
         else:
-            self.val = val & 0xffffffff
+            if self.is_short:
+                self.val = val & 0xffff
+            else:
+                self.val = val & 0xffffffff
 
 
     def get_val(self):
@@ -167,3 +171,11 @@ def fimm(val):
     return RegOrImm(float_to_int(val), None)
 
 reg = list(RegOrImm(0, i) for i in range(0,15))
+
+
+def init_regs(for_float: bool):
+    for i in range(0,15):
+        if for_float:
+            reg[i].set_val((-1.0)**i * (2.0 ** i))
+        else:
+            reg[i].set_val((-1)**i * (1 << i))
