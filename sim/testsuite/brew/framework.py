@@ -73,6 +73,7 @@ def start():
     print(f"        .rept 256")
     print(f"        .long 0")
     print(f"        .endr")
+    print(f"    .buffer_end:")
     print(f"")
     print(f".text")
     print(f"    .global _start")
