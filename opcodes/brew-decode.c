@@ -581,7 +581,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
       if (pattern_match(insn_code, "e..f")) { CLASS(CBRANCHFP); SIM(if (SIM_FREG(FIELD_B) >= SIM_FREG(FIELD_A)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", FREG_B, FREG_A, format_branch_target(field_e, str_buffer)); }
 
       if (pattern_match(insn_code, ".f.f")) { CLASS(CBRANCHBIT); SIM(if (get_bit(SIM_REG(FIELD_A), field_c_to_bit_map[FIELD_C]) == 1) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 1 $pc %s", REG_A, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "..ff")) { CLASS(CBRANCHBIT); SIM(if (get_bit(SIM_REG(FIELD_A), field_c_to_bit_map[FIELD_C]) == 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 0 $pc %s", REG_B, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "..ff")) { CLASS(CBRANCHBIT); SIM(if (get_bit(SIM_REG(FIELD_B), field_c_to_bit_map[FIELD_C]) == 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 0 $pc %s", REG_B, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer)); }
     }
   UNKNOWN;
 }
