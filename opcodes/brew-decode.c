@@ -529,20 +529,20 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
         {
           switch (FIELD_B & 0x7)
             {
-              case 0: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state,  8, true,  SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", SREG_D, format_mem_ref(8,  true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 1: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state,  8, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(8,  true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 2: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state, 16, true,  SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", SREG_D, format_mem_ref(16, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 3: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state, 16, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(16, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 4: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state, 32, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
-              case 5: SIM( CLASS(ST); sim_mem_store(context, sim_state,  8, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(8,  false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
-              case 6: SIM( CLASS(ST); sim_mem_store(context, sim_state, 16, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(16, false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
-              case 7: SIM( CLASS(ST); sim_mem_store(context, sim_state, 32, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(32, false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
+              case 0: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state,  8, true,  FIELD_A, field_e, FIELD_B & 0x8)); INST("%s <- %s", SREG_D, format_mem_ref(8,  true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 1: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state,  8, false, FIELD_A, field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(8,  true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 2: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state, 16, true,  FIELD_A, field_e, FIELD_B & 0x8)); INST("%s <- %s", SREG_D, format_mem_ref(16, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 3: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state, 16, false, FIELD_A, field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(16, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 4: SIM( CLASS(LD); SIM_REGD_T = sim_mem_load(context, sim_state, 32, false, FIELD_A, field_e, FIELD_B & 0x8)); INST("%s <- %s", REG_D,  format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer));
+              case 5: SIM( CLASS(ST); sim_mem_store(context, sim_state,  8, FIELD_A, field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(8,  false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
+              case 6: SIM( CLASS(ST); sim_mem_store(context, sim_state, 16, FIELD_A, field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(16, false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
+              case 7: SIM( CLASS(ST); sim_mem_store(context, sim_state, 32, FIELD_A, field_e, FIELD_B & 0x8, SIM_REG(FIELD_D))); INST("%s <- %s", format_mem_ref(32, false, FIELD_A, field_e, FIELD_B & 0x8, str_buffer), REG_D);
             }
         }
       else
         {
-          if (pattern_match(insn_code, "fcff")) { CLASS(BRANCH); SIM(SIM_PC_T = sim_mem_load(context, sim_state, 32, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("$pc <- %s", format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer)); }
-          if (pattern_match(insn_code, "fc.f")) { CLASS(BRANCH); SIM(SIM_PC_T = sim_mem_load(context, sim_state, 32, false, SIM_REG(FIELD_A), field_e, FIELD_B & 0x8)); INST("$pc <- %s", format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer)); }
+          if (pattern_match(insn_code, "fcff")) { CLASS(BRANCH); SIM(SIM_PC_T = sim_mem_load(context, sim_state, 32, false, FIELD_A, field_e, FIELD_B & 0x8)); INST("$pc <- %s", format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer)); }
+          if (pattern_match(insn_code, "fc.f")) { CLASS(BRANCH); SIM(SIM_PC_T = sim_mem_load(context, sim_state, 32, false, FIELD_A, field_e, FIELD_B & 0x8)); INST("$pc <- %s", format_mem_ref(32, true, FIELD_A, field_e, FIELD_B & 0x8, str_buffer)); }
         }
 
     }
