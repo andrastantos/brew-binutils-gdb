@@ -67,6 +67,12 @@ def start():
     print(f"    .Lstr_fail:")
     print(f'        .string "fail\\n"')
     print(f"    .Lstr_fail_end:")
+    print(f".data")
+    print(f"    .p2align 2")
+    print(f"    .buffer:")
+    print(f"        .rept 256")
+    print(f"        .long 0")
+    print(f"        .endr")
     print(f"")
     print(f".text")
     print(f"    .global _start")
@@ -75,16 +81,6 @@ def start():
 def setup():
     for r in reg:
         print(f"        {r:gas} <- {r:val}")
-
-def test():
-    for r in reg:
-        print(f"        {r:gas} <- {r:gas} + (-{r:val})")
-        print(f"        if {r:gas} != 0 $pc <- 1f")
-        r.set_val(0)
-    print("        $pc <- 2f")
-    print("    1:")
-    fail()
-    print("    2:")
 
 def print_header():
     frame = inspect.currentframe().f_back
@@ -179,3 +175,14 @@ def init_regs(for_float: bool):
             reg[i].set_val((-1.0)**i * (2.0 ** i))
         else:
             reg[i].set_val((-1)**i * (1 << i))
+
+def test(reg = reg):
+    for r in reg:
+        print(f"        {r:gas} <- {r:gas} + (-{r:val})")
+        print(f"        if {r:gas} != 0 $pc <- 1f")
+        r.set_val(0)
+    print("        $pc <- 2f")
+    print("    1:")
+    fail()
+    print("    2:")
+
