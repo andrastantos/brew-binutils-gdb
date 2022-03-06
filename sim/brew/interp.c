@@ -51,7 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "newlib_stat.h"
 #include "brew-calls.h"
 #include "opcode/brew.h"
-#include "opcode/brew_abi.h"
+#include "opcode/brew-abi.h"
 #include "gdb-if.h"
 
 static int32_t

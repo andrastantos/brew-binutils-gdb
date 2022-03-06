@@ -25,7 +25,7 @@
 #include <stdint.h>
 #include "dis-asm.h" // for fprintf_ftype
 #include "opcode/brew.h"
-#include "opcode/brew_abi.h"
+#include "opcode/brew-abi.h"
 #include "elf/brew.h"
 
 #define DEBUG(...) { if (trace) {fprintf (stderr, __VA_ARGS__); fprintf(stderr, "\n");} }

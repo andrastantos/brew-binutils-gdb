@@ -21,7 +21,7 @@
 #define BREW_TDEP_H
 
 #include "gdbarch.h"
-#include "opcode/brew_abi.h"
+#include "opcode/brew-abi.h"
 
 struct brew_gdbarch_tdep : gdbarch_tdep
 {

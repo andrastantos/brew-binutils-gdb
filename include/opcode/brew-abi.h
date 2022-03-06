@@ -28,7 +28,7 @@
 #define BREW_REG_SP 0
 #define BREW_REG_FP 1
 #define BREW_REG_LINK 3
-#define BREW_REG_SYSCALL_ERRNO 2
+#define BREW_REG_SYSCALL_ERRNO 3
 #define BREW_REG_ARG0 4
 #define BREW_REG_ARG1 5
 #define BREW_REG_ARG2 6

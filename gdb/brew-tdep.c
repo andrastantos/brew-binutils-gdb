@@ -40,7 +40,7 @@
 
 #include "brew-tdep.h"
 #include "sim/brew/gdb-if.h"
-#include "opcode/brew_abi.h"
+#include "opcode/brew-abi.h"
 #include <algorithm>
 
 /* Use an invalid address value as 'not available' marker.  */
