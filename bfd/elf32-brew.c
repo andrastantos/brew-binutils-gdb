@@ -65,6 +65,23 @@ static reloc_howto_type brew_elf_howto_table[] =
     false                       /* pcrel_offset */
   ),
 
+  /* A 32 bit negative absolute relocation.  */
+  HOWTO (
+    R_BREW_NEG32,               /* type */
+    0,                          /* rightshift */
+    -2,                         /* size (0 = byte, 1 = short, 2 = long) negative: negate*/
+    32,                         /* bitsize */
+    false,                      /* pc_relative */
+    0,                          /* bitpos */
+    complain_overflow_unsigned, /* complain_on_overflow */
+    bfd_elf_generic_reloc,      /* special_function */
+    "R_BREW_NEG32",             /* name */
+    false,                      /* partial_inplace */
+    0x00000000,                 /* src_mask */
+    0xffffffff,                 /* dst_mask */
+    false                       /* pcrel_offset */
+  ),
+
   /* A 16 bit absolute relocation.  */
   HOWTO (
     R_BREW_16,                  /* type */
@@ -81,6 +98,24 @@ static reloc_howto_type brew_elf_howto_table[] =
     0xffff,                     /* dst_mask */
     false                       /* pcrel_offset */
   ),
+
+  /* A 32 bit negative absolute relocation.  */
+  HOWTO (
+    R_BREW_NEG16,               /* type */
+    0,                          /* rightshift */
+    -1,                         /* size (0 = byte, 1 = short, 2 = long) */
+    16,                         /* bitsize */
+    false,                      /* pc_relative */
+    0,                          /* bitpos */
+    complain_overflow_unsigned, /* complain_on_overflow */
+    bfd_elf_generic_reloc,      /* special_function */
+    "R_BREW_NEG16",             /* name */
+    false,                      /* partial_inplace */
+    0x0000,                     /* src_mask */
+    0xffff,                     /* dst_mask */
+    false                       /* pcrel_offset */
+  ),
+
 
   /* 16 bit PC relative offset.  */
   HOWTO (
@@ -111,10 +146,12 @@ struct brew_reloc_map
 
 static const struct brew_reloc_map brew_reloc_map[] =
 {
-  { BFD_RELOC_NONE,      R_BREW_NONE },
-  { BFD_RELOC_32,        R_BREW_32 },
-  { BFD_RELOC_16,        R_BREW_16 },
-  { BFD_RELOC_16_PCREL,  R_BREW_16_SPCREL }
+  { BFD_RELOC_NONE,           R_BREW_NONE },
+  { BFD_RELOC_32,             R_BREW_32 },
+  { BFD_RELOC_BREW_NEG32,     R_BREW_NEG32 },
+  { BFD_RELOC_16,             R_BREW_16 },
+  { BFD_RELOC_BREW_NEG16,     R_BREW_NEG16 },
+  { BFD_RELOC_BREW_PCREL16,   R_BREW_16_SPCREL }
 };
 
 static reloc_howto_type *

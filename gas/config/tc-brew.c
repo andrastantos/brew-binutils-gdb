@@ -130,8 +130,9 @@ static branch_tableS branch_table[] =
   { NULL,      0x0000,            false,       0x0000,          false,     0                      }
 };
 
-#define COMMUTATIVE          (1 << 7)
-#define HAS_UPPER            (1 << 8)
+#define COMMUTATIVE              (1 << 7)
+#define COMMUTATIVE_BUT_NEGATE   (1 << 8)
+#define HAS_UPPER                (1 << 9)
 
 typedef struct
 {
@@ -156,8 +157,8 @@ static alu_tableS alu_table[] =
   { "&",       0x3000,     0x3000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   { "+",       0x4000,     0x4000,            COMMUTATIVE,                  0,                     0,                     0 },
   { "+",       0x4000,     0x4000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "-",       0x5000,     0x5000,            0,                            0,                     0,                     0 },
-  { "-",       0x5000,     0x5000,            0,                            BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
+  { "-",       0x5000,     0x5000,            COMMUTATIVE_BUT_NEGATE,       0,                     0,                     0 },
+  { "-",       0x5000,     0x5000,            COMMUTATIVE_BUT_NEGATE,       BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   { "<<",      0x6000,     0x6000,            0,                            0,                     0,                     0 },
   { "<<",      0x6000,     0x6000,            0,                            0,                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
   { ">>",      0x7000,     0x7000,            0,                            0,                     0,                     0 },
@@ -614,7 +615,7 @@ parse_exp_save_ilp (char *s, expressionS *op)
    Returns true if an expression is found, false if not.
 */
 static bool
-parse_expression(const char *token, bool support_float, bool is_short, bool is_addr)
+parse_expression(const char *token, bool support_float, bool is_short, bool is_addr, bool is_negative)
 {
   LITTLENUM_TYPE float_store[4]; /* We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow */
   char float_as_char[4];
@@ -658,7 +659,7 @@ parse_expression(const char *token, bool support_float, bool is_short, bool is_a
   expressionS arg;
   char *end_expr;
   size_t field_e_size = is_short ? 2 : 4;
-  int reloc_type = is_short ? is_addr ? BFD_RELOC_16_PCREL : BFD_RELOC_16 : BFD_RELOC_32;
+  int reloc_type = is_short ? is_addr ? BFD_RELOC_BREW_PCREL16 : is_negative ? BFD_RELOC_BREW_NEG16 : BFD_RELOC_16 : is_negative ? BFD_RELOC_BREW_NEG32 : BFD_RELOC_32;
   bool pc_rel = is_short ? is_addr ? true : false : false;
   end_expr = parse_exp_save_ilp ((char*)token, &arg);
   if (*end_expr != 0)
@@ -741,7 +742,7 @@ md_assemble (char *str)
       IS_NEXT_TOKEN(("[", _("invalid store operation syntax ")));
       GET_NEXT_TOKEN_UNTIL("],", _("invalid store operation syntax "));
       /* There are three formats we recognize here: {reg}; {expr}; {reg},{expr} */
-      if (parse_expression(tok_start, false, false, true))
+      if (parse_expression(tok_start, false, false, true, false))
         {
           /* We have the format of MEM[{expr}] = {reg} */
           reg_base = 0xf;
@@ -759,7 +760,7 @@ md_assemble (char *str)
           if (strcmp(tok_start, ",") == 0)
             {
               GET_NEXT_TOKEN_UNTIL("]",_("invalid store offset syntax"));
-              if (!parse_expression(tok_start, false, true, false))
+              if (!parse_expression(tok_start, false, true, false, false))
                 {
                   as_bad(_("Invalid store offset syntax: expecting expression"));
                   ERR_RETURN;
@@ -849,7 +850,7 @@ md_assemble (char *str)
           //IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
           //IS_NEXT_TOKEN(("+", _("invalid bit-test branch instruction: expected '<-'")));
           GET_NEXT_TOKEN(_("invalid bit-test branch instruction: expected branch target"));
-          if (!parse_expression(tok_start, false, true, true))
+          if (!parse_expression(tok_start, false, true, true, false))
             {
               as_bad(_("invalid bit-test branch instruction: expected branch target"));
               ERR_RETURN;
@@ -890,7 +891,7 @@ md_assemble (char *str)
               IS_NEXT_TOKEN(("$pc", _("invalid comparison branch instruction: expected '$pc'")));
               IS_NEXT_TOKEN(("<-", _("invalid comparison branch instruction: expected '<-'")));
               GET_NEXT_TOKEN(_("invalid comparison branch instruction: expected branch target"));
-              if (!parse_expression(tok_start, false, true, true))
+              if (!parse_expression(tok_start, false, true, true, false))
                 {
                   as_bad(_("invalid comparison branch instruction: expected branch target"));
                   ERR_RETURN;
@@ -942,7 +943,7 @@ md_assemble (char *str)
               IS_NEXT_TOKEN(("$pc", _("invalid bit-test branch instruction: expected '$pc'")));
               IS_NEXT_TOKEN(("<-", _("invalid bit-test branch instruction: expected '<-'")));
               GET_NEXT_TOKEN(_("invalid bit-test branch instruction: expected branch target"));
-              if (!parse_expression(tok_start, false, true, true))
+              if (!parse_expression(tok_start, false, true, true, false))
                 {
                   as_bad(_("invalid bit-test branch instruction: expected branch target"));
                   ERR_RETURN;
@@ -1007,7 +1008,7 @@ md_assemble (char *str)
       IS_NEXT_TOKEN(("[", _("invalid load operation syntax ")));
       GET_NEXT_TOKEN_UNTIL("],", _("invalid load operation syntax "));
       /* There are three formats we recognize here: {reg}; {expr}; {reg},{expr}; */
-      if (parse_expression(tok_start, false, false, true))
+      if (parse_expression(tok_start, false, false, true, false))
         {
           /* We have the format of {reg} = MEM[{expr}] */
           reg_base = 0xf;
@@ -1025,7 +1026,7 @@ md_assemble (char *str)
           if (strcmp(tok_start, ",") == 0)
             {
               GET_NEXT_TOKEN_UNTIL("]", _("invalid load offset syntax"));
-              if (!parse_expression(tok_start, false, true, false))
+              if (!parse_expression(tok_start, false, true, false, false))
                 {
                   as_bad(_("Invalid load offset syntax: expecting expression"));
                   ERR_RETURN;
@@ -1039,7 +1040,7 @@ md_assemble (char *str)
               if (!BREW_IS_GP_REG(reg_d))
                 {
                   // for $pc loads we don't support this format, so patch it up to MEM[{reg}, 0]
-                  parse_expression("0", false, true, false);
+                  parse_expression("0", false, true, false, false);
                   inst_code |= 0x0800; /* Set the appropriate bit to signal the presence of an immediate offset */
                 }
               undo_last_token();
@@ -1064,6 +1065,7 @@ md_assemble (char *str)
       bool is_short = false;
       int reg_arg2;
       int reg_arg1;
+      bool negate_expression = false;
       unary_op_tableS *unary_op_table_entry;
       do
         {
@@ -1192,10 +1194,17 @@ md_assemble (char *str)
           char *real_start = tok_start;
           get_optional_next_token(NULL); // This will advance tok_end to the next token and replace the zero-terminator
           tok_start = real_start;
+          ++tok_start;
+          negate_expression = true;
         }
       // let's see if this is a simple immediate load
-      if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT, is_short, (reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC))
-        {
+      if (parse_expression(
+        tok_start,
+        (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT,
+        is_short,
+        (reg_d & BREW_REG_BASE_MASK) == BREW_REG_PC,
+        negate_expression)
+      ) {
           char op[10];
           alu_tableS *alu_table_entry;
 
@@ -1287,6 +1296,7 @@ md_assemble (char *str)
           char op[10];
           alu_tableS *alu_table_entry;
 
+          negate_expression = false;
           get_optional_next_token(NULL);
           // Check for register moves
           if (tok_start == NULL)
@@ -1403,16 +1413,24 @@ md_assemble (char *str)
                 }
             }
           while(false);
+          // Special-case subtraction: we have to make sure we negate the following expression, if any
+          if (strcmp(op, "-") == 0)
+            {
+              negate_expression = true;
+            }
           // Let's see if we have a {reg} {op} {exp} type binary operation
           // Note: all native operations are of the {exp} {op} {reg} form, so only commutative ones can be supported here
-          if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT, is_short, false))
+          if (parse_expression(tok_start, (reg_d & BREW_REG_FLAG_MASK) == BREW_REG_FLAG_FLOAT, is_short, false, negate_expression))
             {
               for (alu_table_entry = alu_table; alu_table_entry->inst_name != NULL; ++alu_table_entry)
                 {
                   if (strcasecmp(op, alu_table_entry->inst_name) == 0)
                     {
                       // Can we use this entry for the {reg} {op} {exp} thing we have here?
-                      if ((alu_table_entry->op_flags & COMMUTATIVE) == 0)
+                      if (
+                        ((alu_table_entry->op_flags & COMMUTATIVE) == 0) &&
+                        ((alu_table_entry->op_flags & COMMUTATIVE_BUT_NEGATE) == 0)
+                      )
                         continue;
                       if ((reg_arg1 & BREW_REG_FLAG_MASK) != alu_table_entry->type_flags_arg2)
                         continue;
@@ -1584,6 +1602,13 @@ md_apply_fix (fixS *fixP ATTRIBUTE_UNUSED,
       buf[0] = val >> 0;
       buf += 4;
       break;
+    case BFD_RELOC_BREW_NEG32:
+      buf[3] = -val >> 24;
+      buf[2] = -val >> 16;
+      buf[1] = -val >> 8;
+      buf[0] = -val >> 0;
+      buf += 4;
+      break;
     case BFD_RELOC_16:
       max = INT16_MAX;
       min = INT16_MIN;
@@ -1591,7 +1616,14 @@ md_apply_fix (fixS *fixP ATTRIBUTE_UNUSED,
       buf[0] = val >> 0;
       buf += 2;
       break;
-    case BFD_RELOC_16_PCREL:
+    case BFD_RELOC_BREW_NEG16:
+      max = INT16_MAX;
+      min = INT16_MIN;
+      buf[1] = -val >> 8;
+      buf[0] = -val >> 0;
+      buf += 2;
+      break;
+    case BFD_RELOC_BREW_PCREL16:
       max = INT16_MAX;
       min = INT16_MIN;
       // This is a relative 17-bit offset, the LSB being 0 and not stored
@@ -1655,7 +1687,7 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixP)
 long
 md_pcrel_from (fixS *fixP)
 {
-  gas_assert(fixP->fx_r_type == BFD_RELOC_16_PCREL);
+  gas_assert(fixP->fx_r_type == BFD_RELOC_BREW_PCREL16);
 
   valueT addr = fixP->fx_where + fixP->fx_frag->fr_address - 2;
   return addr;

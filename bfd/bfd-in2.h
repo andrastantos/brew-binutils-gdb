@@ -6312,6 +6312,11 @@ assembler and not (currently) written to any object files.  */
   BFD_RELOC_LARCH_SUB24,
   BFD_RELOC_LARCH_SUB32,
   BFD_RELOC_LARCH_SUB64,
+
+  BFD_RELOC_BREW_NEG32,    /* 32-bit negative relocation */
+  BFD_RELOC_BREW_NEG16,    /* 16-bit negative relocation */
+  BFD_RELOC_BREW_PCREL16,  /* PC-relative 16-bit relocation */
+
   BFD_RELOC_UNUSED };
 
 typedef enum bfd_reloc_code_real bfd_reloc_code_real_type;
