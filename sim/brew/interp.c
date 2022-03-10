@@ -312,7 +312,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
   // So, for now, I'll leave this code here.
 
   uint16_t syscall_no;
-  uint32_t errno_addr = scpu->sim_state.reg[BREW_REG_LINK];
+  uint32_t errno_addr = scpu->sim_state.reg[BREW_REG_SYSCALL_ERRNO];
   uint32_t arg1 = scpu->sim_state.reg[BREW_REG_ARG0];
   uint32_t arg2 = scpu->sim_state.reg[BREW_REG_ARG1];
   uint32_t arg3 = scpu->sim_state.reg[BREW_REG_ARG2];

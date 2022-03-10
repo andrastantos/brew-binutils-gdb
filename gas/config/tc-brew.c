@@ -536,11 +536,12 @@ typedef struct
 } named_registers_s;
 
 static named_registers_s named_registers[] = {
-  {"pc",  BREW_REG_PC,  false,  true},
-  {"tpc", BREW_REG_TPC, true,  false},
-  {"sp",  BREW_REG_SP,  false, false},
-  {"fp",  BREW_REG_FP,  false, false},
-  {NULL,  0,            false, false}
+  {"pc",  BREW_REG_PC,    false,  true},
+  {"tpc", BREW_REG_TPC,   true,  false},
+  {"sp",  BREW_REG_SP,    false, false},
+  {"fp",  BREW_REG_FP,    false, false},
+  {"lr",  BREW_REG_LINK,  false, false},
+  {NULL,  0,              false, false}
 };
 
 static int

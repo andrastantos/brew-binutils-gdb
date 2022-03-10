@@ -78,15 +78,15 @@ static bool pattern_match(uint16_t insn_code, const char *pattern)
 }
 
 const char * brew_reg_names[16] =
-  { "$sp", "$fp", "$r2",  "$r3",  "$r4",  "$r5",  "$r6",  "$r7",
+  { "$sp", "$fp", "$lr",  "$r3",  "$r4",  "$r5",  "$r6",  "$r7",
     "$r8", "$r9", "$r10", "$r11", "$r12", "$r13", "$r14", "<<<INVALID>>>"};
 
 const char * brew_sreg_names[16] =
-  { "$sr0", "$sr1", "$sr2",  "$sr3",  "$sr4",  "$sr5",  "$sr6",  "$sr7",
+  { "$sr0", "$sr1", "$slr",  "$sr3",  "$sr4",  "$sr5",  "$sr6",  "$sr7",
     "$sr8", "$sr9", "$sr10", "$sr11", "$sr12", "$sr13", "$sr14", "<<<INVALID>>>"};
 
 const char * brew_freg_names[16] =
-  { "$fr0", "$fr1", "$fr2",  "$fr3",  "$fr4",  "$fr5",  "$fr6",  "$fr7",
+  { "$fr0", "$fr1", "$flr",  "$fr3",  "$fr4",  "$fr5",  "$fr6",  "$fr7",
     "$fr8", "$fr9", "$fr10", "$fr11", "$fr12", "$fr13", "$fr14", "<<<INVALID>>>"};
 
 #define REG_D (brew_reg_names[FIELD_D])
