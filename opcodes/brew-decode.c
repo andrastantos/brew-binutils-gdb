@@ -196,7 +196,7 @@ static char *
 format_link_offset(uint8_t field_b, char *buffer)
 {
   int32_t offset = field_b << 1;
-  sprintf(buffer, "<- $pc + %d (0x%x)", offset, offset);
+  sprintf(buffer, "%d (0x%x)", offset, offset);
   return buffer;
 }
 
