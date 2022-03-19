@@ -1038,6 +1038,8 @@ static const bfd_target * const _bfd_target_vector[] =
 	&bfin_elf32_vec,
 	&bfin_elf32_fdpic_vec,
 
+	&brew_elf32_vec,
+
 	&cr16_elf32_vec,
 
 	&cris_aout_vec,
@@ -1424,8 +1426,6 @@ static const bfd_target * const _bfd_target_vector[] =
 #ifdef TRAD_CORE
 	&core_trad_vec,
 #endif
-
-	&brew_elf32_vec,
 
 	NULL /* end of list marker */
 };

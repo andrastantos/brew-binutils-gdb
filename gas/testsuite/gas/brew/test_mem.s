@@ -4,90 +4,23 @@
   ######################################################
   # $tpc loads and stores
   ######################################################
-  .irp IMM,0,1,-1,42,-42,0xffffffff
+  .irp IMM,0,1,-1,42,-42,0xffffffff,0x7fff,0x8000
   .irp A,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
 
   .if \IMM == 0
-  $ftpc <- mem8 [$r\A]
-  $stpc <- mem8 [$r\A]
-  $tpc  <- mem8 [$r\A]
-  $ftpc <- mem16[$r\A]
-  $stpc <- mem16[$r\A]
-  $tpc  <- mem16[$r\A]
-  $ftpc <- mem32[$r\A]
-  $stpc <- mem32[$r\A]
-  $tpc  <- mem32[$r\A]
-  $ftpc <- mem  [$r\A]
-  $stpc <- mem  [$r\A]
-  $tpc  <- mem  [$r\A]
-
-  mem8 [$r\A] <- $ftpc
-  mem8 [$r\A] <- $stpc
-  mem8 [$r\A] <- $tpc
-  mem16[$r\A] <- $ftpc
-  mem16[$r\A] <- $stpc
-  mem16[$r\A] <- $tpc
-  mem32[$r\A] <- $ftpc
-  mem32[$r\A] <- $stpc
-  mem32[$r\A] <- $tpc
-  mem  [$r\A] <- $ftpc
-  mem  [$r\A] <- $stpc
-  mem  [$r\A] <- $tpc
+  $pc <- mem32[$r\A]
+  $pc <- mem  [$r\A]
   .endif
 
   .if \A == 0
-  $ftpc <- mem8 [\IMM]
-  $stpc <- mem8 [\IMM]
-  $tpc  <- mem8 [\IMM]
-  $ftpc <- mem16[\IMM]
-  $stpc <- mem16[\IMM]
-  $tpc  <- mem16[\IMM]
-  $ftpc <- mem32[\IMM]
-  $stpc <- mem32[\IMM]
-  $tpc  <- mem32[\IMM]
-  $ftpc <- mem  [\IMM]
-  $stpc <- mem  [\IMM]
-  $tpc  <- mem  [\IMM]
-
-  mem8 [\IMM] <- $ftpc
-  mem8 [\IMM] <- $stpc
-  mem8 [\IMM] <- $tpc
-  mem16[\IMM] <- $ftpc
-  mem16[\IMM] <- $stpc
-  mem16[\IMM] <- $tpc
-  mem32[\IMM] <- $ftpc
-  mem32[\IMM] <- $stpc
-  mem32[\IMM] <- $tpc
-  mem  [\IMM] <- $ftpc
-  mem  [\IMM] <- $stpc
-  mem  [\IMM] <- $tpc
+  $pc  <- mem32[\IMM]
+  $pc  <- mem  [\IMM]
   .endif
 
-  $ftpc <- mem8 [$r\A, (\IMM)]
-  $stpc <- mem8 [$r\A, (\IMM)]
-  $tpc  <- mem8 [$r\A, (\IMM)]
-  $ftpc <- mem16[$r\A, (\IMM)]
-  $stpc <- mem16[$r\A, (\IMM)]
-  $tpc  <- mem16[$r\A, (\IMM)]
-  $ftpc <- mem32[$r\A, (\IMM)]
-  $stpc <- mem32[$r\A, (\IMM)]
-  $tpc  <- mem32[$r\A, (\IMM)]
-  $ftpc <- mem  [$r\A, (\IMM)]
-  $stpc <- mem  [$r\A, (\IMM)]
-  $tpc  <- mem  [$r\A, (\IMM)]
-
-  mem8 [$r\A, (\IMM)] <- $ftpc
-  mem8 [$r\A, (\IMM)] <- $stpc
-  mem8 [$r\A, (\IMM)] <- $tpc
-  mem16[$r\A, (\IMM)] <- $ftpc
-  mem16[$r\A, (\IMM)] <- $stpc
-  mem16[$r\A, (\IMM)] <- $tpc
-  mem32[$r\A, (\IMM)] <- $ftpc
-  mem32[$r\A, (\IMM)] <- $stpc
-  mem32[$r\A, (\IMM)] <- $tpc
-  mem  [$r\A, (\IMM)] <- $ftpc
-  mem  [$r\A, (\IMM)] <- $stpc
-  mem  [$r\A, (\IMM)] <- $tpc
+  .if \IMM <= 0x7fff && \IMM >= -0x8000
+  $pc  <- mem32[$r\A, (\IMM)]
+  $pc  <- mem  [$r\A, (\IMM)]
+  .endif
 
   .endr
   .endr
@@ -95,7 +28,7 @@
   ######################################################
   # loads and stores
   ######################################################
-  .irp IMM,0,1,-1,42,-42,0xffffffff
+  .irp IMM,0,1,-1,42,-42,0xffffffff,0x7fff,0x8000
   .irp A,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
   .irp D,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
 
@@ -155,6 +88,7 @@
   mem  [\IMM] <- $r\D
   .endif
 
+  .if \IMM <= 0x7fff && \IMM >= -0x8000
   $fr\D <- mem8 [$r\A, (\IMM)]
   $sr\D <- mem8 [$r\A, (\IMM)]
   $r\D  <- mem8 [$r\A, (\IMM)]
@@ -180,6 +114,7 @@
   mem  [$r\A, (\IMM)] <- $fr\D
   mem  [$r\A, (\IMM)] <- $sr\D
   mem  [$r\A, (\IMM)] <- $r\D
+  .endif
 
   .endr
   .endr

@@ -8,8 +8,24 @@
         "editor.detectIndentation": false,
 				"editor.tabSize": 8,
 	"files.associations": {
-    "brew.h": "c",
-    "random": "cpp"
-  }
+                "brew.h": "c",
+                "random": "cpp",
+                "*.tcc": "c",
+                "optional": "c",
+                "istream": "c",
+                "ostream": "c",
+                "ratio": "c",
+                "system_error": "c",
+                "array": "c",
+                "functional": "c",
+                "tuple": "c",
+                "type_traits": "c",
+                "utility": "c",
+                "brew-calls.h": "c",
+                "*.def": "c",
+                "brew_abi.h": "c",
+                "brew-abi.h": "c",
+                "typeinfo": "c"
+        }
 	}
 }

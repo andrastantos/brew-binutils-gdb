@@ -72,3 +72,9 @@ stamp-*
 /mpc*
 /gmp*
 /isl*
+
+*.bdmp
+*.sdmp
+*.trace
+*.log
+*.elf

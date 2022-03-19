@@ -27,31 +27,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "sim-base.h"
 #include "bfd.h"
 #include <stdint.h>
+#include "opcode/brew.h"
 
-/* We will implement the following register layout:
-   0 - *current context* pc
-   1..14 - $r1...$r14
-   15 - *other context* pc
-*/
-
-#define BREW_NUM_REGS 17 /* Including TPC in slot 15 and next_pc in slot 16 */
-#define BREW_REG_PC 0
-#define BREW_REG_OTHER_PC 15
-#define BREW_REG_NEXT_PC 16
-
-/* TODO: there's a whole slew of inter-dependencies between the simulator and GDB
-   GDB has a brew-tdep.h brew-tdep.c file-set that contains all/most of this.
-
-   For instance, register names and their numbering, even some calling conversion
-   stuff if in there */
+typedef struct {
+  uint32_t addr;
+  int access_size;
+  bool is_write;
+  uint32_t value;
+  bool is_valid;
+} mem_trace_s;
 struct _sim_cpu {
   sim_cpu_base base;
-
-  /* The following are internal simulator state variables: */
-  uint32_t regs[BREW_NUM_REGS];
-  bool regs_touch[BREW_NUM_REGS]; /* Set to true every time a register is modified to help tracing */
-  bool is_task_mode;
-
+  brew_sim_state sim_state;
+  char decode_buf[255];
+  mem_trace_s mem_trace;
 };
+
+// sim_engine_halt normally tries to set the PC to whatever
+// is passed in. We don't implement 'sim_pc_set' (brew_pc_set asserts).
+// On top of that, we never actually try to set the PC to
+// something else then what it already is, so we don't need
+// this hook.
+#undef SIM_ENGINE_HALT_HOOK
+#define SIM_ENGINE_HALT_HOOK(SD, LAST_CPU, CIA)
 
 #endif
