@@ -447,6 +447,15 @@ changequote([,])dnl
 	using_cgen=yes
 	;;
 
+      brew)
+	for f in config/tc-brew-parse.o config/tc-brew-lex.o; do
+	  case " $extra_objects " in
+	    *" $f "*) ;;
+	    *) extra_objects="$extra_objects $f" ;;
+	  esac
+	done
+	;;
+
       loongarch)
 	for f in config/loongarch-parse.o config/loongarch-lex-wrapper.o; do
 	  case " $extra_objects " in
