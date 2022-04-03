@@ -52,6 +52,8 @@ enum TOK_TYPES
   T_COMMA,
   T_LBRACKET,
   T_RBRACKET,
+  T_LCURLY,
+  T_RCURLY,
   T_IF,
   T_IF_QUAL,
   T_CMP,

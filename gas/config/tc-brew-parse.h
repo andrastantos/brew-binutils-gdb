@@ -41,7 +41,8 @@ typedef struct _brew_parserS* brew_parser_t;
 
 extern brew_parser_t brew_parser_init(const brew_parser_tok_type_t *raw_insn, size_t raw_insn_size);
 extern void brew_parser_done(const brew_parser_t parser);
-extern bool brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, void *context);
+// returns -1 for no match or whatever the action function returns
+extern int brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, void *context);
 
 extern void brew_dump_parsed_tokens(FILE *strm, brew_parser_tokenS *tokens);
 extern void brew_dump_parser(FILE *strm, const brew_parser_t parser);

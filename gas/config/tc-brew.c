@@ -216,38 +216,62 @@ const pseudo_typeS md_pseudo_table[] =
 const char FLT_CHARS[] = "rRsSfFdDxXpP";
 const char EXP_CHARS[] = "eE";
 
-/*
 static bool
-parse_int(const brew_lexer_tokenS *token, int *int_result)
+parse_int(const brew_lexer_tokenS *token, int32_t *int_result)
 {
-  int ret_val = 0;
+  bool ret_val = false;
   bool negative = false;
-  char *digit = token->start;
+  size_t base = 10;
+  char *digit = (char *)(token->start); // We are temporarily modifying the string to be zero-terminated
+  char *end_num;
   size_t len = token->len;
+  char *tok_end = digit + len;
+  char terminator;
+  long int converted_num;
+
   if (len == 0)
     return false;
+
+  terminator = *tok_end;
+  *tok_end = 0;
+
   if (*digit == '-')
     {
       negative = true;
       ++digit;
-      --len;
     }
-  while(len > 0)
+  // Since we test for specific characters in order
+  // we don't have to worry about running off at the
+  // end of the string.
+  if (digit[0] == '0')
     {
-      if (*digit < '0' || *digit > '9') return false;
-      ret_val = ret_val * 10 + (*digit - '0');
-      ++digit;
-      --len;
+      if (digit[1] == 'x')
+        {
+          base = 16;
+          digit += 2;
+        }
+      else
+        {
+          base = 8;
+          ++digit;
+        }
     }
+
+  converted_num = strtol(digit, &end_num, base);
+  if (end_num == NULL || *end_num != 0)
+    goto DONE;
   if (negative)
-    ret_val = -ret_val;
-  *int_result = ret_val;
-  return true;
+    converted_num = -converted_num;
+  *int_result = converted_num;
+  ret_val = true;
+DONE:
+  *tok_end = terminator;
+  return ret_val;
 }
 
 // Parse an expression and then restore the input line pointer.
 static char *
-parse_exp_save_ilp (char *s, expressionS *op)
+parse_exp_save_ilp(char *s, expressionS *op)
 {
   char *save = input_line_pointer;
 
@@ -260,67 +284,83 @@ parse_exp_save_ilp (char *s, expressionS *op)
 
 // TODO: This does more than that now:
 //   - it supports (or should, rather) 16-bit offsets
-//   - it should support FP16 expressions
+//   - it should support FP16 expressions (that would be format char 'h')
 // Parses a 32-bit expression and puts it in the last four bytes of the fragment buffer
 // Returns true if an expression is found, false if not.
 static bool
-parse_expression(const char *token, bool support_float, bool is_short, bool is_addr, bool is_negative)
-{
-  LITTLENUM_TYPE float_store[4]; // We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow
-  char float_as_char[4];
-  char *ret_val;
+parse_expression(
+  const brew_lexer_tokenS *first_token,
+  const brew_lexer_tokenS *last_token,
+  char *fragment_data,
+  size_t fragment_ofs,
+  size_t fragment_size,
+  bool support_float,
+  enum bfd_reloc_code_real reloc_type // BFD_RELOC_BREW_PCREL16, BFD_RELOC_BREW_NEG16, BFD_RELOC_16, BFD_RELOC_BREW_NEG32, BFD_RELOC_32
+) {
+
+  bool ret_val = false;
+  char *parse_end;
+  char *expression_str;
+  char terminator;
+  size_t expression_len;
+
+  // test for vector expressions in the form of { <item>, <item> ... }
+  if (first_token->type == T_LCURLY && last_token->type == T_RCURLY) {
+    as_bad(_("vector constants are not yet supported"));
+    gas_assert(false);
+  }
+
+  // temporarily 0-terminate the expression
+  expression_str = (char *)(first_token->start); // casting away const since we temporarily zero-terminate
+  expression_len = last_token->start + last_token->len - expression_str;
+  terminator = expression_str[expression_len-1];
+  expression_str[expression_len-1] = 0;
 
   // GAS also doesn't support any floating point expressions. We need that for float immediates, so let's test for them
   // NOTE: this still doesn't support floating point expressions, such as 1.3+2.6,
   //       but that's not supported in GAS anywhere, not even in .float
-  if (support_float)
+  if (support_float && fragment_size == 4)
     {
-      ret_val = atof_ieee((char*)token, 'f', float_store);
-      if (ret_val != NULL && ret_val > token)
-        {
-          DEBUG("float parser return %s with 0x%04x 0x%04x", ret_val, float_store[0], float_store[1]);
-          int prec = 2;
-          int float_size = 4;
-          char *litP = float_as_char;
-          LITTLENUM_TYPE *wordP;
-          for (wordP = float_store + prec; prec --;)
-            {
-              md_number_to_chars (litP, (valueT) (* -- wordP), sizeof (LITTLENUM_TYPE));
-              litP += sizeof (LITTLENUM_TYPE);
-            }
+      LITTLENUM_TYPE float_store[8]; // We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow
 
-          if (is_short || is_addr)
+      parse_end = atof_ieee(expression_str, 'f', float_store);
+      if (parse_end != NULL && *parse_end == 0)
+        {
+          DEBUG("float parser for %s returns with 0x%04x 0x%04x", expression_str, float_store[0], float_store[1]);
+          int float_part = fragment_size / 2; // float_store is in 16-bit entities
+          char *frag_ptr = fragment_data + fragment_ofs;
+          LITTLENUM_TYPE *float_ptr;
+          for (float_ptr = float_store + float_part; float_part--;)
             {
-              return false; // Float constant are always 32-bits.
+              md_number_to_chars(frag_ptr, (valueT)(*--float_ptr), sizeof(LITTLENUM_TYPE));
+              frag_ptr += sizeof (LITTLENUM_TYPE);
             }
-          // This is a floating point constant we could successfully parse
-          field_e_frag = frag_more(float_size);
-          memcpy(field_e_frag, float_as_char, float_size);
-          return true;
+          ret_val = true;
+          goto DONE;
         }
     }
 
-  expressionS arg;
+  expressionS expression;
   char *end_expr;
-  size_t field_e_size = is_short ? 2 : 4;
-  int reloc_type = is_short ? is_addr ? BFD_RELOC_BREW_PCREL16 : is_negative ? BFD_RELOC_BREW_NEG16 : BFD_RELOC_16 : is_negative ? BFD_RELOC_BREW_NEG32 : BFD_RELOC_32;
-  bool pc_rel = is_short ? is_addr ? true : false : false;
-  end_expr = parse_exp_save_ilp ((char*)token, &arg);
+  DEBUG(">> parsing expression (%p) %s", expression_str, expression_str);
+  end_expr = parse_exp_save_ilp(expression_str, &expression);
+  DEBUG(">> returned %p", end_expr);
   if (*end_expr != 0)
-  {
-    return false;
-  }
-  field_e_frag = frag_more(field_e_size);
+    goto DONE;
+  const char *old_fr_literal = frag_now->fr_literal; // this is just for debug
   fix_new_exp(
     frag_now,
-    (field_e_frag - frag_now->fr_literal),
-    field_e_size,
-    &arg,
-    pc_rel,
+    fragment_ofs,
+    fragment_size,
+    &expression,
+    reloc_type == BFD_RELOC_BREW_PCREL16, // this is the only pc-relative relocation we're supporting at the moment
     reloc_type);
-  return true;
+  DEBUG("frag_now->fr_literal changed from %p to %p (delta: %ld)", old_fr_literal, frag_now->fr_literal, frag_now->fr_literal - old_fr_literal);
+  ret_val = true;
+DONE:
+  expression_str[expression_len-1] = terminator;
+  return ret_val;
 }
-*/
 
 
 // NOTE:
@@ -332,49 +372,171 @@ parse_expression(const char *token, bool support_float, bool is_short, bool is_a
 //   the debug info (as the prefix dwarf2
 //   suggests.
 
-#define RETURN(frag, inst_code, field_e_size) { \
-  md_number_to_chars(frag, inst_code, 2); \
-  dwarf2_emit_insn(field_e_size+2); \
-  return true; \
+#define A_PROLOG(_insn_len) \
+  uint16_t insn_code; \
+  size_t insn_len = _insn_len; \
+  frag_new(0); \
+  char *frag = frag_more(insn_len); \
+  frag_now->fr_type = rs_fill
+
+#define A_RETURN() { \
+  md_number_to_chars(frag, insn_code, 2); \
+  dwarf2_emit_insn(insn_len); \
+  return A_OK; \
 }
 
 
+#define FIELD_A(value) ((value) << 0)
+#define FIELD_B(value) ((value) << 4)
+#define FIELD_C(value) ((value) << 8)
+#define FIELD_D(value) ((value) << 12)
 
+enum ACTION_RESULT {
+  A_OK,
+  A_ERR,
+  A_NOT_FOUND = -1
+};
 
-
-static bool action_insn(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int INVALID_PATTERN(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
 {
   DEBUG_BEGIN
   brew_dump_parsed_tokens(stderr, tokens);
   DEBUG_END
 
-  char *frag = frag_more(2); // The frag pointer that will (eventually) contain the instruction code
+  as_bad(_("UNIMPLEMENTED PATTERN"));
+  return A_ERR;
+}
 
-  gas_assert(tokens[0].parser_token == T_INSN);
-  gas_assert(tokens[1].parser_token == 0);
-  gas_assert(tokens[0].first_lexer_token == tokens[0].last_lexer_token);
-  gas_assert(tokens[0].first_lexer_token->type == T_INSN);
+static size_t tslen(brew_parser_tokenS *tokens)
+{
+  size_t len = 0;
+  while (tokens->parser_token != T_NULL)
+    {
+      ++tokens;
+      ++len;
+    }
+  return len;
+}
 
-  RETURN(frag, tokens[0].first_lexer_token->sub_type, 0);
-
+static bool tscheck(brew_parser_tokenS *tokens, size_t expected_len)
+{
+  if (tslen(tokens) != expected_len)
+    return false;
+  while (tokens->parser_token != T_NULL)
+    {
+      if (tokens->parser_token > 0)
+        {
+          if (tokens->first_lexer_token != tokens->last_lexer_token)
+            return false;
+          if (tokens->parser_token != tokens->first_lexer_token->type)
+            return false;
+        }
+      ++tokens;
+    }
   return true;
 }
 
-static bool INVALID_PATTERN(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+// boiler-plate code for actions
+#define A_CHECK(expected_len) \
+  DEBUG_BEGIN \
+  brew_dump_parsed_tokens(stderr, tokens); \
+  DEBUG_END \
+  gas_assert(tscheck(tokens, expected_len))
+
+
+static int action_insn(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
 {
-  DEBUG_BEGIN
-  brew_dump_parsed_tokens(stderr, tokens);
-  DEBUG_END
-  return false;
+  A_PROLOG(2);
+  A_CHECK(1);
+
+  gas_assert(tokens[0].parser_token == T_INSN);
+  insn_code = tokens[0].first_lexer_token->sub_type;
+  A_RETURN();
+}
+
+static int action_swi(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+{
+  int32_t swi_idx;
+  A_PROLOG(2);
+  A_CHECK(2);
+
+  gas_assert(tokens[1].parser_token == ~T_NULL);
+
+  if (!parse_int(tokens[1].first_lexer_token, &swi_idx))
+    {
+      as_bad(_("Can't parse SWI index"));
+      return A_ERR;
+    }
+  if (swi_idx < 0 || swi_idx > 7)
+    {
+      as_bad(_("Invalid SWI index"));
+      return A_ERR;
+    }
+  insn_code =
+    FIELD_D(swi_idx) |
+    FIELD_C(0x0) |
+    FIELD_B(0x0) |
+    FIELD_A(0x0);
+  A_RETURN();
+}
+
+static int action_move_reg_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+{
+  A_PROLOG(2);
+  A_CHECK(3);
+
+  gas_assert(tokens[2].parser_token == T_REG);
+  gas_assert(tokens[0].parser_token == T_PC);
+  insn_code =
+    FIELD_D(tokens[2].first_lexer_token->sub_type && BREW_REG_BASE_MASK) |
+    FIELD_C(0x0) |
+    FIELD_B(0x0) |
+    FIELD_A(tokens[2].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3);
+  A_RETURN();
+}
+
+static int action_load_reg_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+{
+  A_PROLOG(2);
+  A_CHECK(6);
+
+  gas_assert(tokens[0].parser_token == T_PC);
+  gas_assert(tokens[4].parser_token == T_REG);
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+    FIELD_C(0xe) |
+    FIELD_B(0xa) |
+    FIELD_A(tokens[4].first_lexer_token->sub_type && BREW_REG_BASE_MASK);
+  A_RETURN();
+}
+
+static int action_load_reg_ofs_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+{
+  A_PROLOG(4);
+  A_CHECK(8);
+
+  gas_assert(tokens[0].parser_token == T_PC);
+  gas_assert(tokens[4].parser_token == T_REG);
+  gas_assert(tokens[6].parser_token == ~T_RBRACKET);
+  if (!parse_expression(tokens[6].first_lexer_token, tokens[6].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_16))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+    FIELD_C(0xf) |
+    FIELD_B(0xa) |
+    FIELD_A(tokens[4].first_lexer_token->sub_type && BREW_REG_BASE_MASK);
+  A_RETURN();
 }
 
 static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_INSN),                                                                                      ACTION(action_insn),
-
-  PATTERN(T_PC, T_ASSIGN, T_REG),                                                                       ACTION(INVALID_PATTERN),
-  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                        ACTION(INVALID_PATTERN),
-  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_COMMA, ~T_RBRACKET, T_RBRACKET),                  ACTION(INVALID_PATTERN),
-  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, ~T_COMMA, T_COMMA, T_REG, T_RBRACKET),                     ACTION(INVALID_PATTERN),
+  PATTERN(T_SWI, ~T_NULL),                                                                              ACTION(action_swi),
+  PATTERN(T_PC, T_ASSIGN, T_REG),                                                                       ACTION(action_move_reg_to_pc),
+  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                        ACTION(action_load_reg_to_pc),
+  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                   ACTION(action_load_reg_ofs_to_pc),
   PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                  ACTION(INVALID_PATTERN),
   PATTERN(T_PC, T_ASSIGN, ~T_NULL),                                                                     ACTION(INVALID_PATTERN),
   PATTERN(T_PC, T_ASSIGN, T_SHORT, ~T_NULL),                                                            ACTION(INVALID_PATTERN),
@@ -461,11 +623,21 @@ md_assemble (char *str)
         t++;
       }
   DEBUG_END
-  if (!brew_parse(parser, token_strm, NULL))
+  switch (brew_parse(parser, token_strm, NULL))
     {
-      as_bad(_("Unrecognized instruction"));
-      ignore_rest_of_line();
-      return;
+      case A_OK:
+      break;
+      case A_ERR:
+        // Error is already reported to the user
+        ignore_rest_of_line();
+      break;
+      case A_NOT_FOUND:
+        as_bad(_("Unrecognized instruction"));
+        ignore_rest_of_line();
+      break;
+      default:
+        gas_assert(false);
+      break;
     }
     // PARSING EXPRESSION INTO FIELD_E: if (parse_expression(tok_start, false, false, true, false))
 }

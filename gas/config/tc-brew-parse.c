@@ -127,7 +127,8 @@ void brew_parser_done(const brew_parser_t parser)
 // Finds pattern that matches given tokens and executes associated action
 // If no pattern matches, return false, otherwise returns whatever
 // the action returns.
-bool brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, void *context)
+// returns -1 for no match or whatever the action function returns
+int brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, void *context)
 {
   size_t first_match_idx = 0;
   size_t last_match_idx = parser->insn_pattern_cnt-1;
@@ -157,7 +158,7 @@ bool brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, voi
   // This allows the action to quickly map pattern tokens to
   // input token ranges.
 
-  bool ret_val = false;
+  bool ret_val = -1;
   size_t tokens_len=0;
   while (tokens[tokens_len].type != T_NULL)
     ++tokens_len;
@@ -274,7 +275,7 @@ bool brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, voi
                     if (tokens[tok_idx].type == T_NULL)
                       {
                         // We have a match!
-                        DEBUG("    parse rule %ld matched\n", first_match_idx);
+                        DEBUG("  >> parse rule %ld matched\n", first_match_idx);
                         ret_val = parser->insn_patterns[first_match_idx].action(context, match_tokens);
                         goto RETURN;
                       }
@@ -304,7 +305,7 @@ bool brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, voi
       if (tokens[tok_idx].type == T_NULL)
         {
           gas_assert(first_match_idx == last_match_idx);
-          DEBUG("    parse rule %ld matched\n", first_match_idx);
+          DEBUG("  >> parse rule %ld matched\n", first_match_idx);
           ret_val = parser->insn_patterns[first_match_idx].action(context, match_tokens);
           goto RETURN;
         }
