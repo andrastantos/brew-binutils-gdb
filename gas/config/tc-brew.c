@@ -403,7 +403,7 @@ enum ACTION_RESULT {
   A_NOT_FOUND = -1
 };
 
-static int INVALID_PATTERN(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int INVALID_PATTERN(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   DEBUG_BEGIN
   brew_dump_parsed_tokens(stderr, tokens);
@@ -413,7 +413,7 @@ static int INVALID_PATTERN(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *t
   return A_ERR;
 }
 
-static size_t tslen(brew_parser_tokenS *tokens)
+static size_t tslen(const brew_parser_tokenS *tokens)
 {
   size_t len = 0;
   while (tokens->parser_token != T_NULL)
@@ -424,7 +424,7 @@ static size_t tslen(brew_parser_tokenS *tokens)
   return len;
 }
 
-static bool tscheck(brew_parser_tokenS *tokens, size_t expected_len)
+static bool tscheck(const brew_parser_tokenS *tokens, size_t expected_len)
 {
   if (tslen(tokens) != expected_len)
     return false;
@@ -450,7 +450,7 @@ static bool tscheck(brew_parser_tokenS *tokens, size_t expected_len)
   gas_assert(tscheck(tokens, expected_len))
 
 
-static int action_insn(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int action_insn(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(2);
   A_CHECK(1);
@@ -460,7 +460,7 @@ static int action_insn(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *token
   A_RETURN();
 }
 
-static int action_swi(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int action_swi(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   int32_t swi_idx;
   A_PROLOG(2);
@@ -486,7 +486,7 @@ static int action_swi(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens
   A_RETURN();
 }
 
-static int action_move_reg_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int action_move_reg_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(2);
   A_CHECK(3);
@@ -494,14 +494,14 @@ static int action_move_reg_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tok
   gas_assert(tokens[2].parser_token == T_REG);
   gas_assert(tokens[0].parser_token == T_PC);
   insn_code =
-    FIELD_D(tokens[2].first_lexer_token->sub_type && BREW_REG_BASE_MASK) |
+    FIELD_D(tokens[2].first_lexer_token->sub_type) |
     FIELD_C(0x0) |
     FIELD_B(0x0) |
     FIELD_A(tokens[2].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3);
   A_RETURN();
 }
 
-static int action_load_reg_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int action_load_reg_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(2);
   A_CHECK(6);
@@ -512,11 +512,11 @@ static int action_load_reg_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tok
     FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
     FIELD_C(0xe) |
     FIELD_B(0xa) |
-    FIELD_A(tokens[4].first_lexer_token->sub_type && BREW_REG_BASE_MASK);
+    FIELD_A(tokens[4].first_lexer_token->sub_type);
   A_RETURN();
 }
 
-static int action_load_reg_ofs_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int action_load_reg_ofs_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(4);
   A_CHECK(8);
@@ -533,11 +533,11 @@ static int action_load_reg_ofs_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser
     FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
     FIELD_C(0xf) |
     FIELD_B(0xa) |
-    FIELD_A(tokens[4].first_lexer_token->sub_type && BREW_REG_BASE_MASK);
+    FIELD_A(tokens[4].first_lexer_token->sub_type);
   A_RETURN();
 }
 
-static int action_load_ofs_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int action_load_ofs_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(6);
   A_CHECK(6);
@@ -557,7 +557,7 @@ static int action_load_ofs_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tok
   A_RETURN();
 }
 
-static int action_move_imm_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int action_move_imm_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(6);
   A_CHECK(3);
@@ -577,7 +577,7 @@ static int action_move_imm_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tok
   A_RETURN();
 }
 
-static int action_move_short_imm_to_pc(void *context ATTRIBUTE_UNUSED, brew_parser_tokenS *tokens)
+static int action_move_short_imm_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(4);
   A_CHECK(4);
@@ -597,6 +597,240 @@ static int action_move_short_imm_to_pc(void *context ATTRIBUTE_UNUSED, brew_pars
   A_RETURN();
 }
 
+static int action_set_type_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  A_PROLOG(2);
+  A_CHECK(4);
+
+  gas_assert(tokens[1].parser_token == T_REG);
+  gas_assert(tokens[3].parser_token == T_REG);
+  insn_code =
+    FIELD_D(tokens[1].first_lexer_token->sub_type) |
+    FIELD_C(0x0) |
+    FIELD_B(0xc) |
+    FIELD_A(tokens[3].first_lexer_token->sub_type);
+  A_RETURN();
+}
+
+static int action_set_type_imm(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  A_PROLOG(2);
+  A_CHECK(5);
+
+  gas_assert(tokens[1].parser_token == T_REG);
+  gas_assert(tokens[4].parser_token == T_TYPENAME);
+  insn_code =
+    FIELD_D(tokens[1].first_lexer_token->sub_type) |
+    FIELD_C(0x0) |
+    FIELD_B(0xe) |
+    FIELD_A(tokens[4].first_lexer_token->sub_type);
+  A_RETURN();
+}
+
+static int action_link(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  int32_t link_ofs;
+  A_PROLOG(2);
+  A_CHECK(5);
+
+  gas_assert(tokens[0].parser_token == T_REG);
+  gas_assert(tokens[2].parser_token == T_PC);
+  gas_assert(tokens[4].parser_token == ~T_NULL);
+
+  if (tokens[2].first_lexer_token->sub_type != ST_PC_PC)
+    {
+      as_bad(_("only $pc is allowed as link source"));
+    }
+  if (!parse_int(tokens[4].first_lexer_token, &link_ofs))
+    {
+      as_bad(_("Can't parse link offset"));
+      return A_ERR;
+    }
+  if ((link_ofs & 1) != 0)
+    {
+      as_bad(_("Link offset must be even"));
+      return A_ERR;
+    }
+  link_ofs /= 2;
+  if (link_ofs > 14 || link_ofs < 0)
+    {
+      as_bad(_("Link offset is out of range"));
+      return A_ERR;
+    }
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type) |
+    FIELD_C(0x0) |
+    FIELD_B(0x2) |
+    FIELD_A(link_ofs);
+  A_RETURN();
+}
+
+static int action_move_pc_to_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  A_PROLOG(2);
+  A_CHECK(3);
+
+  gas_assert(tokens[0].parser_token == T_REG);
+  gas_assert(tokens[2].parser_token == T_PC);
+
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type) |
+    FIELD_C(0x0) |
+    FIELD_B(0x0) |
+    FIELD_A(tokens[2].first_lexer_token->sub_type == ST_PC_PC ? 0x4 : 0x5);
+  A_RETURN();
+}
+
+static int action_binary_reg_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  A_PROLOG(2);
+  A_CHECK(5);
+
+  gas_assert(tokens[0].parser_token == T_REG);
+  gas_assert(tokens[2].parser_token == T_REG);
+  gas_assert(tokens[4].parser_token == T_REG);
+
+  size_t op_code = tokens[3].first_lexer_token->sub_type;
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type) |
+    FIELD_C(op_code) |
+    FIELD_B(tokens[4].first_lexer_token->sub_type) |
+    FIELD_A(tokens[2].first_lexer_token->sub_type);
+  A_RETURN();
+}
+
+static int action_binary_reg_imm(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  bool support_float = true;
+  const brew_parser_tokenS *reg_dst;
+  const brew_parser_tokenS *reg_op;
+  const brew_parser_tokenS *op_tok;
+  const brew_parser_tokenS *imm_op;
+  bool is_short;
+  enum bfd_reloc_code_real reloc_type;
+  size_t op_code;
+
+  is_short = tokens[2].parser_token == T_SHORT;
+
+  A_PROLOG(is_short ? 4 : 6);
+  A_CHECK(is_short ? 6 : 5);
+
+  reg_dst = &tokens[0];
+  if (is_short)
+    {
+      reg_op = &tokens[3];
+      op_tok = &tokens[4];
+      imm_op = &tokens[5];
+    }
+  else
+    {
+      reg_op = &tokens[2];
+      op_tok = &tokens[3];
+      imm_op = &tokens[4];
+    }
+  gas_assert(reg_dst->parser_token == T_REG);
+  gas_assert(reg_op->parser_token == T_REG);
+  gas_assert(imm_op->parser_token == ~T_NULL);
+
+  reloc_type = is_short ? BFD_RELOC_16 : BFD_RELOC_32;
+  op_code = op_tok->first_lexer_token->sub_type;
+
+  // We don't have this op in this format. We have only VALUE-$rX. So we'll implement it as $rx+(-VALUE)
+  if (imm_op->first_lexer_token->type == T_MINUS)
+    {
+      reloc_type = is_short ? BFD_RELOC_BREW_NEG16 : BFD_RELOC_BREW_NEG32;
+      op_code = 0x4; // override operation to '+' instead of '-'
+    }
+
+  if (!parse_expression(imm_op->first_lexer_token, imm_op->last_lexer_token, frag, 2, insn_len, support_float, reloc_type))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+
+  if (is_short)
+    {
+      insn_code =
+        FIELD_D(reg_dst->first_lexer_token->sub_type) |
+        FIELD_C(op_code) |
+        FIELD_B(0xf) |
+        FIELD_A(reg_op->first_lexer_token->sub_type);
+    }
+  else
+    {
+      insn_code =
+        FIELD_D(reg_dst->first_lexer_token->sub_type) |
+        FIELD_C(op_code) |
+        FIELD_B(reg_op->first_lexer_token->sub_type) |
+        FIELD_A(0xf);
+    }
+  A_RETURN();
+}
+
+
+static int action_binary_imm_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  bool support_float = true;
+  const brew_parser_tokenS *reg_dst;
+  const brew_parser_tokenS *reg_op;
+  const brew_lexer_tokenS *op_tok;
+  const brew_parser_tokenS *imm_op;
+  bool is_short;
+  enum bfd_reloc_code_real reloc_type;
+  size_t op_code;
+
+  is_short = tokens[2].parser_token == T_SHORT;
+
+  A_PROLOG(is_short ? 4 : 6);
+  A_CHECK(is_short ? 5 : 4);
+
+  reg_dst = &tokens[0];
+  if (is_short)
+    {
+      reg_op = &tokens[4];
+      op_tok = tokens[3].last_lexer_token-1;
+      imm_op = &tokens[3];
+    }
+  else
+    {
+      reg_op = &tokens[3];
+      op_tok = tokens[2].last_lexer_token-1;
+      imm_op = &tokens[2];
+    }
+  gas_assert(reg_dst->parser_token == T_REG);
+  gas_assert(reg_op->parser_token == T_REG);
+  gas_assert(imm_op->parser_token == ~T_REG);
+
+  DEBUG("op_tok: %d, %s", op_tok->type, brew_tok_name(op_tok->type));
+
+  reloc_type = is_short ? BFD_RELOC_16 : BFD_RELOC_32;
+  op_code = op_tok->sub_type;
+
+  if (!parse_expression(imm_op->first_lexer_token, imm_op->last_lexer_token-1, frag, 2, insn_len, support_float, reloc_type))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+
+  if (is_short)
+    {
+      insn_code =
+        FIELD_D(reg_dst->first_lexer_token->sub_type) |
+        FIELD_C(op_code) |
+        FIELD_B(0xf) |
+        FIELD_A(reg_op->first_lexer_token->sub_type);
+    }
+  else
+    {
+      insn_code =
+        FIELD_D(reg_dst->first_lexer_token->sub_type) |
+        FIELD_C(op_code) |
+        FIELD_B(reg_op->first_lexer_token->sub_type) |
+        FIELD_A(0xf);
+    }
+  A_RETURN();
+}
+
 static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_INSN),                                                                                      ACTION(action_insn),
   PATTERN(T_SWI, ~T_NULL),                                                                              ACTION(action_swi),
@@ -607,28 +841,29 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_PC, T_ASSIGN, ~T_NULL),                                                                     ACTION(action_move_imm_to_pc),
   PATTERN(T_PC, T_ASSIGN, T_SHORT, ~T_NULL),                                                            ACTION(action_move_short_imm_to_pc),
 
-  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_REG),                                                              ACTION(INVALID_PATTERN),
-  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_TYPENAME),                                                         ACTION(INVALID_PATTERN),
+  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_REG),                                                              ACTION(action_set_type_reg),
+  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_TYPE, T_TYPENAME),                                                 ACTION(action_set_type_imm),
 
-  PATTERN(T_REG, T_ASSIGN, T_PC, T_PLUS, ~T_NULL),                                                      ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_PC),                                                                       ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_HAT, T_REG),                                                        ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_BAR, T_REG),                                                        ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, T_REG),                                                     ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, T_REG),                                                     ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_PLUS, T_REG),                                                       ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_STAR, T_REG),                                                       ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, T_REG),                                                        ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_HAT, ~T_NULL),                                                      ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_BAR, ~T_NULL),                                                      ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, ~T_NULL),                                                   ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, ~T_NULL),                                                   ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_PLUS, ~T_NULL),                                                     ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_STAR, ~T_NULL),                                                     ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, ~T_NULL),                                                      ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_MINUS, T_REG),                                                      ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_MINUS, T_ONE),                                                      ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_MINUS, ~T_NULL),                                                    ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_PC, T_PLUS, ~T_NULL),                                                      ACTION(action_link),
+  PATTERN(T_REG, T_ASSIGN, T_PC),                                                                       ACTION(action_move_pc_to_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_HAT, T_REG),                                                        ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_BAR, T_REG),                                                        ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, T_REG),                                                     ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, T_REG),                                                     ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_PLUS, T_REG),                                                       ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_STAR, T_REG),                                                       ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, T_REG),                                                        ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_HAT, ~T_NULL),                                                      ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_BAR, ~T_NULL),                                                      ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_MINUS, T_REG),                                                      ACTION(action_binary_reg_imm),
+  //PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, ~T_NULL),                                                   ACTION(INVALID_PATTERN),
+  //PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, ~T_NULL),                                                   ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_PLUS, ~T_NULL),                                                     ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_STAR, ~T_NULL),                                                     ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, ~T_NULL),                                                      ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_MINUS, ~T_NULL),                                                    ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_TINY, T_REG, T_MINUS, ~T_NULL),                                            ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_TINY, T_REG, T_PLUS, ~T_NULL),                                             ACTION(INVALID_PATTERN),
   PATTERN(T_REG, T_ASSIGN, T_REG, T_CMP, T_ZERO),                                                       ACTION(INVALID_PATTERN),
   PATTERN(T_REG, T_ASSIGN, T_REG, T_CMP, T_REG),                                                        ACTION(INVALID_PATTERN),
   PATTERN(T_REG, T_ASSIGN, T_REG),                                                                      ACTION(INVALID_PATTERN),
@@ -645,18 +880,18 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                  ACTION(INVALID_PATTERN),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                 ACTION(INVALID_PATTERN),
 
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_HAT, ~T_NULL),                                             ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_BAR, ~T_NULL),                                             ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_LSHIFT, ~T_NULL),                                          ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_RSHIFT, ~T_NULL),                                          ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_PLUS, ~T_NULL),                                            ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_STAR, ~T_NULL),                                            ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_AND, ~T_NULL),                                             ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_MINUS, ~T_NULL),                                           ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_REG, T_REG),                                                     ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_HAT, ~T_NULL),                                             ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_BAR, ~T_NULL),                                             ACTION(action_binary_reg_imm),
+  //PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_LSHIFT, ~T_NULL),                                          ACTION(INVALID_PATTERN),
+  //PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_RSHIFT, ~T_NULL),                                          ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_PLUS, ~T_NULL),                                            ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_STAR, ~T_NULL),                                            ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_AND, ~T_NULL),                                             ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_MINUS, ~T_NULL),                                           ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_REG, T_REG),                                                     ACTION(action_binary_imm_reg),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_NULL),                                                           ACTION(INVALID_PATTERN),
 
-  PATTERN(T_REG, T_ASSIGN, ~T_REG, T_REG),                                                              ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, ~T_REG, T_REG),                                                              ACTION(action_binary_imm_reg),
   PATTERN(T_REG, T_ASSIGN, T_ONE, T_DIV, T_REG),                                                        ACTION(INVALID_PATTERN),
   PATTERN(T_REG, T_ASSIGN, ~T_NULL),                                                                    ACTION(INVALID_PATTERN),
 
@@ -705,7 +940,6 @@ md_assemble (char *str)
         gas_assert(false);
       break;
     }
-    // PARSING EXPRESSION INTO FIELD_E: if (parse_expression(tok_start, false, false, true, false))
 }
 
 // Turn a string in input_line_pointer into a floating point constant

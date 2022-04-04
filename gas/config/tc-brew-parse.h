@@ -32,7 +32,7 @@ typedef struct
   const brew_lexer_tokenS *last_lexer_token;
 } brew_parser_tokenS;
 
-typedef bool (*brew_parser_action)(void *, brew_parser_tokenS *);
+typedef bool (*brew_parser_action)(void *, const brew_parser_tokenS *);
 
 typedef struct _brew_parserS* brew_parser_t;
 
@@ -44,7 +44,7 @@ extern void brew_parser_done(const brew_parser_t parser);
 // returns -1 for no match or whatever the action function returns
 extern int brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, void *context);
 
-extern void brew_dump_parsed_tokens(FILE *strm, brew_parser_tokenS *tokens);
+extern void brew_dump_parsed_tokens(FILE *strm, const brew_parser_tokenS *tokens);
 extern void brew_dump_parser(FILE *strm, const brew_parser_t parser);
 
 #endif

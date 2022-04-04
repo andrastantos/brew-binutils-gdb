@@ -158,7 +158,7 @@ int brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, void
   // This allows the action to quickly map pattern tokens to
   // input token ranges.
 
-  bool ret_val = -1;
+  int ret_val = -1;
   size_t tokens_len=0;
   while (tokens[tokens_len].type != T_NULL)
     ++tokens_len;
@@ -357,9 +357,9 @@ void brew_dump_parser(FILE *strm, const brew_parser_t parser)
     }
 }
 
-void brew_dump_parsed_tokens(FILE *strm, brew_parser_tokenS *tokens)
+void brew_dump_parsed_tokens(FILE *strm, const brew_parser_tokenS *tokens)
 {
-  brew_parser_tokenS *t = tokens;
+  const brew_parser_tokenS *t = tokens;
   while (true)
     {
       fprintf(strm, "    %-15s\n", brew_tok_name(t->parser_token));

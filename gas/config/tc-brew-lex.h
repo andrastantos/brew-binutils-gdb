@@ -61,6 +61,7 @@ enum TOK_TYPES
   T_ONE,
   T_TYPE,
   T_TYPENAME,
+  T_SIGNED,
   T_UNKNOWN
 };
 
@@ -83,6 +84,8 @@ enum TOK_SUBTYPE_MEM {
   ST_MEM_32,
   ST_MEM_16,
   ST_MEM_8,
+  ST_SMEM_16,
+  ST_SMEM_8,
   ST_MEM_LL,
   ST_MEM_SR,
   ST_MEM_INV
@@ -92,15 +95,6 @@ enum TOK_SUBTYPE_IF {
   ST_IF_ANY,
   ST_IF_ALL
 };
-
-// Some constants for register numbering. These are used
-// as the sub_type field of T_REG tokens.
-
-#define BREW_REG_BASE_MASK  0x0f
-
-#define BREW_REG_FLAG_MASK 0xf000
-#define BREW_REG_FLAG_FLOAT 0x2000
-#define BREW_REG_FLAG_SIGNED 0x4000
 
 typedef struct
 {
