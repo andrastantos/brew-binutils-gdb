@@ -136,8 +136,8 @@ static const token_declS special_tokens[] = {
   { "!=", T_CMP,     ST_CMP_NE },
   { "<=", T_CMP,     ST_CMP_LE },
   { ">=", T_CMP,     ST_CMP_GE },
-  { ">>", T_RSHIFT,  0x7 },
   { ">>>", T_RSHIFT, 0x8 },
+  { ">>", T_RSHIFT,  0x7 },
   { "<<", T_LSHIFT,  0x6 }
 };
 
@@ -182,8 +182,10 @@ static const token_declS token_library[] = {
   { "mem8",         T_MEM,           ST_MEM_8 },
   { "smem16",       T_MEM,           ST_SMEM_16 },
   { "smem8",        T_MEM,           ST_SMEM_8 },
-  { "!mem",         T_MEM,           ST_MEM_LL },
-  { "?mem",         T_MEM,           ST_MEM_SR },
+  { "memll",        T_MEM,           ST_MEM_LL },
+  { "memsr",        T_MEM,           ST_MEM_SR },
+  { "memll32",      T_MEM,           ST_MEM_LL },
+  { "memsr32",      T_MEM,           ST_MEM_SR },
   { "inv",          T_MEM,           ST_MEM_INV },
   { ",",            T_COMMA,         0 },
   { "[",            T_LBRACKET,      0 },

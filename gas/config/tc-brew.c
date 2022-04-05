@@ -529,27 +529,89 @@ static int action_move_reg_to_pc(void *context ATTRIBUTE_UNUSED, const brew_pars
   A_RETURN();
 }
 
-static int action_load_reg_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+static bool mem_subtype_to_opcode_ld(int sub_type, int *op_code)
 {
+  switch (sub_type)
+    {
+      case ST_SMEM_8:  *op_code = 0; break;
+      case ST_MEM_8:   *op_code = 1; break;
+      case ST_SMEM_16: *op_code = 2; break;
+      case ST_MEM_16:  *op_code = 3; break;
+      case ST_MEM_32:  *op_code = 4; break;
+      case ST_MEM_LL:  *op_code = 8; break;
+      default:
+        return false;
+    }
+  return true;
+}
+
+static bool mem_subtype_to_opcode_st(int sub_type, bool is_invalidate, int *op_code)
+{
+  if (is_invalidate)
+    {
+      if (sub_type != ST_MEM_INV)
+        return false;
+      *op_code = 0xa;
+      return true;
+    }
+  switch (sub_type)
+    {
+      case ST_SMEM_8:  *op_code = 5; break;
+      case ST_MEM_8:   *op_code = 5; break;
+      case ST_SMEM_16: *op_code = 6; break;
+      case ST_MEM_16:  *op_code = 6; break;
+      case ST_MEM_32:  *op_code = 7; break;
+      case ST_MEM_SR:  *op_code = 9; break;
+      default:
+        return false;
+    }
+  return true;
+}
+
+static int action_load_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  bool is_pc_target;
   A_PROLOG(2);
   A_CHECK(6);
 
-  gas_assert(tokens[0].parser_token == T_PC);
+  is_pc_target = tokens[0].parser_token == T_PC;
+  gas_assert(tokens[0].parser_token == T_REG || is_pc_target);
+  gas_assert(tokens[2].parser_token == T_MEM);
   gas_assert(tokens[4].parser_token == T_REG);
-  insn_code =
-    FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
-    FIELD_C(0xe) |
-    FIELD_B(0xa) |
-    FIELD_A(tokens[4].first_lexer_token->sub_type);
+  if (is_pc_target)
+    {
+      insn_code =
+        FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+        FIELD_C(0xe) |
+        FIELD_B(0xa) |
+        FIELD_A(tokens[4].first_lexer_token->sub_type);
+    }
+  else
+    {
+      int op_code;
+      if (!mem_subtype_to_opcode_ld(tokens[2].first_lexer_token->sub_type, &op_code))
+        {
+          as_bad(_("Invalid memory reference type for load"));
+          return A_ERR;
+        }
+      insn_code =
+        FIELD_D(tokens[0].first_lexer_token->sub_type) |
+        FIELD_C(0xe) |
+        FIELD_B(op_code) |
+        FIELD_A(tokens[4].first_lexer_token->sub_type);
+    }
   A_RETURN();
 }
 
-static int action_load_reg_ofs_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
+  bool is_pc_target;
   A_PROLOG(4);
   A_CHECK(8);
 
-  gas_assert(tokens[0].parser_token == T_PC);
+  is_pc_target = tokens[0].parser_token == T_PC;
+  gas_assert(tokens[0].parser_token == T_REG || is_pc_target);
+  gas_assert(tokens[2].parser_token == T_MEM);
   gas_assert(tokens[4].parser_token == T_REG);
   gas_assert(tokens[6].parser_token == ~T_RBRACKET);
   if (!parse_expression(tokens[6].first_lexer_token, tokens[6].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_16))
@@ -557,33 +619,161 @@ static int action_load_reg_ofs_to_pc(void *context ATTRIBUTE_UNUSED, const brew_
       as_bad(_("Can't parse expression"));
       return A_ERR;
     }
-  insn_code =
-    FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
-    FIELD_C(0xf) |
-    FIELD_B(0xa) |
-    FIELD_A(tokens[4].first_lexer_token->sub_type);
+  if (is_pc_target)
+    {
+      insn_code =
+        FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+        FIELD_C(0xf) |
+        FIELD_B(0xa) |
+        FIELD_A(tokens[4].first_lexer_token->sub_type);
+    }
+  else
+    {
+      int op_code;
+      if (!mem_subtype_to_opcode_ld(tokens[2].first_lexer_token->sub_type, &op_code))
+        {
+          as_bad(_("Invalid memory reference type for load"));
+          return A_ERR;
+        }
+      insn_code =
+        FIELD_D(tokens[0].first_lexer_token->sub_type) |
+        FIELD_C(0xf) |
+        FIELD_B(op_code) |
+        FIELD_A(tokens[4].first_lexer_token->sub_type);
+    }
   A_RETURN();
 }
 
-static int action_load_ofs_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+static int action_load_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
+  bool is_pc_target;
   A_PROLOG(6);
   A_CHECK(6);
 
-  gas_assert(tokens[0].parser_token == T_PC);
+  is_pc_target = tokens[0].parser_token == T_PC;
+  gas_assert(tokens[0].parser_token == T_REG || is_pc_target);
+  gas_assert(tokens[2].parser_token == T_MEM);
   gas_assert(tokens[4].parser_token == ~T_RBRACKET);
   if (!parse_expression(tokens[4].first_lexer_token, tokens[4].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_32))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
     }
-  insn_code =
-    FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
-    FIELD_C(0xf) |
-    FIELD_B(0xa) |
-    FIELD_A(0xf);
+
+  if (is_pc_target)
+    {
+      insn_code =
+        FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+        FIELD_C(0xf) |
+        FIELD_B(0xa) |
+        FIELD_A(0xf);
+    }
+  else
+    {
+      int op_code;
+      if (!mem_subtype_to_opcode_ld(tokens[2].first_lexer_token->sub_type, &op_code))
+        {
+          as_bad(_("Invalid memory reference type for load"));
+          return A_ERR;
+        }
+      insn_code =
+        FIELD_D(tokens[0].first_lexer_token->sub_type) |
+        FIELD_C(0xf) |
+        FIELD_B(op_code) |
+        FIELD_A(0xf);
+    }
+
   A_RETURN();
 }
+
+static int action_store_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  bool is_invalidate;
+  int op_code;
+  A_PROLOG(2);
+  is_invalidate = tokens[4].parser_token == T_NULL;
+  A_CHECK(is_invalidate ? 4 : 6);
+
+  gas_assert(tokens[0].parser_token == T_MEM);
+  gas_assert(tokens[2].parser_token == T_REG);
+  gas_assert(is_invalidate | (tokens[5].parser_token == T_REG));
+
+  if (!mem_subtype_to_opcode_st(tokens[0].first_lexer_token->sub_type, is_invalidate, &op_code))
+    {
+      as_bad(_("Invalid memory reference type for store"));
+      return A_ERR;
+    }
+  insn_code =
+    FIELD_D(is_invalidate ? 0 : tokens[5].first_lexer_token->sub_type) |
+    FIELD_C(0xe) |
+    FIELD_B(op_code) |
+    FIELD_A(tokens[2].first_lexer_token->sub_type);
+  A_RETURN();
+}
+
+static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  bool is_invalidate;
+  int op_code;
+  A_PROLOG(4);
+  is_invalidate = tokens[6].parser_token == T_NULL;
+  A_CHECK(is_invalidate ? 6 : 8);
+
+  gas_assert(tokens[0].parser_token == T_MEM);
+  gas_assert(tokens[2].parser_token == T_REG);
+  gas_assert(tokens[4].parser_token == ~T_RBRACKET);
+  gas_assert(is_invalidate | (tokens[7].parser_token == T_REG));
+  if (!parse_expression(tokens[4].first_lexer_token, tokens[4].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_16))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+  if (!mem_subtype_to_opcode_st(tokens[0].first_lexer_token->sub_type, is_invalidate, &op_code))
+    {
+      as_bad(_("Invalid memory reference type for store"));
+      return A_ERR;
+    }
+  insn_code =
+    FIELD_D(is_invalidate ? 0 : tokens[7].first_lexer_token->sub_type) |
+    FIELD_C(0xf) |
+    FIELD_B(op_code) |
+    FIELD_A(tokens[2].first_lexer_token->sub_type);
+  A_RETURN();
+}
+
+static int action_store_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  bool is_invalidate;
+  int op_code;
+  A_PROLOG(6);
+  is_invalidate = tokens[4].parser_token == T_NULL;
+  A_CHECK(is_invalidate ? 4 : 6);
+
+  gas_assert(tokens[0].parser_token == T_MEM);
+  gas_assert(tokens[2].parser_token == ~T_RBRACKET);
+  gas_assert(is_invalidate | (tokens[5].parser_token == T_REG));
+
+  if (!parse_expression(tokens[2].first_lexer_token, tokens[2].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_32))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+
+  if (!mem_subtype_to_opcode_st(tokens[0].first_lexer_token->sub_type, is_invalidate, &op_code))
+    {
+      as_bad(_("Invalid memory reference type for store"));
+      return A_ERR;
+    }
+  insn_code =
+    FIELD_D(is_invalidate ? 0 : tokens[5].first_lexer_token->sub_type) |
+    FIELD_C(0xf) |
+    FIELD_B(op_code) |
+    FIELD_A(0xf);
+
+  A_RETURN();
+}
+//  PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                        ACTION(INVALID_PATTERN),
+
 
 static int action_move_imm_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
@@ -1044,14 +1234,109 @@ static int action_prefix_op(void *context ATTRIBUTE_UNUSED, const brew_parser_to
   A_RETURN();
 }
 
+static int action_interpolate(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  A_PROLOG_EXT(4);
+  A_CHECK(6);
+
+  gas_assert(tokens[0].parser_token == T_REG);
+  gas_assert(tokens[3].parser_token == T_REG);
+  gas_assert(tokens[5].parser_token == T_REG);
+
+  ext_code =
+    FIELD_D(0xf) |
+    FIELD_C(0xe) |
+    FIELD_B(0x0) |
+    FIELD_A(0x0);
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type) |
+    FIELD_C(0x2) |
+    FIELD_B(tokens[5].first_lexer_token->sub_type) |
+    FIELD_A(tokens[3].first_lexer_token->sub_type);
+  A_RETURN_EXT();
+}
+
+static int action_full_mult(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  int shift_amount;
+  A_PROLOG_EXT(4);
+  A_CHECK(8);
+
+  gas_assert(tokens[0].parser_token == T_REG);
+  gas_assert(tokens[3].parser_token == T_REG);
+  gas_assert(tokens[5].parser_token == T_REG);
+  gas_assert(tokens[6].parser_token == T_RSHIFT);
+  gas_assert(tokens[7].parser_token == ~T_NULL);
+
+  if (!parse_int(tokens[7].first_lexer_token, tokens[7].last_lexer_token, &shift_amount))
+    {
+      as_bad(_("Can't parse shift expression"));
+      return A_ERR;
+    }
+  if (shift_amount < 0 || shift_amount > 31)
+    {
+      as_bad(_("Shift amount out of range"));
+      return A_ERR;
+    }
+  ext_code =
+    FIELD_D(0xf) |
+    FIELD_C(0xe) |
+    shift_amount;
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type) |
+    FIELD_C(tokens[6].first_lexer_token->sub_type == 0x7 ? 1 : 0) |
+    FIELD_B(tokens[5].first_lexer_token->sub_type) |
+    FIELD_A(tokens[3].first_lexer_token->sub_type);
+  A_RETURN_EXT();
+}
+
+//T_REG, T_ASSIGN, T_SWIZZLE, T_REG, T_COMMA, ~T_NULL
+static int action_swizzle(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  uint swizzle_pattern = 0;
+  A_PROLOG(4);
+  A_CHECK(6);
+
+  gas_assert(tokens[0].parser_token == T_REG);
+  gas_assert(tokens[3].parser_token == T_REG);
+  gas_assert(tokens[5].parser_token == ~T_NULL);
+
+  // Parse the swizzle lane configuration
+  if (tokens[5].first_lexer_token->len != 4)
+    {
+      as_bad(_("Swizzle expression must be 4 digits"));
+      return A_ERR;
+    }
+  const char *lane_digit = tokens[5].first_lexer_token->start;
+  for (uint i=0;i<tokens[5].first_lexer_token->len;++i) {
+    if (*lane_digit< '0' || *lane_digit > '3')
+      {
+        as_bad(_("Invalid swizzle expression at digit %d"), i);
+        return A_ERR;
+      }
+    swizzle_pattern = (swizzle_pattern << 2) | (*lane_digit - '0');
+    ++lane_digit;
+  }
+  gas_assert(swizzle_pattern <= 255);
+  md_number_to_chars(frag+2, swizzle_pattern, 2);
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type) |
+    FIELD_C(0xa) |
+    FIELD_B(0xf) |
+    FIELD_A(tokens[3].first_lexer_token->sub_type);
+  A_RETURN();
+}
+
+
+
 
 static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_INSN),                                                                                      ACTION(action_insn),
   PATTERN(T_SWI, ~T_NULL),                                                                              ACTION(action_swi),
   PATTERN(T_PC, T_ASSIGN, T_REG),                                                                       ACTION(action_move_reg_to_pc),
-  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                        ACTION(action_load_reg_to_pc),
-  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                   ACTION(action_load_reg_ofs_to_pc),
-  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                  ACTION(action_load_ofs_to_pc),
+  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                        ACTION(action_load_reg),
+  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                   ACTION(action_load_reg_ofs),
+  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                  ACTION(action_load_ofs),
   PATTERN(T_PC, T_ASSIGN, ~T_NULL),                                                                     ACTION(action_move_imm_to_pc),
   PATTERN(T_PC, T_ASSIGN, T_SHORT, ~T_NULL),                                                            ACTION(action_move_short_imm_to_pc),
 
@@ -1086,14 +1371,14 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_REG, T_ASSIGN, T_PREFIX_OP, T_REG),                                                         ACTION(action_prefix_op),
   PATTERN(T_REG, T_ASSIGN, T_MINUS, T_REG),                                                             ACTION(action_prefix_op),
   PATTERN(T_REG, T_ASSIGN, T_TILDE, T_REG),                                                             ACTION(action_prefix_op),
-  PATTERN(T_REG, T_ASSIGN, T_INTERPOLATE, T_REG, T_COMMA, T_REG),                                       ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_FULL, T_REG, T_STAR, T_REG, T_LSHIFT, ~T_NULL),                            ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SWIZZLE, T_REG, T_COMMA, ~T_NULL),                                         ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_INTERPOLATE, T_REG, T_COMMA, T_REG),                                       ACTION(action_interpolate),
+  PATTERN(T_REG, T_ASSIGN, T_FULL, T_REG, T_STAR, T_REG, T_RSHIFT, ~T_NULL),                            ACTION(action_full_mult),
+  PATTERN(T_REG, T_ASSIGN, T_SWIZZLE, T_REG, T_COMMA, ~T_NULL),                                         ACTION(action_swizzle),
 
-  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                       ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                       ACTION(action_load_reg),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, T_TINY, ~T_RBRACKET, T_RBRACKET),          ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                  ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                 ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                  ACTION(action_load_reg_ofs),
+  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                 ACTION(action_load_ofs),
 
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_HAT, ~T_NULL),                                             ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_BAR, ~T_NULL),                                             ACTION(action_binary_reg_imm),
@@ -1110,10 +1395,14 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_REG, T_ASSIGN, T_ONE, T_DIV, T_REG),                                                        ACTION(INVALID_PATTERN),
   PATTERN(T_REG, T_ASSIGN, ~T_NULL),                                                                    ACTION(INVALID_PATTERN),
 
-  PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET, T_ASSIGN, T_REG),                                       ACTION(INVALID_PATTERN),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                        ACTION(action_store_reg),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                                   ACTION(action_store_reg_ofs),
+  PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                  ACTION(action_store_ofs),
+
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET, T_ASSIGN, T_REG),                                       ACTION(action_store_reg),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                  ACTION(action_store_reg_ofs),
+  PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                 ACTION(action_store_ofs),
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, T_TINY, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),          ACTION(INVALID_PATTERN),
-  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                  ACTION(INVALID_PATTERN),
-  PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                 ACTION(INVALID_PATTERN),
 
   PATTERN(T_IF, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                         ACTION(INVALID_PATTERN),
   PATTERN(T_IF, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                          ACTION(INVALID_PATTERN),
