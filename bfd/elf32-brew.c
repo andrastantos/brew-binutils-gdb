@@ -225,13 +225,15 @@ brew_final_link_relocate (
   switch (howto->type)
     {
     case R_BREW_16_SPCREL:
+      fprintf(stderr, "FIXME: %s:%d do we need the +2 here?\n", __FILE__, __LINE__);
       r = _bfd_final_link_relocate(
         howto,
         input_bfd,
         input_section,
         contents,
         rel->r_offset,
-        relocation + 2,
+        //relocation + 2,
+        relocation,
         rel->r_addend
       );
       break;

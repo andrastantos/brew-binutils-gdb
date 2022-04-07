@@ -366,7 +366,7 @@ parse_expression(
   const char *old_fr_literal = frag_now->fr_literal; // this is just for debug
   fix_new_exp(
     frag_now,
-    fragment_ofs,
+    fragment_ofs + (fragment_data - frag_now->fr_literal),
     fragment_size,
     &expression,
     reloc_type == BFD_RELOC_BREW_PCREL16, // this is the only pc-relative relocation we're supporting at the moment
@@ -394,7 +394,6 @@ DONE:
 #define A_PROLOG(_insn_len) \
   uint16_t insn_code; \
   size_t insn_len = _insn_len; \
-  frag_new(0); \
   char *frag = frag_more(insn_len); \
   frag_now->fr_type = rs_fill
 
@@ -408,7 +407,6 @@ DONE:
   uint16_t ext_code; \
   uint16_t insn_code; \
   size_t insn_len = _insn_len; \
-  frag_new(0); \
   char *frag = frag_more(insn_len); \
   frag_now->fr_type = rs_fill
 
@@ -1088,11 +1086,72 @@ static int action_tiny_add_sub(void *context ATTRIBUTE_UNUSED, const brew_parser
   A_RETURN();
 }
 
+
+static void cmp_subtype_to_op_code(int sub_type, bool is_zero, bool is_signed, bool is_any, int *op_code, bool *swap_args)
+{
+  *swap_args = false;
+  switch (sub_type)
+    {
+      case ST_CMP_EQ:
+        *op_code = is_zero ? 0 : 1;
+        break;
+      case ST_CMP_NE:
+        *op_code = is_zero ? 1 : 2;
+        break;
+      case ST_CMP_LT:
+        if (is_zero)
+          {
+            *op_code = 2;
+          }
+        else
+          {
+            *op_code = is_signed ? 3 : 5;
+          }
+        break;
+      case ST_CMP_GE:
+        if (is_zero)
+          {
+            *op_code = 3;
+          }
+        else
+          {
+            *op_code = is_signed ? 4 : 6;
+          }
+        break;
+      case ST_CMP_GT:
+        if (is_zero)
+          {
+            *op_code = 4;
+          }
+        else
+          {
+            *op_code = is_signed ? 3 : 5;
+            *swap_args = true;
+          }
+        break;
+      case ST_CMP_LE:
+        if (is_zero)
+          {
+            *op_code = 5;
+          }
+        else
+          {
+            *op_code = is_signed ? 4 : 6;
+            *swap_args = true;
+          }
+        break;
+      default:
+        gas_assert(false);
+    }
+  if (!is_any)
+    *op_code |= 8;
+}
+
 static int action_lane_cmp(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_signed;
   bool is_zero;
-  bool swap_args = false;
+  bool swap_args;
   int op_code = 0;
 
   A_PROLOG_EXT(4);
@@ -1107,59 +1166,8 @@ static int action_lane_cmp(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
 
   is_zero = second_arg->parser_token == T_ZERO;
 
-  switch (cmp->first_lexer_token->sub_type)
-    {
-      case ST_CMP_EQ:
-        op_code = is_zero ? 0 : 1;
-        break;
-      case ST_CMP_NE:
-        op_code = is_zero ? 1 : 2;
-        break;
-      case ST_CMP_LT:
-        if (is_zero)
-          {
-            op_code = 2;
-          }
-        else
-          {
-            op_code = is_signed ? 3 : 5;
-          }
-        break;
-      case ST_CMP_GE:
-        if (is_zero)
-          {
-            op_code = 4;
-          }
-        else
-          {
-            op_code = is_signed ? 4 : 6;
-          }
-        break;
-      case ST_CMP_GT:
-        if (is_zero)
-          {
-            op_code = 4;
-          }
-        else
-          {
-            op_code = is_signed ? 3 : 5;
-            swap_args = true;
-          }
-        break;
-      case ST_CMP_LE:
-        if (is_zero)
-          {
-            op_code = 5;
-          }
-        else
-          {
-            op_code = is_signed ? 4 : 6;
-            swap_args = true;
-          }
-        break;
-      default:
-        gas_assert(false);
-    }
+  cmp_subtype_to_op_code(cmp->first_lexer_token->sub_type, is_zero, is_signed, true, &op_code, &swap_args);
+
   ext_code =
     FIELD_D(0xf) |
     FIELD_C(0xe) |
@@ -1183,6 +1191,66 @@ static int action_lane_cmp(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
         FIELD_A(swap_args ? second_arg->first_lexer_token->sub_type : first_arg->first_lexer_token->sub_type);
     }
   A_RETURN_EXT();
+}
+
+static int action_cbranch(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  bool is_signed;
+  bool is_zero;
+  bool is_any = true;
+  bool is_qualified;
+  bool swap_args;
+  int op_code = 0;
+  int prefix_size;
+
+  A_PROLOG(4);
+  is_qualified = tokens[1].parser_token == T_IF_QUAL;
+  is_signed = tokens[is_qualified ? 2 : 1].parser_token == T_SIGNED;
+  prefix_size = is_qualified ? (is_signed ? 3 : 2) : (is_signed ? 2 : 1);
+  DEBUG("prefix_size: %d", prefix_size);
+  A_CHECK(prefix_size + 6);
+
+  const brew_parser_tokenS *first_arg = &tokens[prefix_size + 0];
+  const brew_parser_tokenS *cmp = &tokens[prefix_size + 1];
+  const brew_parser_tokenS *second_arg = &tokens[prefix_size + 2];
+  const brew_parser_tokenS *target = &tokens[prefix_size + 5];
+
+  if (is_qualified)
+    is_any = (tokens[1].first_lexer_token->sub_type == ST_IF_ANY);
+
+  gas_assert(first_arg->parser_token == T_REG);
+  gas_assert(second_arg->parser_token == T_REG || !is_signed);
+  gas_assert(cmp->parser_token == T_CMP);
+  gas_assert(target->parser_token == ~T_NULL);
+
+  is_zero = second_arg->parser_token == T_ZERO;
+
+  cmp_subtype_to_op_code(cmp->first_lexer_token->sub_type, is_zero, is_signed, is_any, &op_code, &swap_args);
+
+  if (!parse_expression(target->first_lexer_token, target->last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_BREW_PCREL16))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+
+  if (is_zero)
+    {
+      gas_assert(!swap_args);
+      insn_code =
+        FIELD_D(0xf) |
+        FIELD_C(0) |
+        FIELD_B(op_code) |
+        FIELD_A(first_arg->first_lexer_token->sub_type);
+    }
+  else
+    {
+      insn_code =
+        FIELD_D(0xf) |
+        FIELD_C(op_code) |
+        FIELD_B(swap_args ? first_arg->first_lexer_token->sub_type : second_arg->first_lexer_token->sub_type) |
+        FIELD_A(swap_args ? second_arg->first_lexer_token->sub_type : first_arg->first_lexer_token->sub_type);
+    }
+  A_RETURN();
 }
 
 static int action_move_reg_to_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
@@ -1404,8 +1472,15 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                 ACTION(action_store_ofs),
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, T_TINY, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),          ACTION(INVALID_PATTERN),
 
-  PATTERN(T_IF, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                         ACTION(INVALID_PATTERN),
-  PATTERN(T_IF, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                          ACTION(INVALID_PATTERN),
+  PATTERN(T_IF, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                         ACTION(action_cbranch),
+  PATTERN(T_IF, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                          ACTION(action_cbranch),
+  PATTERN(T_IF, T_SIGNED, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                               ACTION(action_cbranch),
+  PATTERN(T_IF, T_SIGNED, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                ACTION(action_cbranch),
+  PATTERN(T_IF, T_IF_QUAL, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                              ACTION(action_cbranch),
+  PATTERN(T_IF, T_IF_QUAL, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                               ACTION(action_cbranch),
+  PATTERN(T_IF, T_IF_QUAL, T_SIGNED, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                    ACTION(action_cbranch),
+  PATTERN(T_IF, T_IF_QUAL, T_SIGNED, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                     ACTION(action_cbranch),
+
   PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ONE, T_PC, T_ASSIGN, ~T_NULL),     ACTION(INVALID_PATTERN),
   PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),    ACTION(INVALID_PATTERN),
 };
@@ -1530,6 +1605,7 @@ md_apply_fix(
 ) {
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
   long val = *valP;
+  uint16_t munged_val;
   long max, min;
 
   max = min = 0;
@@ -1569,8 +1645,9 @@ md_apply_fix(
       // This is a relative 17-bit offset, the LSB being 0 and not stored
       if ((val & 1) != 0)
         as_bad_where (fixP->fx_file, fixP->fx_line, _("$pc offset must be even"));
-      buf[1] = val >> 9;
-      buf[0] = val >> 1;
+      munged_val = brew_munge_address(val);
+      buf[1] = munged_val >> 8;
+      buf[0] = munged_val >> 0;
       buf += 2;
       break;
     default:
@@ -1627,7 +1704,7 @@ md_pcrel_from(fixS *fixP)
 {
   gas_assert(fixP->fx_r_type == BFD_RELOC_BREW_PCREL16);
 
-  fprintf(stderr, "FIXME: %s:%d do we need the -2 here?", __FILE__, __LINE__);
+  fprintf(stderr, "FIXME: %s:%d do we need the -2 here?\n", __FILE__, __LINE__);
   valueT addr = fixP->fx_where + fixP->fx_frag->fr_address - 2;
   return addr;
 }
