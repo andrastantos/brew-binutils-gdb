@@ -183,12 +183,6 @@ static unary_op_tableS unary_op_table[] = {
   { NULL,      0x0000,     0,        0,                     0 }
 };
 
-static int bit_idx_to_field_a[] = {
-  0,   1,   2,   3,   4,   5,   6,   7,
-  8,   9,  -1,  -1,  -1,  -1,  10,  11,
- 12,  -1,  -1,  -1,  -1,  -1,  -1,  -1,
- -1,  -1,  -1,  -1,  -1,  -1,  13,  14
-};
 */
 // This is really unfortunate that as doesn't provide a 'v' version of these routines
 /*
@@ -204,6 +198,13 @@ as_vbad (const char *format, va_list args)
 #pragma GCC diagnostic pop
 }
 */
+
+static int bit_idx_to_field_a[] = {
+  0,   1,   2,   3,   4,   5,   6,   7,
+  8,   9,  -1,  -1,  -1,  -1,  10,  11,
+ 12,  -1,  -1,  -1,  -1,  -1,  -1,  -1,
+ -1,  -1,  -1,  -1,  -1,  -1,  13,  14
+};
 
 const pseudo_typeS md_pseudo_table[] =
 {
@@ -232,13 +233,13 @@ parse_int(const brew_lexer_tokenS *first_token, const brew_lexer_tokenS *last_to
     {
       size_t len;
       len = last_token->start + last_token->len - first_token->start;
-      if (len == 0)
+      gas_assert(len > 0);
+      if (len == 1)
         return false;
-      tok_end = (char *)(first_token->start + len);
+      tok_end = (char *)(first_token->start + len - 1);
       terminator = *tok_end;
       *tok_end = 0;
     }
-
 
   if (*digit == '-')
     {
@@ -326,6 +327,7 @@ parse_expression(
   if (last_token->type != T_NULL)
     {
       expression_len = last_token->start + last_token->len - expression_str;
+      gas_assert(expression_len > 0);
       if (expression_len == 1)
         return false;
       terminator = expression_str[expression_len-1];
@@ -531,12 +533,12 @@ static bool mem_subtype_to_opcode_ld(int sub_type, int *op_code)
 {
   switch (sub_type)
     {
-      case ST_SMEM_8:  *op_code = 0; break;
-      case ST_MEM_8:   *op_code = 1; break;
-      case ST_SMEM_16: *op_code = 2; break;
-      case ST_MEM_16:  *op_code = 3; break;
-      case ST_MEM_32:  *op_code = 4; break;
-      case ST_MEM_LL:  *op_code = 8; break;
+      case ST_MEM_8:   *op_code = 0x4; break;
+      case ST_MEM_16:  *op_code = 0x5; break;
+      case ST_MEM_32:  *op_code = 0x6; break;
+      case ST_MEM_LL:  *op_code = 0x7; break;
+      case ST_SMEM_8:  *op_code = 0xc; break;
+      case ST_SMEM_16: *op_code = 0xd; break;
       default:
         return false;
     }
@@ -549,17 +551,17 @@ static bool mem_subtype_to_opcode_st(int sub_type, bool is_invalidate, int *op_c
     {
       if (sub_type != ST_MEM_INV)
         return false;
-      *op_code = 0xa;
+      *op_code = 0xe;
       return true;
     }
   switch (sub_type)
     {
-      case ST_SMEM_8:  *op_code = 5; break;
-      case ST_MEM_8:   *op_code = 5; break;
-      case ST_SMEM_16: *op_code = 6; break;
-      case ST_MEM_16:  *op_code = 6; break;
-      case ST_MEM_32:  *op_code = 7; break;
-      case ST_MEM_SR:  *op_code = 9; break;
+      case ST_MEM_8:   *op_code = 0x8; break;
+      case ST_SMEM_8:  *op_code = 0x8; break;
+      case ST_SMEM_16: *op_code = 0x9; break;
+      case ST_MEM_16:  *op_code = 0x9; break;
+      case ST_MEM_32:  *op_code = 0xa; break;
+      case ST_MEM_SR:  *op_code = 0xb; break;
       default:
         return false;
     }
@@ -581,7 +583,7 @@ static int action_load_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
       insn_code =
         FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
         FIELD_C(0xe) |
-        FIELD_B(0xa) |
+        FIELD_B(0xe) |
         FIELD_A(tokens[4].first_lexer_token->sub_type);
     }
   else
@@ -622,7 +624,7 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
       insn_code =
         FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
         FIELD_C(0xf) |
-        FIELD_B(0xa) |
+        FIELD_B(0xe) |
         FIELD_A(tokens[4].first_lexer_token->sub_type);
     }
   else
@@ -663,7 +665,7 @@ static int action_load_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
       insn_code =
         FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
         FIELD_C(0xf) |
-        FIELD_B(0xa) |
+        FIELD_B(0xe) |
         FIELD_A(0xf);
     }
   else
@@ -770,8 +772,6 @@ static int action_store_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_to
 
   A_RETURN();
 }
-//  PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                        ACTION(INVALID_PATTERN),
-
 
 static int action_move_imm_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
@@ -788,7 +788,7 @@ static int action_move_imm_to_pc(void *context ATTRIBUTE_UNUSED, const brew_pars
   insn_code =
     FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
     FIELD_C(0x0) |
-    FIELD_B(0x1) |
+    FIELD_B(0xe) |
     FIELD_A(0xf);
   A_RETURN();
 }
@@ -809,7 +809,7 @@ static int action_move_short_imm_to_pc(void *context ATTRIBUTE_UNUSED, const bre
     FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
     FIELD_C(0x0) |
     FIELD_B(0xf) |
-    FIELD_A(0x1);
+    FIELD_A(0xe);
   A_RETURN();
 }
 
@@ -983,6 +983,54 @@ static int action_binary_reg_imm(void *context ATTRIBUTE_UNUSED, const brew_pars
   A_RETURN();
 }
 
+static int action_move_imm_to_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  const brew_parser_tokenS *reg_dst;
+  const brew_parser_tokenS *imm_op;
+  bool is_short;
+
+  is_short = tokens[2].parser_token == T_SHORT;
+
+  A_PROLOG(is_short ? 4 : 6);
+  A_CHECK(is_short ? 4 : 3);
+
+  reg_dst = &tokens[0];
+  if (is_short)
+    {
+      imm_op = &tokens[3];
+    }
+  else
+    {
+      imm_op = &tokens[2];
+    }
+
+  gas_assert(reg_dst->parser_token == T_REG);
+  gas_assert(imm_op->parser_token == ~T_NULL);
+
+  if (!parse_expression(imm_op->first_lexer_token, imm_op->last_lexer_token, frag, 2, insn_len, false, is_short ? BFD_RELOC_16 : BFD_RELOC_32))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+
+  if (is_short)
+    {
+      insn_code =
+        FIELD_D(reg_dst->first_lexer_token->sub_type) |
+        FIELD_C(0x0) |
+        FIELD_B(0xf) |
+        FIELD_A(0x0);
+    }
+  else
+    {
+      insn_code =
+        FIELD_D(reg_dst->first_lexer_token->sub_type) |
+        FIELD_C(0x0) |
+        FIELD_B(0x0) |
+        FIELD_A(0xf);
+    }
+  A_RETURN();
+}
 
 static int action_binary_imm_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
@@ -1044,6 +1092,24 @@ static int action_binary_imm_reg(void *context ATTRIBUTE_UNUSED, const brew_pars
         FIELD_B(reg_op->first_lexer_token->sub_type) |
         FIELD_A(0xf);
     }
+  A_RETURN();
+}
+
+
+// PATTERN(T_REG, T_ASSIGN, T_ONE, T_DIV, T_REG),                                                        ACTION(INVALID_PATTERN),
+static int action_reciprocal(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  A_PROLOG(2);
+  A_CHECK(5);
+
+  gas_assert(tokens[0].parser_token == T_REG);
+  gas_assert(tokens[4].parser_token == T_REG);
+
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type) |
+    FIELD_C(0x0) |
+    FIELD_B(0x9) |
+    FIELD_A(tokens[4].first_lexer_token->sub_type);
   A_RETURN();
 }
 
@@ -1170,9 +1236,9 @@ static int action_lane_cmp(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
 
   ext_code =
     FIELD_D(0xf) |
-    FIELD_C(0xe) |
-    FIELD_B(0x0) |
-    FIELD_A(0xf);
+    FIELD_C(0xf) |
+    FIELD_B(0xf) |
+    FIELD_A(0x0);
   if (is_zero)
     {
       gas_assert(!swap_args);
@@ -1253,6 +1319,65 @@ static int action_cbranch(void *context ATTRIBUTE_UNUSED, const brew_parser_toke
   A_RETURN();
 }
 
+//  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ONE, T_PC, T_ASSIGN, ~T_NULL),     ACTION(INVALID_PATTERN),
+//  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),    ACTION(INVALID_PATTERN),
+static int action_cbranch_bittest(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  bool is_zero;
+  int bit_idx;
+
+  A_PROLOG(4);
+  A_CHECK(10);
+
+  is_zero = (tokens[6].parser_token == T_ZERO);
+
+  gas_assert(tokens[1].parser_token == T_REG);
+  gas_assert(tokens[3].parser_token == ~T_RBRACKET);
+  gas_assert(tokens[9].parser_token == ~T_NULL);
+
+  if (!parse_expression(tokens[9].first_lexer_token, tokens[9].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_BREW_PCREL16))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+
+  if (!parse_int(tokens[3].first_lexer_token, tokens[3].last_lexer_token, &bit_idx))
+    {
+      as_bad(_("Bit-index must be an integer"));
+      return A_ERR;
+    }
+  if (bit_idx < 0 || bit_idx > 31)
+    {
+      as_bad(_("Bit-index out of range"));
+      return A_ERR;
+    }
+  bit_idx = bit_idx_to_field_a[bit_idx];
+  if (bit_idx < 0)
+    {
+      as_bad(_("Invalid bit-index"));
+      return A_ERR;
+    }
+  gas_assert(bit_idx > 0 && bit_idx < 0xf);
+
+  if (is_zero)
+    {
+      insn_code =
+        FIELD_D(0xf) |
+        FIELD_C(bit_idx) |
+        FIELD_B(tokens[1].first_lexer_token->sub_type) |
+        FIELD_A(0xf);
+    }
+  else
+    {
+      insn_code =
+        FIELD_D(0xf) |
+        FIELD_C(bit_idx) |
+        FIELD_B(0xf) |
+        FIELD_A(tokens[1].first_lexer_token->sub_type);
+    }
+  A_RETURN();
+}
+
 static int action_move_reg_to_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(2);
@@ -1313,12 +1438,12 @@ static int action_interpolate(void *context ATTRIBUTE_UNUSED, const brew_parser_
 
   ext_code =
     FIELD_D(0xf) |
-    FIELD_C(0xe) |
-    FIELD_B(0x0) |
-    FIELD_A(0x0);
+    FIELD_C(0xf) |
+    FIELD_B(0xf) |
+    FIELD_A(0x1);
   insn_code =
     FIELD_D(tokens[0].first_lexer_token->sub_type) |
-    FIELD_C(0x2) |
+    FIELD_C(0x0) |
     FIELD_B(tokens[5].first_lexer_token->sub_type) |
     FIELD_A(tokens[3].first_lexer_token->sub_type);
   A_RETURN_EXT();
@@ -1348,7 +1473,7 @@ static int action_full_mult(void *context ATTRIBUTE_UNUSED, const brew_parser_to
     }
   ext_code =
     FIELD_D(0xf) |
-    FIELD_C(0xe) |
+    FIELD_C(0xf) |
     shift_amount;
   insn_code =
     FIELD_D(tokens[0].first_lexer_token->sub_type) |
@@ -1457,11 +1582,11 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_AND, ~T_NULL),                                             ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_MINUS, ~T_NULL),                                           ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_REG, T_REG),                                                     ACTION(action_binary_imm_reg),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_NULL),                                                           ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_NULL),                                                           ACTION(action_move_imm_to_reg),
 
   PATTERN(T_REG, T_ASSIGN, ~T_REG, T_REG),                                                              ACTION(action_binary_imm_reg),
-  PATTERN(T_REG, T_ASSIGN, T_ONE, T_DIV, T_REG),                                                        ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, ~T_NULL),                                                                    ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_ONE, T_DIV, T_REG),                                                        ACTION(action_reciprocal),
+  PATTERN(T_REG, T_ASSIGN, ~T_NULL),                                                                    ACTION(action_move_imm_to_reg),
 
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                        ACTION(action_store_reg),
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                                   ACTION(action_store_reg_ofs),
@@ -1481,8 +1606,10 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_IF, T_IF_QUAL, T_SIGNED, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                    ACTION(action_cbranch),
   PATTERN(T_IF, T_IF_QUAL, T_SIGNED, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                     ACTION(action_cbranch),
 
-  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ONE, T_PC, T_ASSIGN, ~T_NULL),     ACTION(INVALID_PATTERN),
-  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),    ACTION(INVALID_PATTERN),
+  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ONE, T_PC, T_ASSIGN, ~T_NULL),     ACTION(action_cbranch_bittest),
+  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),    ACTION(action_cbranch_bittest),
+
+
 };
 
 // This is the guts of the machine-dependent assembler.  STR points to
