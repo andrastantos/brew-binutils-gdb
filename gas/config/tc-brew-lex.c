@@ -67,6 +67,7 @@ static const char *tok_names[] = {
   "T_TYPE",
   "T_TYPENAME",
   "T_SIGNED",
+  "T_ELLIPSIS",
   "T_UNKNOWN"
 };
 
@@ -132,14 +133,15 @@ typedef struct
 } token_declS;
 
 static const token_declS special_tokens[] = {
-  { "<-", T_ASSIGN,  0 },
-  { "==", T_CMP,     ST_CMP_EQ },
-  { "!=", T_CMP,     ST_CMP_NE },
-  { "<=", T_CMP,     ST_CMP_LE },
-  { ">=", T_CMP,     ST_CMP_GE },
-  { ">>>", T_RSHIFT, 0x8 },
-  { ">>", T_RSHIFT,  0x7 },
-  { "<<", T_LSHIFT,  0x6 }
+  { "<-",  T_ASSIGN,   0 },
+  { "==",  T_CMP,      ST_CMP_EQ },
+  { "!=",  T_CMP,      ST_CMP_NE },
+  { "<=",  T_CMP,      ST_CMP_LE },
+  { ">=",  T_CMP,      ST_CMP_GE },
+  { ">>>", T_RSHIFT,   0x8 },
+  { ">>",  T_RSHIFT,   0x7 },
+  { "<<",  T_LSHIFT,   0x6 },
+  { "...", T_ELLIPSIS, 0 }
 };
 
 
@@ -292,7 +294,7 @@ brew_lexer_tokenS *brew_tokenize(const char *str)
               continue;
             }
           // These are tokens on their own right
-          if (strchr("<>![]=,^&*+/~|-", *tok_end) != NULL)
+          if (strchr("<>![]=,^&*+/~|-.", *tok_end) != NULL)
             {
               if (tok_end == tok_start)
                 {
