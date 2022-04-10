@@ -25,7 +25,12 @@
                 "*.def": "c",
                 "brew_abi.h": "c",
                 "brew-abi.h": "c",
-                "typeinfo": "c"
+                "typeinfo": "c",
+                "cstdlib": "c",
+                "memory": "c",
+                "chrono": "c",
+                "tc-brew-int.h": "c",
+                "complex": "c"
         }
 	}
 }
