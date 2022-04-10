@@ -152,24 +152,6 @@ static reloc_howto_type brew_elf_howto_table[] =
     0x00fe,                     /* dst_mask */
     false                       /* pcrel_offset */
   ),
-
-  /* A 7 bit negative absolute relocation.  */
-  HOWTO (
-    R_BREW_NEG7,                /* type */
-    2,                          /* rightshift */
-    -2,                         /* size (0 = byte, 1 = short, 2 = long) */
-    7,                          /* bitsize */
-    false,                      /* pc_relative */
-    1,                          /* bitpos */
-    complain_overflow_unsigned, /* complain_on_overflow */
-    bfd_elf_generic_reloc,      /* special_function */
-    "R_BREW_NEG7",              /* name */
-    false,                      /* partial_inplace */
-    0xff01,                     /* src_mask */
-    0x00fe,                     /* dst_mask */
-    false                       /* pcrel_offset */
-  ),
-
 };
 
 /* Map BFD reloc types to BREW ELF reloc types.  */
@@ -188,8 +170,7 @@ static const struct brew_reloc_map brew_reloc_map[] =
   { BFD_RELOC_16,             R_BREW_16 },
   { BFD_RELOC_BREW_NEG16,     R_BREW_NEG16 },
   { BFD_RELOC_BREW_PCREL16,   R_BREW_16_SPCREL },
-  { BFD_RELOC_BREW_7,         R_BREW_7 },
-  { BFD_RELOC_BREW_NEG7,      R_BREW_NEG7 }
+  { BFD_RELOC_BREW_7,         R_BREW_7 }
 };
 
 static reloc_howto_type *

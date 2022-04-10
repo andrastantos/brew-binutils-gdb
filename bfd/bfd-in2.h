@@ -6317,7 +6317,6 @@ assembler and not (currently) written to any object files.  */
   BFD_RELOC_BREW_NEG16,    /* 16-bit negative relocation */
   BFD_RELOC_BREW_PCREL16,  /* PC-relative 16-bit relocation */
   BFD_RELOC_BREW_7,        /* 7-bit tiny relocation for stack ld/st */
-  BFD_RELOC_BREW_NEG7,     /* 7-bit tiny relocation for stack ld/st */
 
   BFD_RELOC_UNUSED };
 

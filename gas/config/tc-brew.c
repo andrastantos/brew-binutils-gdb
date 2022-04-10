@@ -1967,12 +1967,6 @@ md_apply_fix(
       buf[0] = (buf[0] & 1) | (((val >> 2) << 1) & 0xfe);
       buf += 2;
       break;
-    case BFD_RELOC_BREW_NEG7:
-      max = -508;
-      min = 512;
-      buf[0] = (buf[0] & 1) | (((-val >> 2) << 1) & 0xfe);
-      buf += 2;
-      break;
     case BFD_RELOC_BREW_PCREL16:
       max = INT16_MAX;
       min = INT16_MIN;
