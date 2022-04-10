@@ -27,6 +27,7 @@
 
 #include <safe-ctype.h>
 #include "tc-brew-lex.h"
+#include "opcode/brew-abi.h"
 
 static const char *tok_names[] = {
   "T_NULL",
@@ -207,9 +208,9 @@ static const token_declS token_library[] = {
   { "sint8x4s",     T_TYPENAME,      6 },
   { "fp32",         T_TYPENAME,      8 },
   { "fp16x2",       T_TYPENAME,      9 },
-  { "$fp",          T_REG,           12 },
-  { "$sp",          T_REG,           13 },
-  { "$lr",          T_REG,           14 },
+  { "$fp",          T_REG,           BREW_REG_FP },
+  { "$sp",          T_REG,           BREW_REG_SP },
+  { "$lr",          T_REG,           BREW_REG_LINK },
   { "$r0",          T_REG,           0 },
   { "$r1",          T_REG,           1 },
   { "$r2",          T_REG,           2 },

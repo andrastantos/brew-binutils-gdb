@@ -25,9 +25,9 @@
 //       kept in sync with the ones here. In fact, one could argue that the ABI is defined
 //       *by* the GCC sources.
 
-#define BREW_REG_SP 0
-#define BREW_REG_FP 1
-#define BREW_REG_LINK 2
+#define BREW_REG_SP 13
+#define BREW_REG_FP 12
+#define BREW_REG_LINK 14
 #define BREW_REG_SYSCALL_ERRNO 2
 #define BREW_REG_ARG0 4
 #define BREW_REG_ARG1 5

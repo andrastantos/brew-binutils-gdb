@@ -431,16 +431,6 @@ enum ACTION_RESULT {
   A_NOT_FOUND = -1
 };
 
-static int INVALID_PATTERN(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
-{
-  DEBUG_BEGIN
-  brew_dump_parsed_tokens(stderr, tokens);
-  DEBUG_END
-
-  as_bad(_("UNIMPLEMENTED PATTERN"));
-  return A_ERR;
-}
-
 static size_t tslen(const brew_parser_tokenS *tokens)
 {
   size_t len = 0;
@@ -606,15 +596,22 @@ static int action_load_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
 static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_pc_target;
-  A_PROLOG(4);
-  A_CHECK(8);
+  bool is_tiny;
+  const brew_parser_tokenS *offs;
+
+  is_tiny = (tokens[6].parser_token == T_TINY);
+
+  A_PROLOG(is_tiny ? 2 : 4);
+  A_CHECK(is_tiny ? 9 : 8);
+
+  offs = is_tiny ? &tokens[7] : &tokens[6];
 
   is_pc_target = tokens[0].parser_token == T_PC;
   gas_assert(tokens[0].parser_token == T_REG || is_pc_target);
   gas_assert(tokens[2].parser_token == T_MEM);
   gas_assert(tokens[4].parser_token == T_REG);
-  gas_assert(tokens[6].parser_token == ~T_RBRACKET);
-  if (!parse_expression(tokens[6].first_lexer_token, tokens[6].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_16))
+  gas_assert(offs->parser_token == ~T_RBRACKET);
+  if (!parse_expression(offs->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
@@ -626,6 +623,23 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
         FIELD_C(0xf) |
         FIELD_B(0xe) |
         FIELD_A(tokens[4].first_lexer_token->sub_type);
+    }
+  else if (is_tiny)
+    {
+      switch (tokens[4].first_lexer_token->sub_type)
+        {
+          case BREW_REG_FP:
+          case BREW_REG_SP:
+          break;
+          default:
+            as_bad(_("Tiny loads only support $sp and $fp as base registers"));
+            return A_ERR;
+        }
+      insn_code =
+        FIELD_D(tokens[0].first_lexer_token->sub_type) |
+        FIELD_C(0xd) |
+        FIELD_B(0x0) |
+        FIELD_A(tokens[4].first_lexer_token->sub_type & 1);
     }
   else
     {
@@ -714,30 +728,59 @@ static int action_store_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_to
 static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_invalidate;
+  bool is_tiny;
   int op_code;
-  A_PROLOG(4);
+  const brew_parser_tokenS *offs;
+  const brew_parser_tokenS *src;
+
+  is_tiny = (tokens[4].parser_token == T_TINY);
   is_invalidate = tokens[6].parser_token == T_NULL;
-  A_CHECK(is_invalidate ? 6 : 8);
+
+  A_PROLOG(is_tiny ? 2 : 4);
+  A_CHECK(is_tiny ? 9 : is_invalidate ? 6 : 8);
+
+  offs = is_tiny ? &tokens[5] : &tokens[4];
+  src = is_tiny ? &tokens[8] : is_invalidate ? NULL : &tokens[7];
 
   gas_assert(tokens[0].parser_token == T_MEM);
   gas_assert(tokens[2].parser_token == T_REG);
-  gas_assert(tokens[4].parser_token == ~T_RBRACKET);
-  gas_assert(is_invalidate | (tokens[7].parser_token == T_REG));
-  if (!parse_expression(tokens[4].first_lexer_token, tokens[4].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_16))
+  gas_assert(offs->parser_token == ~T_RBRACKET);
+  gas_assert(is_invalidate | (src->parser_token == T_REG));
+  if (!parse_expression(offs->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
     }
-  if (!mem_subtype_to_opcode_st(tokens[0].first_lexer_token->sub_type, is_invalidate, &op_code))
+  if (is_tiny)
     {
-      as_bad(_("Invalid memory reference type for store"));
-      return A_ERR;
+      switch (tokens[2].first_lexer_token->sub_type)
+        {
+          case BREW_REG_FP:
+          case BREW_REG_SP:
+          break;
+          default:
+            as_bad(_("Tiny stores only support $fp and $sp as base registers"));
+            return A_ERR;
+        }
+      insn_code =
+        FIELD_D(src->first_lexer_token->sub_type) |
+        FIELD_C(0xc) |
+        FIELD_B(0x0) |
+        FIELD_A(tokens[2].first_lexer_token->sub_type & 1);
     }
-  insn_code =
-    FIELD_D(is_invalidate ? 0 : tokens[7].first_lexer_token->sub_type) |
-    FIELD_C(0xf) |
-    FIELD_B(op_code) |
-    FIELD_A(tokens[2].first_lexer_token->sub_type);
+  else
+    {
+      if (!mem_subtype_to_opcode_st(tokens[0].first_lexer_token->sub_type, is_invalidate, &op_code))
+        {
+          as_bad(_("Invalid memory reference type for store"));
+          return A_ERR;
+        }
+      insn_code =
+        FIELD_D(is_invalidate ? 0 : src->first_lexer_token->sub_type) |
+        FIELD_C(0xf) |
+        FIELD_B(op_code) |
+        FIELD_A(tokens[2].first_lexer_token->sub_type);
+    }
   A_RETURN();
 }
 
@@ -1095,8 +1138,6 @@ static int action_binary_imm_reg(void *context ATTRIBUTE_UNUSED, const brew_pars
   A_RETURN();
 }
 
-
-// PATTERN(T_REG, T_ASSIGN, T_ONE, T_DIV, T_REG),                                                        ACTION(INVALID_PATTERN),
 static int action_reciprocal(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(2);
@@ -1319,8 +1360,6 @@ static int action_cbranch(void *context ATTRIBUTE_UNUSED, const brew_parser_toke
   A_RETURN();
 }
 
-//  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ONE, T_PC, T_ASSIGN, ~T_NULL),     ACTION(INVALID_PATTERN),
-//  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),    ACTION(INVALID_PATTERN),
 static int action_cbranch_bittest(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_zero;
@@ -1569,7 +1608,7 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_REG, T_ASSIGN, T_SWIZZLE, T_REG, T_COMMA, ~T_NULL),                                         ACTION(action_swizzle),
 
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                       ACTION(action_load_reg),
-  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, T_TINY, ~T_RBRACKET, T_RBRACKET),          ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, T_TINY, ~T_RBRACKET, T_RBRACKET),          ACTION(action_load_reg_ofs),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                  ACTION(action_load_reg_ofs),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                 ACTION(action_load_ofs),
 
@@ -1594,8 +1633,8 @@ static const brew_parser_tok_type_t raw_insn[] = {
 
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET, T_ASSIGN, T_REG),                                       ACTION(action_store_reg),
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                  ACTION(action_store_reg_ofs),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, T_TINY, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),          ACTION(action_store_reg_ofs),
   PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                 ACTION(action_store_ofs),
-  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, T_TINY, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),          ACTION(INVALID_PATTERN),
 
   PATTERN(T_IF, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                         ACTION(action_cbranch),
   PATTERN(T_IF, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                          ACTION(action_cbranch),
@@ -1764,6 +1803,18 @@ md_apply_fix(
       min = INT16_MIN;
       buf[1] = -val >> 8;
       buf[0] = -val >> 0;
+      buf += 2;
+      break;
+    case BFD_RELOC_BREW_7:
+      max = 508;
+      min = -512;
+      buf[0] = (buf[0] & 1) | (((val >> 2) << 1) & 0xfe);
+      buf += 2;
+      break;
+    case BFD_RELOC_BREW_NEG7:
+      max = -508;
+      min = 512;
+      buf[0] = (buf[0] & 1) | (((-val >> 2) << 1) & 0xfe);
       buf += 2;
       break;
     case BFD_RELOC_BREW_PCREL16:
