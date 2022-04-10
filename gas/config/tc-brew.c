@@ -240,10 +240,10 @@ parse_int(const brew_lexer_tokenS *first_token, const brew_lexer_tokenS *last_to
       terminator = *tok_end;
       *tok_end = 0;
     }
-
-  if (*digit == '-')
+  while (*digit == '-' || *digit == '+' || ISSPACE(*digit))
     {
-      negative = true;
+      if (*digit == '-')
+        negative = !negative;
       ++digit;
     }
   if (digit[0] == 0)
@@ -611,7 +611,7 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
   gas_assert(tokens[2].parser_token == T_MEM);
   gas_assert(tokens[4].parser_token == T_REG);
   gas_assert(offs->parser_token == ~T_RBRACKET);
-  if (!parse_expression(offs->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
+  if (!parse_expression((offs-1)->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
@@ -746,7 +746,7 @@ static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parse
   gas_assert(tokens[2].parser_token == T_REG);
   gas_assert(offs->parser_token == ~T_RBRACKET);
   gas_assert(is_invalidate | (src->parser_token == T_REG));
-  if (!parse_expression(offs->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
+  if (!parse_expression((offs-1)->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
@@ -900,7 +900,7 @@ static int action_link(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS 
     {
       as_bad(_("only $pc is allowed as link source"));
     }
-  if (!parse_int(tokens[4].first_lexer_token, tokens[4].last_lexer_token, &link_ofs))
+  if (!parse_int(tokens[3].first_lexer_token, tokens[4].last_lexer_token, &link_ofs))
     {
       as_bad(_("Can't parse link offset"));
       return A_ERR;
@@ -995,7 +995,7 @@ static int action_binary_reg_imm(void *context ATTRIBUTE_UNUSED, const brew_pars
   op_code = op_tok->first_lexer_token->sub_type;
 
   // We don't have this op in this format. We have only VALUE-$rX. So we'll implement it as $rx+(-VALUE)
-  if (imm_op->first_lexer_token->type == T_MINUS)
+  if (imm_op->first_lexer_token->sub_type == ST_MINUS)
     {
       reloc_type = is_short ? BFD_RELOC_BREW_NEG16 : BFD_RELOC_BREW_NEG32;
       op_code = 0x4; // override operation to '+' instead of '-'
@@ -1169,7 +1169,7 @@ static int action_tiny_add_sub(void *context ATTRIBUTE_UNUSED, const brew_parser
     {
       as_bad(_("only $pc is allowed as link source"));
     }
-  if (!parse_int(tokens[5].first_lexer_token, tokens[5].last_lexer_token, &imm))
+  if (!parse_int(tokens[4].first_lexer_token, tokens[5].last_lexer_token, &imm))
     {
       as_bad(_("Can't parse immediate"));
       return A_ERR;
@@ -1179,8 +1179,6 @@ static int action_tiny_add_sub(void *context ATTRIBUTE_UNUSED, const brew_parser
       as_bad(_("Immediate is out of range"));
       return A_ERR;
     }
-  if (tokens[4].parser_token == T_MINUS)
-    imm = -imm;
   // Convert to 1's complement
   if (imm < 0)
     imm -= 1;
@@ -1452,16 +1450,28 @@ static int action_inverse_and(void *context ATTRIBUTE_UNUSED, const brew_parser_
 
 static int action_prefix_op(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
+  int op_code;
+
   A_PROLOG(2);
   A_CHECK(4);
 
   gas_assert(tokens[0].parser_token == T_REG);
   gas_assert(tokens[3].parser_token == T_REG);
 
+  op_code = tokens[2].first_lexer_token->sub_type;
+  if (tokens[2].parser_token == T_PLUS_MINUS)
+    {
+      if (tokens[2].first_lexer_token->sub_type != ST_MINUS)
+        {
+          as_bad(_("Invalid prefix operation: use register move instead"));
+          return A_ERR;
+        }
+      op_code = 3;
+    }
   insn_code =
     FIELD_D(tokens[0].first_lexer_token->sub_type) |
     FIELD_C(0x0) |
-    FIELD_B(tokens[2].first_lexer_token->sub_type) |
+    FIELD_B(op_code) |
     FIELD_A(tokens[3].first_lexer_token->sub_type);
   A_RETURN();
 }
@@ -1559,8 +1569,6 @@ static int action_swizzle(void *context ATTRIBUTE_UNUSED, const brew_parser_toke
   A_RETURN();
 }
 
-//  PATTERN(T_TYPE, T_REG, T_ELLIPSIS, T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET), ACTION(action_load_multi_type),
-//  PATTERN(T_TYPE, T_REG, T_ELLIPSIS, T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET, T_AND, ~T_NULL), ACTION(action_load_multi_type),
 static int action_load_multi_type(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_masked;
@@ -1625,7 +1633,7 @@ static int action_load_multi_type(void *context ATTRIBUTE_UNUSED, const brew_par
       md_number_to_chars(frag+2, mask, 2);
     }
 
-  if (!parse_int(tokens[9].first_lexer_token, tokens[9].last_lexer_token, &offs))
+  if (!parse_int(tokens[8].first_lexer_token, tokens[9].last_lexer_token, &offs))
     {
       as_bad(_("Can't parse offset"));
       return A_ERR;
@@ -1652,7 +1660,6 @@ static int action_load_multi_type(void *context ATTRIBUTE_UNUSED, const brew_par
   A_RETURN();
 }
 
-//  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_TYPE, T_REG, T_ELLIPSIS, T_REG), ACTION(action_store_multi_type),
 static int action_store_multi_type(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_upper;
@@ -1684,7 +1691,7 @@ static int action_store_multi_type(void *context ATTRIBUTE_UNUSED, const brew_pa
         }
     }
 
-  if (!parse_int(tokens[4].first_lexer_token, tokens[4].last_lexer_token, &offs))
+  if (!parse_int(tokens[3].first_lexer_token, tokens[4].last_lexer_token, &offs))
     {
       as_bad(_("Can't parse offset"));
       return A_ERR;
@@ -1714,94 +1721,90 @@ static int action_store_multi_type(void *context ATTRIBUTE_UNUSED, const brew_pa
 
 
 static const brew_parser_tok_type_t raw_insn[] = {
-  PATTERN(T_INSN),                                                                                      ACTION(action_insn),
-  PATTERN(T_SWI, ~T_NULL),                                                                              ACTION(action_swi),
-  PATTERN(T_PC, T_ASSIGN, T_REG),                                                                       ACTION(action_move_reg_to_pc),
-  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                        ACTION(action_load_reg),
-  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                   ACTION(action_load_reg_ofs),
-  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                  ACTION(action_load_ofs),
-  PATTERN(T_PC, T_ASSIGN, ~T_NULL),                                                                     ACTION(action_move_imm_to_pc),
-  PATTERN(T_PC, T_ASSIGN, T_SHORT, ~T_NULL),                                                            ACTION(action_move_short_imm_to_pc),
+  PATTERN(T_INSN),                                                                                                                      ACTION(action_insn),
+  PATTERN(T_SWI, ~T_NULL),                                                                                                              ACTION(action_swi),
+  PATTERN(T_PC, T_ASSIGN, T_REG),                                                                                                       ACTION(action_move_reg_to_pc),
+  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                                        ACTION(action_load_reg),
+  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                             ACTION(action_load_reg_ofs),
+  PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                                  ACTION(action_load_ofs),
+  PATTERN(T_PC, T_ASSIGN, ~T_NULL),                                                                                                     ACTION(action_move_imm_to_pc),
+  PATTERN(T_PC, T_ASSIGN, T_SHORT, ~T_NULL),                                                                                            ACTION(action_move_short_imm_to_pc),
 
-  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_REG),                                                              ACTION(action_set_type_reg),
-  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_TYPE, T_TYPENAME),                                                 ACTION(action_set_type_imm),
+  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_REG),                                                                                              ACTION(action_set_type_reg),
+  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_TYPE, T_TYPENAME),                                                                                 ACTION(action_set_type_imm),
 
-  PATTERN(T_REG, T_ASSIGN, T_PC, T_PLUS, ~T_NULL),                                                      ACTION(action_link),
-  PATTERN(T_REG, T_ASSIGN, T_PC),                                                                       ACTION(action_move_pc_to_reg),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_HAT, T_REG),                                                        ACTION(action_binary_reg_reg),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_BAR, T_REG),                                                        ACTION(action_binary_reg_reg),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, T_REG),                                                     ACTION(action_binary_reg_reg),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, T_REG),                                                     ACTION(action_binary_reg_reg),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_PLUS, T_REG),                                                       ACTION(action_binary_reg_reg),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_STAR, T_REG),                                                       ACTION(action_binary_reg_reg),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, T_REG),                                                        ACTION(action_binary_reg_reg),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_HAT, ~T_NULL),                                                      ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_BAR, ~T_NULL),                                                      ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_MINUS, T_REG),                                                      ACTION(action_binary_reg_imm),
-  //PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, ~T_NULL),                                                   ACTION(INVALID_PATTERN),
-  //PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, ~T_NULL),                                                   ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_PLUS, ~T_NULL),                                                     ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_STAR, ~T_NULL),                                                     ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, ~T_NULL),                                                      ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_MINUS, ~T_NULL),                                                    ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_TINY, T_REG, T_MINUS, ~T_NULL),                                            ACTION(action_tiny_add_sub),
-  PATTERN(T_REG, T_ASSIGN, T_TINY, T_REG, T_PLUS, ~T_NULL),                                             ACTION(action_tiny_add_sub),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_CMP, T_ZERO),                                                       ACTION(action_lane_cmp),
-  PATTERN(T_REG, T_ASSIGN, T_REG, T_CMP, T_REG),                                                        ACTION(action_lane_cmp),
-  PATTERN(T_REG, T_ASSIGN, T_SIGNED, T_REG, T_CMP, T_REG),                                              ACTION(action_lane_cmp),
-  PATTERN(T_REG, T_ASSIGN, T_REG),                                                                      ACTION(action_move_reg_to_reg),
-  PATTERN(T_REG, T_ASSIGN, T_TILDE, T_REG, T_AND, T_REG),                                               ACTION(action_inverse_and),
-  PATTERN(T_REG, T_ASSIGN, T_PREFIX_OP, T_REG),                                                         ACTION(action_prefix_op),
-  PATTERN(T_REG, T_ASSIGN, T_MINUS, T_REG),                                                             ACTION(action_prefix_op),
-  PATTERN(T_REG, T_ASSIGN, T_TILDE, T_REG),                                                             ACTION(action_prefix_op),
-  PATTERN(T_REG, T_ASSIGN, T_INTERPOLATE, T_REG, T_COMMA, T_REG),                                       ACTION(action_interpolate),
-  PATTERN(T_REG, T_ASSIGN, T_FULL, T_REG, T_STAR, T_REG, T_RSHIFT, ~T_NULL),                            ACTION(action_full_mult),
-  PATTERN(T_REG, T_ASSIGN, T_SWIZZLE, T_REG, T_COMMA, ~T_NULL),                                         ACTION(action_swizzle),
+  PATTERN(T_REG, T_ASSIGN, T_PC, T_PLUS_MINUS, ~T_NULL),                                                                                ACTION(action_link),
+  PATTERN(T_REG, T_ASSIGN, T_PC),                                                                                                       ACTION(action_move_pc_to_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_HAT, T_REG),                                                                                        ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_BAR, T_REG),                                                                                        ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, T_REG),                                                                                     ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, T_REG),                                                                                     ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_PLUS_MINUS, T_REG),                                                                                 ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_STAR, T_REG),                                                                                       ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, T_REG),                                                                                        ACTION(action_binary_reg_reg),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_HAT, ~T_NULL),                                                                                      ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_BAR, ~T_NULL),                                                                                      ACTION(action_binary_reg_imm),
+  //PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, ~T_NULL),                                                                                   ACTION(INVALID_PATTERN),
+  //PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, ~T_NULL),                                                                                   ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_PLUS_MINUS, ~T_NULL),                                                                               ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_STAR, ~T_NULL),                                                                                     ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, ~T_NULL),                                                                                      ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_TINY, T_REG, T_PLUS_MINUS, ~T_NULL),                                                                       ACTION(action_tiny_add_sub),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_CMP, T_ZERO),                                                                                       ACTION(action_lane_cmp),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_CMP, T_REG),                                                                                        ACTION(action_lane_cmp),
+  PATTERN(T_REG, T_ASSIGN, T_SIGNED, T_REG, T_CMP, T_REG),                                                                              ACTION(action_lane_cmp),
+  PATTERN(T_REG, T_ASSIGN, T_REG),                                                                                                      ACTION(action_move_reg_to_reg),
+  PATTERN(T_REG, T_ASSIGN, T_TILDE, T_REG, T_AND, T_REG),                                                                               ACTION(action_inverse_and),
+  PATTERN(T_REG, T_ASSIGN, T_PREFIX_OP, T_REG),                                                                                         ACTION(action_prefix_op),
+  PATTERN(T_REG, T_ASSIGN, T_PLUS_MINUS, T_REG),                                                                                        ACTION(action_prefix_op),
+  PATTERN(T_REG, T_ASSIGN, T_TILDE, T_REG),                                                                                             ACTION(action_prefix_op),
+  PATTERN(T_REG, T_ASSIGN, T_INTERPOLATE, T_REG, T_COMMA, T_REG),                                                                       ACTION(action_interpolate),
+  PATTERN(T_REG, T_ASSIGN, T_FULL, T_REG, T_STAR, T_REG, T_RSHIFT, ~T_NULL),                                                            ACTION(action_full_mult),
+  PATTERN(T_REG, T_ASSIGN, T_SWIZZLE, T_REG, T_COMMA, ~T_NULL),                                                                         ACTION(action_swizzle),
 
-  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                       ACTION(action_load_reg),
-  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, T_TINY, ~T_RBRACKET, T_RBRACKET),          ACTION(action_load_reg_ofs),
-  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                  ACTION(action_load_reg_ofs),
-  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                 ACTION(action_load_ofs),
+  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                                       ACTION(action_load_reg),
+  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, T_TINY, ~T_RBRACKET, T_RBRACKET),                                    ACTION(action_load_reg_ofs),
+  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                            ACTION(action_load_reg_ofs),
+  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                                 ACTION(action_load_ofs),
 
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_HAT, ~T_NULL),                                             ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_BAR, ~T_NULL),                                             ACTION(action_binary_reg_imm),
-  //PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_LSHIFT, ~T_NULL),                                          ACTION(INVALID_PATTERN),
-  //PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_RSHIFT, ~T_NULL),                                          ACTION(INVALID_PATTERN),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_PLUS, ~T_NULL),                                            ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_STAR, ~T_NULL),                                            ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_AND, ~T_NULL),                                             ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_MINUS, ~T_NULL),                                           ACTION(action_binary_reg_imm),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_REG, T_REG),                                                     ACTION(action_binary_imm_reg),
-  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_NULL),                                                           ACTION(action_move_imm_to_reg),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_HAT, ~T_NULL),                                                                             ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_BAR, ~T_NULL),                                                                             ACTION(action_binary_reg_imm),
+  //PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_LSHIFT, ~T_NULL),                                                                          ACTION(INVALID_PATTERN),
+  //PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_RSHIFT, ~T_NULL),                                                                          ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_PLUS_MINUS, ~T_NULL),                                                                      ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_STAR, ~T_NULL),                                                                            ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_AND, ~T_NULL),                                                                             ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_REG, T_REG),                                                                                     ACTION(action_binary_imm_reg),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_NULL),                                                                                           ACTION(action_move_imm_to_reg),
 
-  PATTERN(T_REG, T_ASSIGN, ~T_REG, T_REG),                                                              ACTION(action_binary_imm_reg),
-  PATTERN(T_REG, T_ASSIGN, T_ONE, T_DIV, T_REG),                                                        ACTION(action_reciprocal),
-  PATTERN(T_REG, T_ASSIGN, ~T_NULL),                                                                    ACTION(action_move_imm_to_reg),
+  PATTERN(T_REG, T_ASSIGN, ~T_REG, T_REG),                                                                                              ACTION(action_binary_imm_reg),
+  PATTERN(T_REG, T_ASSIGN, T_ONE, T_DIV, T_REG),                                                                                        ACTION(action_reciprocal),
+  PATTERN(T_REG, T_ASSIGN, ~T_NULL),                                                                                                    ACTION(action_move_imm_to_reg),
 
-  PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                        ACTION(action_store_reg),
-  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET),                                   ACTION(action_store_reg_ofs),
-  PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                  ACTION(action_store_ofs),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                                                        ACTION(action_store_reg),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                                             ACTION(action_store_reg_ofs),
+  PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                                                  ACTION(action_store_ofs),
 
-  PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET, T_ASSIGN, T_REG),                                       ACTION(action_store_reg),
-  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                  ACTION(action_store_reg_ofs),
-  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, T_TINY, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),          ACTION(action_store_reg_ofs),
-  PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                 ACTION(action_store_ofs),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET, T_ASSIGN, T_REG),                                                                       ACTION(action_store_reg),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                            ACTION(action_store_reg_ofs),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, T_TINY, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                    ACTION(action_store_reg_ofs),
+  PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                                                 ACTION(action_store_ofs),
 
-  PATTERN(T_IF, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                         ACTION(action_cbranch),
-  PATTERN(T_IF, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                          ACTION(action_cbranch),
-  PATTERN(T_IF, T_SIGNED, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                               ACTION(action_cbranch),
-  PATTERN(T_IF, T_SIGNED, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                ACTION(action_cbranch),
-  PATTERN(T_IF, T_IF_QUAL, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                              ACTION(action_cbranch),
-  PATTERN(T_IF, T_IF_QUAL, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                               ACTION(action_cbranch),
-  PATTERN(T_IF, T_IF_QUAL, T_SIGNED, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                    ACTION(action_cbranch),
-  PATTERN(T_IF, T_IF_QUAL, T_SIGNED, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                     ACTION(action_cbranch),
+  PATTERN(T_IF, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                                                         ACTION(action_cbranch),
+  PATTERN(T_IF, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                                                          ACTION(action_cbranch),
+  PATTERN(T_IF, T_SIGNED, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                                               ACTION(action_cbranch),
+  PATTERN(T_IF, T_SIGNED, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                                                ACTION(action_cbranch),
+  PATTERN(T_IF, T_IF_QUAL, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                                              ACTION(action_cbranch),
+  PATTERN(T_IF, T_IF_QUAL, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                                               ACTION(action_cbranch),
+  PATTERN(T_IF, T_IF_QUAL, T_SIGNED, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                                    ACTION(action_cbranch),
+  PATTERN(T_IF, T_IF_QUAL, T_SIGNED, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                                     ACTION(action_cbranch),
 
-  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ONE, T_PC, T_ASSIGN, ~T_NULL),     ACTION(action_cbranch_bittest),
-  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),    ACTION(action_cbranch_bittest),
+  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ONE, T_PC, T_ASSIGN, ~T_NULL),                                     ACTION(action_cbranch_bittest),
+  PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                    ACTION(action_cbranch_bittest),
 
-  PATTERN(T_TYPE, T_REG, T_ELLIPSIS, T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET), ACTION(action_load_multi_type),
-  PATTERN(T_TYPE, T_REG, T_ELLIPSIS, T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET, T_AND, ~T_NULL), ACTION(action_load_multi_type),
-  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_TYPE, T_REG, T_ELLIPSIS, T_REG), ACTION(action_store_multi_type),
+  PATTERN(T_TYPE, T_REG, T_ELLIPSIS, T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                 ACTION(action_load_multi_type),
+  PATTERN(T_TYPE, T_REG, T_ELLIPSIS, T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_AND, ~T_NULL), ACTION(action_load_multi_type),
+  PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_TYPE, T_REG, T_ELLIPSIS, T_REG),                 ACTION(action_store_multi_type),
 };
 
 // This is the guts of the machine-dependent assembler.  STR points to
