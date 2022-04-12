@@ -69,6 +69,8 @@ static bool pattern_match(uint16_t insn_code, const char *pattern)
             }
           continue;
         }
+      if (*p == '*')
+        continue;
       if (hexdigit(*p) != GET_NIBBLE(insn_code, nibble))
         {
           return false;
@@ -78,41 +80,22 @@ static bool pattern_match(uint16_t insn_code, const char *pattern)
 }
 
 const char * brew_reg_names[16] =
-  { "$sp", "$fp", "$lr",  "$r3",  "$r4",  "$r5",  "$r6",  "$r7",
-    "$r8", "$r9", "$r10", "$r11", "$r12", "$r13", "$r14", "<<<INVALID>>>"};
-
-const char * brew_sreg_names[16] =
-  { "$sr0", "$sr1", "$slr",  "$sr3",  "$sr4",  "$sr5",  "$sr6",  "$sr7",
-    "$sr8", "$sr9", "$sr10", "$sr11", "$sr12", "$sr13", "$sr14", "<<<INVALID>>>"};
-
-const char * brew_freg_names[16] =
-  { "$fr0", "$fr1", "$flr",  "$fr3",  "$fr4",  "$fr5",  "$fr6",  "$fr7",
-    "$fr8", "$fr9", "$fr10", "$fr11", "$fr12", "$fr13", "$fr14", "<<<INVALID>>>"};
+  { "$r0", "$r1", "$r2",  "$r3",  "$r4",  "$r5",  "$r6",  "$r7",
+    "$r8", "$r9", "$r10", "$r11", "$fp", "$sp", "$lr", "<<<INVALID>>>"};
 
 #define REG_D (brew_reg_names[FIELD_D])
 #define REG_A (brew_reg_names[FIELD_A])
 #define REG_B (brew_reg_names[FIELD_B])
-
-#define SREG_D (brew_sreg_names[FIELD_D])
-#define SREG_A (brew_sreg_names[FIELD_A])
-#define SREG_B (brew_sreg_names[FIELD_B])
-
-#define FREG_D (brew_freg_names[FIELD_D])
-#define FREG_A (brew_freg_names[FIELD_A])
-#define FREG_B (brew_freg_names[FIELD_B])
-
-#define TYPED_REG(type, idx) (typed_reg_names[type][idx])
+#define REG(r) (brew_reg_names[r])
 
 #define SIM_REG(idx) ((uint32_t)sim_state->reg[idx])
-#define SIM_SREG(idx) ((int32_t)sim_state->reg[idx])
-#define SIM_FREG(idx) (as_float(sim_state->reg[idx]))
+#define SIM_REG_TYPE(idx) ((uint32_t)sim_state->reg_type[idx])
+//#define SIM_SREG(idx) ((int32_t)sim_state->reg[idx])
+//#define SIM_FREG(idx) (as_float(sim_state->reg[idx]))
 #define SIM_PC (sim_state->is_task_mode ? sim_state->tpc : sim_state->spc)
 #define SIM_TPC sim_state->tpc
 
-#define SIM_REG_T(idx) sim_state->dirty_map |= (1<<idx); sim_state->reg[idx]
-#define SIM_SREG_T(idx) sim_state->dirty_map |= (1<<idx); sim_state->reg[idx]
-#define SIM_REGD_T SIM_REG_T(FIELD_D)
-#define SIM_SREGD_T SIM_SREG_T(FIELD_D)
+#define SIM_REG_T(idx, type) sim_state->dirty_map |= (1<<idx); sim_state->reg_type[idx] = type == -1 ? sim_state->reg_type[idx] : type; sim_state->reg[idx]
 #define SIM_PC_T *(sim_state->is_task_mode ? &sim_state->ntpc : &sim_state->nspc)
 #define SIM_TPC_T sim_state->ntpc
 
@@ -210,7 +193,12 @@ format_mem_ref(int ref_size, bool is_load ATTRIBUTE_UNUSED, int base_reg_idx, ui
 {
   bool has_base = base_reg_idx != 0xf;
   if (has_base && has_offset)
-    sprintf(buffer, "MEM%d[%s, %u (0x%x)]", ref_size, brew_reg_names[base_reg_idx], offset, offset);
+    {
+      if ((int)offset < 0)
+        sprintf(buffer, "MEM%d[%s - %u (0x%x)]", ref_size, brew_reg_names[base_reg_idx], -(int)offset, offset);
+      else
+        sprintf(buffer, "MEM%d[%s + %u (0x%x)]", ref_size, brew_reg_names[base_reg_idx], offset, offset);
+    }
   else if (has_base)
     sprintf(buffer, "MEM%d[%s]", ref_size, brew_reg_names[base_reg_idx]);
   else if (has_offset)
@@ -263,15 +251,6 @@ sim_mem_store(void *context, brew_sim_state *sim_state, int ref_size, int base_r
 #define CLASS_NAME(insn_class) BREW_INSN_CLS_##insn_class
 #define CLASS(class) { sim_state->insn_class = CLASS_NAME(class); }
 
-typedef enum
-{
-  OPERAND_UNSIGNED,
-  OPERAND_SIGNED,
-  OPERAND_FLOAT
-} operand_type;
-
-static const char ** typed_reg_names[] = {brew_reg_names, brew_sreg_names, brew_freg_names};
-
 static bool
 binary_op(
   brew_sim_state *sim_state,
@@ -280,10 +259,7 @@ binary_op(
   uint16_t insn_code,
   uint32_t field_e,
   const char *operation,
-  uint32_t (*sim_op)(uint32_t, uint32_t),
-  operand_type type_d,
-  operand_type type_a,
-  operand_type type_b,
+  uint32_t (*sim_op)(uint32_t, uint32_t, brew_reg_types),
   const char *operation_prefix,
   brew_insn_classes insn_class
 ) {
@@ -295,71 +271,55 @@ binary_op(
   if (operation_prefix == NULL)
     operation_prefix = "";
 
-  // Test supported operand combinations
-  if (
-    !(type_d == OPERAND_UNSIGNED && type_a == OPERAND_UNSIGNED && type_b == OPERAND_UNSIGNED) &&
-    !(type_d == OPERAND_SIGNED && type_a == OPERAND_SIGNED && type_b == OPERAND_UNSIGNED) &&
-    !(type_d == OPERAND_SIGNED && type_a == OPERAND_SIGNED && type_b == OPERAND_SIGNED) &&
-    !(type_d == OPERAND_FLOAT && type_a == OPERAND_FLOAT && type_b == OPERAND_FLOAT)
-  ) {
-    OPCODES_ASSERT(false);
-  }
-  if (
-    (FIELD_A == 0xf && FIELD_B == 0xf) ||
-    (is_short && type_d == OPERAND_FLOAT) // Don't support short immediates for floating point operations
-  ) {
+  if (FIELD_A == 0xf && FIELD_B == 0xf)
+    {
       print_unknown_insn(fpr, strm_or_buffer, insn_code, field_e, brew_insn_len(insn_code));
+      SIM(OPCODES_ASSERT(false));
       return false;
     }
   if (is_immedate)
     {
       char *prefix = is_short ? "short " : "";
       char immed_str[255];
-      float field_e_as_float;
       int reg_idx = is_short ? FIELD_A : FIELD_B;
 
-      memcpy(&field_e_as_float, &field_e, 4);
-
-      switch (type_b)
-        {
-        case OPERAND_UNSIGNED: sprintf(immed_str, "%u (0x%x)", field_e, field_e); break;
-        case OPERAND_SIGNED: sprintf(immed_str, "%d (0x%x)", field_e, field_e); break;
-        case OPERAND_FLOAT: sprintf(immed_str, "%f (0x%x)", field_e_as_float, field_e); break;
-        default: OPCODES_ASSERT(false);
-        }
+      sprintf(immed_str, "%d (0x%x)", field_e, field_e); break;
 
       if (fpr)
-        fpr(strm_or_buffer, "%s <- %s%s%s %s %s", TYPED_REG(type_d, FIELD_D), prefix, operation_prefix, immed_str, operation, TYPED_REG(type_a, reg_idx));
-      SIM(SIM_REGD_T = sim_op(field_e, SIM_REG(reg_idx)));
+        fpr(strm_or_buffer, "%s <- %s%s%s %s %s", REG_D, prefix, operation_prefix, immed_str, operation, REG(reg_idx));
+      SIM(SIM_REGD_T = sim_op(field_e, SIM_REG(reg_idx), SIM_REG_TYPE(reg_idx)));
     }
   else
     {
       if (fpr)
-        fpr(strm_or_buffer, "%s <- %s%s %s %s", TYPED_REG(type_d, FIELD_D), operation_prefix, TYPED_REG(type_a, FIELD_A), operation, TYPED_REG(type_b, FIELD_B));
-      SIM(SIM_REGD_T = sim_op(SIM_REG(FIELD_A), SIM_REG(FIELD_B)));
+        fpr(strm_or_buffer, "%s <- %s%s %s %s", REG_D, operation_prefix, REG_A, operation, REG_B);
+      SIM(SIM_REGD_T = sim_op(SIM_REG(FIELD_A), SIM_REG(FIELD_B), SIM_REG_TYPE(FILED_A)));
     }
   return true;
 }
 
-#define REGULAR_ALU_PATTERN_UUU(base, op, sim_op, prefix, insn_class)                                                                                                                          \
-  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, OPERAND_UNSIGNED, OPERAND_UNSIGNED, OPERAND_UNSIGNED, prefix, CLASS_NAME(insn_class))) break; return;     \
+#define REGULAR_ALU_PATTERN(base, op, sim_op, prefix, insn_class)                                                                                    \
+  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, prefix, CLASS_NAME(insn_class))) break; return;     \
 
-#define REGULAR_ALU_PATTERN_SSU(base, op, sim_op, prefix, insn_class)                                                                                                                          \
-  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, OPERAND_SIGNED, OPERAND_SIGNED, OPERAND_UNSIGNED, prefix, CLASS_NAME(insn_class))) break; return;         \
-
-#define REGULAR_ALU_PATTERN_SSS(base, op, sim_op, prefix, insn_class)                                                                                                                          \
-  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, OPERAND_SIGNED, OPERAND_SIGNED, OPERAND_SIGNED, prefix, CLASS_NAME(insn_class))) break; return;           \
-
-#define REGULAR_ALU_PATTERN_FFF(base, op, sim_op, prefix, insn_class)                                                                                                                          \
-  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, OPERAND_FLOAT, OPERAND_FLOAT, OPERAND_FLOAT, prefix, CLASS_NAME(insn_class))) break; return;              \
-
-static INLINE uint32_t bswap(uint32_t val)
+static INLINE uint32_t lane_swizzle(uint32_t val, uint8_t swizzle_code)
 {
+  uint8_t lanes_in[4];
+  uint8_t lanes_out[4];
+
+  lanes_in[0] = (val >>  0) & 0xff;
+  lanes_in[1] = (val >>  8) & 0xff;
+  lanes_in[2] = (val >> 16) & 0xff;
+  lanes_in[3] = (val >> 24) & 0xff;
+  for(int i=0;i<4;++i)
+    {
+      lanes_out[i] = lanes_in[swizzle_code & 3];
+      swizzle_code >>= 2;
+    }
   return
-    (((val >> 0) & 0xff) << 24) |
-    (((val >> 8) & 0xff) << 16) |
-    (((val >> 16) & 0xff) << 8) |
-    (((val >> 24) & 0xff) << 0);
+    (lanes_out[0] <<  0) |
+    (lanes_out[1] <<  8) |
+    (lanes_out[2] << 16) |
+    (lanes_out[3] << 24);
 }
 
 static INLINE uint32_t wswap(uint32_t val)

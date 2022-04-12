@@ -20,6 +20,18 @@
 #define __OPCODE_BREW_H__
 
 typedef enum {
+  BREW_REG_TYPE_INT32        =  0,
+  BREW_REG_TYPE_INT16x2      =  1,
+  BREW_REG_TYPE_INT8x4       =  2,
+  BREW_REG_TYPE_UINT16x2S    =  3,
+  BREW_REG_TYPE_SINT16x2S    =  4,
+  BREW_REG_TYPE_UINT8x4S     =  5,
+  BREW_REG_TYPE_SINT8x4S     =  6,
+  BREW_REG_TYPE_FP32         =  8,
+  BREW_REG_TYPE_FP16x2       =  9,
+} brew_reg_types;
+
+typedef enum {
   BREW_EXCEPTION_FILL,
   BREW_EXCEPTION_BREAK,
   BREW_EXCEPTION_SYSCALL,
@@ -71,6 +83,7 @@ typedef float (*brew_rsqrt_ftype)(float);
 
 typedef struct {
   uint32_t reg[15];
+  brew_reg_types reg_type[15];
   uint32_t spc;
   uint32_t tpc;
   uint32_t nspc;

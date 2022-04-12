@@ -27,6 +27,7 @@
 
 #include <safe-ctype.h>
 #include "tc-brew-lex.h"
+#include "opcode/brew.h"
 #include "opcode/brew-abi.h"
 
 static const char *tok_names[] = {
@@ -200,15 +201,15 @@ static const token_declS token_library[] = {
   { "0",            T_ZERO,          0 },
   { "1",            T_ONE,           0 },
   { "type",         T_TYPE,          0 },
-  { "int32",        T_TYPENAME,      0 },
-  { "int16x2",      T_TYPENAME,      1 },
-  { "int8x4",       T_TYPENAME,      2 },
-  { "uint16x2s",    T_TYPENAME,      3 },
-  { "sint16x2s",    T_TYPENAME,      4 },
-  { "uint8x4s",     T_TYPENAME,      5 },
-  { "sint8x4s",     T_TYPENAME,      6 },
-  { "fp32",         T_TYPENAME,      8 },
-  { "fp16x2",       T_TYPENAME,      9 },
+  { "int32",        T_TYPENAME,      BREW_REG_TYPE_INT32 },
+  { "int16x2",      T_TYPENAME,      BREW_REG_TYPE_INT16x2 },
+  { "int8x4",       T_TYPENAME,      BREW_REG_TYPE_INT8x4 },
+  { "uint16x2s",    T_TYPENAME,      BREW_REG_TYPE_UINT16x2S },
+  { "sint16x2s",    T_TYPENAME,      BREW_REG_TYPE_SINT16x2S },
+  { "uint8x4s",     T_TYPENAME,      BREW_REG_TYPE_UINT8x4S },
+  { "sint8x4s",     T_TYPENAME,      BREW_REG_TYPE_SINT8x4S },
+  { "fp32",         T_TYPENAME,      BREW_REG_TYPE_FP32 },
+  { "fp16x2",       T_TYPENAME,      BREW_REG_TYPE_FP16x2 },
   { "$fp",          T_REG,           BREW_REG_FP },
   { "$sp",          T_REG,           BREW_REG_SP },
   { "$lr",          T_REG,           BREW_REG_LINK },
