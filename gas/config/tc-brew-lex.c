@@ -27,6 +27,7 @@
 
 #include <safe-ctype.h>
 #include "tc-brew-lex.h"
+#include "dis-asm.h" // for fprintf_ftype
 #include "opcode/brew.h"
 #include "opcode/brew-abi.h"
 
@@ -201,6 +202,7 @@ static const token_declS token_library[] = {
   { "0",            T_ZERO,          0 },
   { "1",            T_ONE,           0 },
   { "type",         T_TYPE,          0 },
+  // NOTE: these type names are repeated in brew-decode.c Keep them in sync!
   { "int32",        T_TYPENAME,      BREW_REG_TYPE_INT32 },
   { "int16x2",      T_TYPENAME,      BREW_REG_TYPE_INT16x2 },
   { "int8x4",       T_TYPENAME,      BREW_REG_TYPE_INT8x4 },

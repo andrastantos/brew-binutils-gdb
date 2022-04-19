@@ -54,10 +54,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "opcode/brew-abi.h"
 #include "gdb-if.h"
 
-static int32_t
-sim_floor(float num)
+#define MAKE_INT(l0, type) (brew_typed_reg) { l0, type }
+
+static _Float16
+rsqrt_fp16(_Float16 num)
 {
-  return (int32_t)floorf(num);
+  return 1.0f / sqrtf(num);
 }
 
 static float
@@ -182,7 +184,7 @@ setup_sim_state(sim_cpu *scpu, bool is_user_mode_sim)
   scpu->sim_state.read_mem = read_mem;
   scpu->sim_state.write_mem = write_mem;
   scpu->sim_state.handle_stu = handle_stu;
-  scpu->sim_state.floor = sim_floor;
+  scpu->sim_state.rsqrt_fp16 = rsqrt_fp16;
   scpu->sim_state.rsqrt = rsqrt;
   if (TRACE_P(scpu, TRACE_INSN_IDX))
     scpu->sim_state.tracer = (fprintf_ftype)sprintf;
@@ -312,11 +314,11 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
   // So, for now, I'll leave this code here.
 
   uint16_t syscall_no;
-  uint32_t errno_addr = scpu->sim_state.reg[BREW_REG_SYSCALL_ERRNO];
-  uint32_t arg1 = scpu->sim_state.reg[BREW_REG_ARG0];
-  uint32_t arg2 = scpu->sim_state.reg[BREW_REG_ARG1];
-  uint32_t arg3 = scpu->sim_state.reg[BREW_REG_ARG2];
-  uint32_t arg4 = scpu->sim_state.reg[BREW_REG_ARG3];
+  uint32_t errno_addr = scpu->sim_state.reg[BREW_REG_SYSCALL_ERRNO].val;
+  uint32_t arg1 = scpu->sim_state.reg[BREW_REG_ARG0].val;
+  uint32_t arg2 = scpu->sim_state.reg[BREW_REG_ARG1].val;
+  uint32_t arg3 = scpu->sim_state.reg[BREW_REG_ARG2].val;
+  uint32_t arg4 = scpu->sim_state.reg[BREW_REG_ARG3].val;
   char *str1;
   char *str2;
   int ret_val;
@@ -345,7 +347,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       ret_val = open(str1, flags, mode);
       //printf("SIM OPEN returned: %d, errno: %d\n", ret_val, errno);
       free(str1);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
@@ -355,14 +357,14 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
         ret_val = close(arg1);
       else
         ret_val = 0;
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
     case SYS_read: {
       void *buffer = malloc(arg3);
       ret_val = read(arg1, buffer, arg3);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val >= 0)
         sim_core_write_buffer(sd, scpu, write_map, buffer, arg2, arg3);
       else
@@ -374,7 +376,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       void *buffer = malloc(arg3);
       sim_core_read_buffer(sd, scpu, write_map, buffer, arg2, arg3);
       ret_val = write(arg1, buffer, arg3);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       free(buffer);
@@ -382,7 +384,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
     }
     case SYS_lseek:
       ret_val = lseek(arg1, arg2, arg3);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
@@ -390,17 +392,18 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       str1 = sim_core_read_str(scpu, arg1);
       ret_val = unlink(str1);
       free(str1);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
     case SYS_getpid:
       // Since we don't simulate multiple processes, we simply return the PID of the simulator.
-      SIM_REG_T(BREW_REG_ARG0) = getpid();
+      ret_val = getpid();
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       break;
     case SYS_kill:
       ret_val = kill(arg1, arg2);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
@@ -411,7 +414,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       // on the host as on the simulator.
       // for now, simply return an error...
       ret_val = -1;
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       SET_ERRNO(EOVERFLOW);
       //SIM_ASSERT(false);
       break;
@@ -427,7 +430,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       str1 = sim_core_read_str(scpu, arg1);
       ret_val = chdir(str1);
       free(str1);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
@@ -443,7 +446,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       str1 = sim_core_read_str(scpu, arg1);
       ret_val = chmod(str1, arg2);
       free(str1);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
@@ -459,7 +462,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
     }
     case SYS_time: {
       time_t now = time(NULL);
-      SIM_REG_T(BREW_REG_ARG0) = now;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(now, BREW_REG_TYPE_INT32);
       if (arg1 != 0)
         {
           sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, arg1, now);
@@ -489,7 +492,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       ret_val = link(str1, str2);
       free(str1);
       free(str2);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
@@ -505,7 +508,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
     // Brew-specific calls:
     case BREW_isatty:
       ret_val = isatty(arg1);
-      SIM_REG_T(BREW_REG_ARG0) = ret_val;
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == 0)
         SET_ERRNO(errno);
       break;
@@ -586,7 +589,7 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
           if (scpu->sim_state.dirty_map & (1 << i))
             {
               SIDE_EFFECT_INDENT;
-              snprintf(fragment, sizeof(fragment)-1, " %s <- 0x%x", brew_reg_names[i], scpu->sim_state.reg[i]);
+              snprintf(fragment, sizeof(fragment)-1, " %s <- 0x%x (%s)", brew_reg_names[i], scpu->sim_state.reg[i].val, brew_reg_type_name(scpu->sim_state.reg[i].type));
               STR_APPEND(message, fragment);
             }
         }
@@ -623,8 +626,6 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
     else if (
       scpu->sim_state.insn_class == BREW_INSN_CLS_CBRANCH ||
       scpu->sim_state.insn_class == BREW_INSN_CLS_CBRANCH0 ||
-      scpu->sim_state.insn_class == BREW_INSN_CLS_CBRANCHFP ||
-      scpu->sim_state.insn_class == BREW_INSN_CLS_CBRANCH0FP ||
       scpu->sim_state.insn_class == BREW_INSN_CLS_CBRANCHBIT
     )
       ++PROFILE_MODEL_UNTAKEN_COUNT(profile_data);
@@ -742,28 +743,37 @@ static INLINE void write_mem_unaligned(uint8_t *memory, uint32_t val)
   memory[0] = val >> 0;
 }
 
-/* Store register (rn) at memory location (memory). Length is required to be 4 (32-bits) */
+/* Store register (rn) at memory location (memory). Length is required to be 8 (32-bit value, 32-bit type) */
 /* Returns the number of bytes stored in memory */
 static int
 brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 {
   if (rn > BREW_GDB_NUM_REGS && rn < 0)
     return 0;
-  if (length != 4)
+  if (length != 8)
     // Report back proper register size, but do no transfer.
-    return 4;
+    return 8;
 
   if (rn == BREW_GDB_REG_TPC)
-    write_mem_unaligned(memory, scpu->sim_state.tpc);
+    {
+      write_mem_unaligned(memory, scpu->sim_state.tpc);
+      write_mem_unaligned(memory+4, BREW_REG_TYPE_INT32);
+    }
   else if (rn == BREW_GDB_REG_SPC)
-    write_mem_unaligned(memory, scpu->sim_state.spc);
+    {
+      write_mem_unaligned(memory, scpu->sim_state.spc);
+      write_mem_unaligned(memory+4, BREW_REG_TYPE_INT32);
+    }
   else
-    write_mem_unaligned(memory, scpu->sim_state.reg[rn]);
+    {
+      write_mem_unaligned(memory, scpu->sim_state.reg[rn].val);
+      write_mem_unaligned(memory+4, scpu->sim_state.reg[rn].type);
+    }
 
-  return 4;
+  return 8;
 }
 
-/* Read a memory location (memory) and store it in register (rn). Length is required to be 4 (32-bits) */
+/* Read a memory location (memory) and store it in register (rn). Length is required to be 8 (32-bit value, 32-bit type) */
 /* Returns the number of bytes read from memory, 0 if no store is performed and negative if an error occured */
 /* This apparently is called by GDB when storing all registers in memory for it's ... reasons */
 static int
@@ -771,7 +781,7 @@ brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 {
   if (rn > BREW_GDB_NUM_REGS && rn < 0)
     return 0;
-  if (length != 4)
+  if (length != 8)
     return -1;
 
   if (rn == BREW_GDB_REG_TPC)
@@ -785,9 +795,12 @@ brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
       scpu->sim_state.nspc = scpu->sim_state.spc;
     }
   else
-    scpu->sim_state.reg[rn] = read_mem_unaligned(memory);
+    {
+      scpu->sim_state.reg[rn].val = read_mem_unaligned(memory);
+      scpu->sim_state.reg[rn].type = read_mem_unaligned(memory+4);
+    }
 
-  return 4;
+  return 8;
 }
 
 /* Returns the current PC. Used in tracing and generic syscalls. */
