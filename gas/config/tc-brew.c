@@ -43,162 +43,6 @@ const char comment_chars[]        = "#";
 const char line_separator_chars[] = ";";
 const char line_comment_chars[]   = "#";
 
-
-/*
-typedef struct
-{
-  const char *inst_name;
-  uint16_t inst_code;
-} inst_tableS;
-
-static inst_tableS inst_table[] =
-{
-  { "fill",        0x0000 },
-  { "swi0",        0x0000 },
-  { "break",       0x0001 },
-  { "swi1",        0x0001 },
-  { "syscall",     0x0002 },
-  { "swi2",        0x0002 },
-  { "swi3",        0x0003 },
-  { "swi4",        0x0004 },
-  { "swi5",        0x0005 },
-  { "sii",         0x0006 },
-  { "swi6",        0x0006 },
-  { "hwi",         0x0007 },
-  { "swi7",        0x0007 },
-  { "stm",         0x0008 },
-  { "woi",         0x0009 },
-  { "fence",       0x0010 },
-  { "rwfencerw",   0x0010 },
-  { "wfencerw",    0x0011 },
-  { "rfencerw",    0x0012 },
-  { "rwfencew",    0x0014 },
-  { "wfencew",     0x0015 },
-  { "rfencew",     0x0016 },
-  { "rwfencer",    0x0018 },
-  { "wfencer",     0x001a },
-  { "rfencer",     0x001b },
-  { "nop",         0x2222 }, // pseudo instruction: $r1 = $r1 | $r1, which is of course, a no-op
-  { NULL,          0x0000 }
-};
-
-typedef struct
-{
-  const char *inst_name;
-  uint16_t two_op_inst_code;
-  bool swap_ops;
-  uint16_t zero_inst_code;
-  bool complete;
-
-  int flags;
-} branch_tableS;
-
-
-static branch_tableS branch_table[] =
-{
-//  inst_name  two_op_inst_code   swap_ops     zero_isnt_code   complete   flags
-  { "<",       0x500f,            false,       0x200f,          true,      0                      },
-  { ">",       0x500f,            true,        0x010f,          false,     0                      },
-  { "<=",      0x600f,            true,        0x000f,          false,     0                      },
-  { ">=",      0x600f,            false,       0x100f,          true,      0                      },
-  { "==",      0x100f,            false,       0x000f,          false,     0                      },
-  { "!=",      0x200f,            false,       0x010f,          false,     0                      },
-
-  { "<",       0x300f,            false,       0x020f,          false,     BREW_REG_FLAG_SIGNED   },
-  { ">",       0x300f,            true,        0x040f,          false,     BREW_REG_FLAG_SIGNED   },
-  { "<=",      0x400f,            true,        0x050f,          false,     BREW_REG_FLAG_SIGNED   },
-  { ">=",      0x400f,            false,       0x030f,          false,     BREW_REG_FLAG_SIGNED   },
-  { "==",      0x100f,            false,       0x000f,          false,     BREW_REG_FLAG_SIGNED   },
-  { "!=",      0x200f,            false,       0x010f,          false,     BREW_REG_FLAG_SIGNED   },
-
-  { "<",       0xd00f,            false,       0x0b0f,          false,     BREW_REG_FLAG_FLOAT    },
-  { ">",       0xd00f,            true,        0x0d0f,          false,     BREW_REG_FLAG_FLOAT    },
-  { "<=",      0xe00f,            true,        0x0e0f,          false,     BREW_REG_FLAG_FLOAT    },
-  { ">=",      0xe00f,            false,       0x0c0f,          false,     BREW_REG_FLAG_FLOAT    },
-  { "==",      0x100f,            false,       0x000f,          false,     BREW_REG_FLAG_FLOAT    },
-  { "!=",      0x200f,            false,       0x010f,          false,     BREW_REG_FLAG_FLOAT    },
-
-  { NULL,      0x0000,            false,       0x0000,          false,     0                      }
-};
-
-#define COMMUTATIVE              (1 << 7)
-#define COMMUTATIVE_BUT_NEGATE   (1 << 8)
-#define HAS_UPPER                (1 << 9)
-
-typedef struct
-{
-  const char *inst_name;
-  uint16_t inst_code;
-  uint16_t negate_inst_code;
-  int op_flags;
-  int type_flags_arg2;
-  int type_flags_arg1;
-  int type_flags_d;
-} alu_tableS;
-
-static alu_tableS alu_table[] =
-{
-//  inst_name  inst_code   negate_inst_code   op_flags                      type_flags_arg2        type_flags_arg1        type_flags_d
-  { "^",       0x1000,     0x1000,            COMMUTATIVE,                  0,                     0,                     0 },
-  { "^",       0x1000,     0x1000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "|",       0x2000,     0x2000,            COMMUTATIVE,                  0,                     0,                     0 },
-  { "|",       0x2000,     0x2000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "&",       0x3000,     0x3000,            COMMUTATIVE,                  0,                     0,                     0 },
-  { "&",       0x3000,     0x3000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "+",       0x4000,     0x4000,            COMMUTATIVE,                  0,                     0,                     0 },
-  { "+",       0x4000,     0x4000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "-",       0x5000,     0x4000,            COMMUTATIVE_BUT_NEGATE,       0,                     0,                     0 },
-  { "-",       0x5000,     0x4000,            COMMUTATIVE_BUT_NEGATE,       BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "<<",      0x6000,     0x6000,            0,                            0,                     0,                     0 },
-  { "<<",      0x6000,     0x6000,            0,                            0,                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { ">>",      0x7000,     0x7000,            0,                            0,                     0,                     0 },
-  { ">>",      0x8000,     0x8000,            0,                            0,                     BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "*",       0x9000,     0xa000,            COMMUTATIVE,                  0,                     0,                     0 },
-  { "*",       0x9000,     0xb000,            COMMUTATIVE,                  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { "~&",      0xa000,     0xa000,            0,                            0,                     0,                     0 },
-  { "~&",      0xa000,     0xa000,            0,                            BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED  },
-  { NULL,      0x0000,     0x0000,            0,                            0,                     0,                     0 },
-};
-
-typedef struct
-{
-  const char *inst_name;
-  uint16_t inst_code;
-  int op_shift;
-  int type_flags_op;
-  int type_flags_d;
-} unary_op_tableS;
-
-static unary_op_tableS unary_op_table[] = {
-//  inst_name  inst_code   op_shift  type_flags_op          type_flags_d
-  { "-",       0x0300,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
-  { "~",       0x0400,     4,        0,                     0 },
-  { "sum",     0x0500,     4,        0,                     0 },
-  { "sum",     0x0500,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
-  { "bsi",     0x0600,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
-  { "wsi",     0x0700,     4,        BREW_REG_FLAG_SIGNED,  BREW_REG_FLAG_SIGNED },
-  { "floor",   0x0900,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_SIGNED },
-  { "rsqrt",   0x0700,     4,        BREW_REG_FLAG_FLOAT,   BREW_REG_FLAG_FLOAT },
-
-  { NULL,      0x0000,     0,        0,                     0 }
-};
-
-*/
-// This is really unfortunate that as doesn't provide a 'v' version of these routines
-/*
-static void
-as_vbad (const char *format, va_list args)
-{
-  char buffer[2000];
-
-  vsnprintf (buffer, sizeof (buffer), format, args);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-security"
-  as_bad(buffer);
-#pragma GCC diagnostic pop
-}
-*/
-
 static int bit_idx_to_field_a[] = {
   0,   1,   2,   3,   4,   5,   6,   7,
   8,   9,  -1,  -1,  -1,  -1,  10,  11,
@@ -366,10 +210,11 @@ parse_expression(
   if (*end_expr != 0)
     goto DONE;
   const char *old_fr_literal = frag_now->fr_literal; // this is just for debug
+  printf("where: %lx, offset: %ld, size: %ld\n", fragment_ofs + (fragment_data - frag_now->fr_literal), fragment_ofs, fragment_size);
   fix_new_exp(
     frag_now,
     fragment_ofs + (fragment_data - frag_now->fr_literal),
-    fragment_size,
+    fragment_size - fragment_ofs,
     &expression,
     reloc_type == BFD_RELOC_BREW_PCREL16, // this is the only pc-relative relocation we're supporting at the moment
     reloc_type);
@@ -611,7 +456,11 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
   gas_assert(tokens[2].parser_token == T_MEM);
   gas_assert(tokens[4].parser_token == T_REG);
   gas_assert(offs->parser_token == ~T_RBRACKET);
-  if (!parse_expression((offs-1)->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
+  if (is_tiny && tokens[5].first_lexer_token->sub_type == ST_MINUS)
+    {
+      as_bad(_("Tiny offsets only support '+'. Encode negation after the 'tiny' marker"));
+    }
+  if (!parse_expression(is_tiny ? offs->first_lexer_token : (offs-1)->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
@@ -710,7 +559,7 @@ static int action_store_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_to
 
   gas_assert(tokens[0].parser_token == T_MEM);
   gas_assert(tokens[2].parser_token == T_REG);
-  gas_assert(is_invalidate | (tokens[5].parser_token == T_REG));
+  gas_assert(is_invalidate || (tokens[5].parser_token == T_REG));
 
   if (!mem_subtype_to_opcode_st(tokens[0].first_lexer_token->sub_type, is_invalidate, &op_code))
     {
@@ -718,7 +567,7 @@ static int action_store_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_to
       return A_ERR;
     }
   insn_code =
-    FIELD_D(is_invalidate ? 0 : tokens[5].first_lexer_token->sub_type) |
+    FIELD_D(is_invalidate ? 1 : tokens[5].first_lexer_token->sub_type) |
     FIELD_C(0xe) |
     FIELD_B(op_code) |
     FIELD_A(tokens[2].first_lexer_token->sub_type);
@@ -745,8 +594,12 @@ static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parse
   gas_assert(tokens[0].parser_token == T_MEM);
   gas_assert(tokens[2].parser_token == T_REG);
   gas_assert(offs->parser_token == ~T_RBRACKET);
-  gas_assert(is_invalidate | (src->parser_token == T_REG));
-  if (!parse_expression((offs-1)->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
+  gas_assert(is_invalidate || (src->parser_token == T_REG));
+  if (is_tiny && tokens[5].first_lexer_token->sub_type == ST_MINUS)
+    {
+      as_bad(_("Tiny offsets only support '+'. Encode negation after the 'tiny' marker"));
+    }
+  if (!parse_expression(is_tiny ? offs->first_lexer_token : (offs-1)->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
@@ -776,7 +629,7 @@ static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parse
           return A_ERR;
         }
       insn_code =
-        FIELD_D(is_invalidate ? 0 : src->first_lexer_token->sub_type) |
+        FIELD_D(is_invalidate ? 1 : src->first_lexer_token->sub_type) |
         FIELD_C(0xf) |
         FIELD_B(op_code) |
         FIELD_A(tokens[2].first_lexer_token->sub_type);
@@ -794,7 +647,7 @@ static int action_store_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_to
 
   gas_assert(tokens[0].parser_token == T_MEM);
   gas_assert(tokens[2].parser_token == ~T_RBRACKET);
-  gas_assert(is_invalidate | (tokens[5].parser_token == T_REG));
+  gas_assert(is_invalidate || (tokens[5].parser_token == T_REG));
 
   if (!parse_expression(tokens[2].first_lexer_token, tokens[2].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_32))
     {
@@ -808,7 +661,7 @@ static int action_store_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_to
       return A_ERR;
     }
   insn_code =
-    FIELD_D(is_invalidate ? 0 : tokens[5].first_lexer_token->sub_type) |
+    FIELD_D(is_invalidate ? 1 : tokens[5].first_lexer_token->sub_type) |
     FIELD_C(0xf) |
     FIELD_B(op_code) |
     FIELD_A(0xf);
@@ -1962,6 +1815,10 @@ md_apply_fix(
       buf += 2;
       break;
     case BFD_RELOC_BREW_7:
+      if ((val & 3) != 0)
+        {
+          as_bad_where (fixP->fx_file, fixP->fx_line, _("tiny offset must be DWORD aligned"));
+        }
       max = 508;
       min = -512;
       buf[0] = (buf[0] & 1) | (((val >> 2) << 1) & 0xfe);

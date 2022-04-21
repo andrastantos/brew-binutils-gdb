@@ -843,7 +843,7 @@ static INLINE brew_typed_reg lane_cond(brew_typed_reg left, brew_cond cond, brew
 
 static INLINE int get_bit(uint32_t word, int idx) { return (word >> idx) & 1; }
 
-static INLINE int decode_ones_complement(uint32_t data, size_t bit_length)
+static INLINE int sign_extend(uint32_t data, size_t bit_length)
 {
   if (bit_length < 32)
     {
@@ -854,6 +854,12 @@ static INLINE int decode_ones_complement(uint32_t data, size_t bit_length)
         }
     }
   int32_t signed_data = data;
+  return signed_data;
+}
+
+static INLINE int decode_ones_complement(uint32_t data, size_t bit_length)
+{
+  int32_t signed_data = sign_extend(data, bit_length);
   return signed_data < 0 ? signed_data + 1 : signed_data;
 }
 
@@ -940,7 +946,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           if (pattern_match(insn_code, ".0b.")) { CLASS(ARITH); SIM(SIM_REGD_T = sum_op(SIM_REG(FIELD_A))); INST("%s <- sum %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".0c.")) { CLASS(TYPE); SIM(SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), SIM_REG(FIELD_A).val & 0xf)); INST("type %s <- %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".0d.")) { CLASS(TYPE); SIM(SIM_REGD_T = MAKE_INT(SIM_REG(FIELD_A).type, BREW_REG_TYPE_INT32)); INST("%s <- type %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".0e.")) { CLASS(TYPE); SIM(SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), FIELD_A)); INST("type %s <- %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, ".0e.")) { CLASS(TYPE); SIM(SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), FIELD_A)); INST("type %s <- type %s", REG_D, brew_reg_type_name(FIELD_A)); }
 
           // immediate branch
           if (pattern_match(insn_code, "20ef")) { CLASS(BRANCH); SIM(SIM_PC_T = field_e); INST("$pc <- %u (0x%x)", field_e, field_e); }
@@ -986,7 +992,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           if (pattern_match(insn_code, ".af.")) {
             SIM(CLASS(VECTOR));
             SIM(SIM_REGD_T = lane_swizzle_op(SIM_REG(FIELD_A), field_e));
-            INST("%s <- lane_swizzle %s %d%d%d%d", REG_D, REG_A,
+            INST("%s <- lane_swizzle %s, %d%d%d%d", REG_D, REG_A,
               (field_e >> 6) & 3,
               (field_e >> 4) & 3,
               (field_e >> 2) & 3,
@@ -997,9 +1003,10 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           break;
         case 0xb:
           if (pattern_match(insn_code, ".b..")) {
+            int imm = decode_ones_complement(FIELD_A, 4);
             SIM(CLASS(ARITH));
-            SIM(SIM_REGD_T = add_op(MAKE_INT(decode_ones_complement(FIELD_A, 4), SIM_REG_TYPE(FIELD_B)), SIM_REG(FIELD_B)));
-            INST("%s <- tiny %s + %d", REG_D, REG_B, decode_ones_complement(FIELD_A, 4));
+            SIM(SIM_REGD_T = add_op(MAKE_INT(imm, SIM_REG_TYPE(FIELD_B)), SIM_REG(FIELD_B)));
+            INST("%s <- tiny %s %s%d", REG_D, REG_B, imm < 0 ? "- " : "+ ", imm < 0 ? -imm : imm);
           }
           if (pattern_match(insn_code, ".b.f")) {
             SIM(CLASS(TYPE));
@@ -1025,7 +1032,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
   else if (FIELD_D != 0xf && FIELD_C == 0xc)
     {
       // tiny store
-      int offset = decode_ones_complement(insn_code & 0xfe, 8) << 1;
+      int offset = sign_extend((insn_code & 0xfe) >> 1, 7) << 2;
       int base_reg = BREW_REG_FP | (FIELD_A & 1);
       SIM(
         CLASS(ST);
@@ -1044,7 +1051,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
   else if (FIELD_D != 0xf && FIELD_C == 0xd)
     {
       // tiny load
-      int offset = decode_ones_complement(insn_code & 0xfe, 8) << 1;
+      int offset = sign_extend((insn_code & 0xfe) >> 1, 7) << 2;
       int base_reg = BREW_REG_FP | (FIELD_A & 1);
       SIM(
         CLASS(LD);
@@ -1108,7 +1115,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
                   }
                 sim_mem_store(context, sim_state, 32, FIELD_B, offset, true, types);
               );
-              INST("%s <- type $r%d...$r%d", format_mem_ref("mem32", FIELD_D, offset, true, false, str_buffer), reg_ofs, reg_ofs+reg_cnt);
+              INST("%s <- type $r%d...$r%d", format_mem_ref("mem32", FIELD_D, offset, true, false, str_buffer), reg_ofs, reg_ofs+reg_cnt-1);
             }
         }
       else
@@ -1220,7 +1227,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
             {
               CLASS(VECTOR);
               SIM(SIM_REG_T(EXT_FIELD_D) = interpolate_op(SIM_REG(EXT_FIELD_A), SIM_REG(EXT_FIELD_B)));
-              INST("%s <- interpolate %s %s", REG(EXT_FIELD_D), REG(EXT_FIELD_A), REG(EXT_FIELD_B));
+              INST("%s <- interpolate %s, %s", REG(EXT_FIELD_D), REG(EXT_FIELD_A), REG(EXT_FIELD_B));
             }
           UNKNOWN;
         }
@@ -1268,8 +1275,8 @@ brew_insn_len(uint16_t insn_code)
   ) {
       // FIELD_E is needed...
       if (FIELD_D == 0xf || FIELD_A != 0xf)
-        return 6;
-      return 4;
+        return 4;
+      return 6;
     }
   return 2;
 }
