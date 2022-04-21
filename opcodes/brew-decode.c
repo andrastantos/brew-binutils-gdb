@@ -1075,7 +1075,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           int offset = decode_ones_complement(FIELD_A, 4) * 4;
           int reg_ofs = (FIELD_B & 1) == 0 ? 0 : 8;
           int reg_cnt = (FIELD_B & 1) == 0 ? 8 : 7;
-          uint16_t mask = FIELD_C == 0xf ? 0xffff : field_e;
+          uint16_t mask = FIELD_C == 0xf ? field_e : 0xffff;
           char regs[1024];
           regs[0] = 0;
           if (FIELD_B < 2)
@@ -1098,6 +1098,9 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
                         strncat(regs, ", ", ARRAY_SIZE(regs)-1);
                     }
                 }
+              size_t regs_len = strlen(regs);
+              if (regs[regs_len-1] == ' ' && regs[regs_len-2] == ',')
+                regs[regs_len-2] = 0;
               INST("type %s <- %s", regs, format_mem_ref("mem32", FIELD_D, offset, true, false, str_buffer));
             }
           else

@@ -1482,7 +1482,7 @@ static int action_load_multi_type(void *context ATTRIBUTE_UNUSED, const brew_par
             as_bad(_("Invalid mask at digit %d"), i);
             return A_ERR;
           }
-        mask = (mask >> 1) | ((*mask_digit - '0') << mask_len);
+        mask = (mask << 1) | (*mask_digit - '0');
         ++mask_digit;
       }
       md_number_to_chars(frag+2, mask, 2);
@@ -1514,6 +1514,81 @@ static int action_load_multi_type(void *context ATTRIBUTE_UNUSED, const brew_par
     FIELD_A(offs);
   A_RETURN();
 }
+
+static int action_load_multi_type2(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  uint16_t mask;
+  bool is_upper;
+  int offs;
+
+  mask = 0;
+  A_PROLOG(4);
+  A_CHECK(9);
+
+  gas_assert(tokens[5].parser_token == T_REG);
+  gas_assert(tokens[7].parser_token == ~T_RBRACKET);
+
+  // Look through the register list and generate mask
+  const brew_lexer_tokenS *reg = tokens[1].first_lexer_token;
+  while (true)
+    {
+      if (reg->type != T_REG)
+        {
+          as_bad(_("Expected register in register list"));
+          return A_ERR;
+        }
+      mask |= 1 << reg->sub_type;
+      ++reg;
+      if (reg->type != T_COMMA && reg->type != T_ASSIGN)
+        {
+          as_bad(_("Register list must be comma-separated"));
+          return A_ERR;
+        }
+      if (reg->type == T_ASSIGN)
+        {
+          break;
+        }
+      ++reg;
+    }
+  if ((mask & 0xff00) != 0 && (mask & 0x00ff) != 0)
+    {
+      as_bad(_("Register list must be either between $r0 and $r7 or $r8 and $r14"));
+      return A_ERR;
+    }
+  is_upper = mask & 0xff00;
+  if (is_upper)
+    mask >>= 8;
+  md_number_to_chars(frag+2, mask, 2);
+
+  // Work out offset
+  if (!parse_int(tokens[6].first_lexer_token, tokens[7].last_lexer_token, &offs))
+    {
+      as_bad(_("Can't parse offset"));
+      return A_ERR;
+    }
+  if ((offs & 3) != 0)
+    {
+      as_bad(_("Offset must be multiple of 4"));
+      return A_ERR;
+    }
+  offs >>= 2;
+  if (offs > 7 || offs < -7)
+    {
+      as_bad(_("Offset out of range"));
+      return A_ERR;
+    }
+  // Create 1-s complement
+  if (offs < 0)
+    offs -= 1;
+
+  insn_code =
+    FIELD_D(tokens[5].first_lexer_token->sub_type) |
+    FIELD_C(0xf) |
+    FIELD_B(is_upper ? 0x1 : 0x0) |
+    FIELD_A(offs);
+  A_RETURN();
+}
+
 
 static int action_store_multi_type(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
@@ -1658,6 +1733,7 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_IF, T_REG, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                    ACTION(action_cbranch_bittest),
 
   PATTERN(T_TYPE, T_REG, T_ELLIPSIS, T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                 ACTION(action_load_multi_type),
+  PATTERN(T_TYPE, ~T_ASSIGN, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                ACTION(action_load_multi_type2),
   PATTERN(T_TYPE, T_REG, T_ELLIPSIS, T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_AND, ~T_NULL), ACTION(action_load_multi_type),
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_TYPE, T_REG, T_ELLIPSIS, T_REG),                 ACTION(action_store_multi_type),
 };
