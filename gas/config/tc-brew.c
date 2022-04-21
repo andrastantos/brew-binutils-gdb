@@ -241,6 +241,7 @@ DONE:
 #define A_PROLOG(_insn_len) \
   uint16_t insn_code; \
   size_t insn_len = _insn_len; \
+  frag_new(0); \
   char *frag = frag_more(insn_len); \
   frag_now->fr_type = rs_fill
 
@@ -254,6 +255,7 @@ DONE:
   uint16_t ext_code; \
   uint16_t insn_code; \
   size_t insn_len = _insn_len; \
+  frag_new(0); \
   char *frag = frag_more(insn_len); \
   frag_now->fr_type = rs_fill
 
