@@ -29,6 +29,7 @@ typedef enum {
   BREW_REG_TYPE_SINT8x4S     =  6,
   BREW_REG_TYPE_FP32         =  8,
   BREW_REG_TYPE_FP16x2       =  9,
+  BREW_REG_TYPE_MASK         =  0xf
 } brew_reg_types;
 
 typedef enum {

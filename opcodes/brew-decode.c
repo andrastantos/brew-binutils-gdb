@@ -944,9 +944,9 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           if (pattern_match(insn_code, ".09.")) { CLASS(FP); SIM(SIM_REGD_T = reciprocal_op(SIM_REG(FIELD_A))); INST("%s <- 1 / %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".0a.")) { CLASS(FP); SIM(SIM_REGD_T = rsqrt_op(SIM_REG(FIELD_A), sim_state)); INST("%s <- rsqrt %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".0b.")) { CLASS(ARITH); SIM(SIM_REGD_T = sum_op(SIM_REG(FIELD_A))); INST("%s <- sum %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".0c.")) { CLASS(TYPE); SIM(SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), SIM_REG(FIELD_A).val & 0xf)); INST("type %s <- %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, ".0c.")) { CLASS(TYPE); SIM(if ((SIM_REG(FIELD_A).val & 0xf) != BREW_REG_TYPE_MASK) SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), SIM_REG(FIELD_A).val & 0xf)); INST("type %s <- %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".0d.")) { CLASS(TYPE); SIM(SIM_REGD_T = MAKE_INT(SIM_REG(FIELD_A).type, BREW_REG_TYPE_INT32)); INST("%s <- type %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".0e.")) { CLASS(TYPE); SIM(SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), FIELD_A)); INST("type %s <- type %s", REG_D, brew_reg_type_name(FIELD_A)); }
+          if (pattern_match(insn_code, ".0e.")) { CLASS(TYPE); SIM(if (FIELD_A != BREW_REG_TYPE_MASK) SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), FIELD_A)); INST("type %s <- %s", REG_D, brew_reg_type_name(FIELD_A)); }
 
           // immediate branch
           if (pattern_match(insn_code, "20ef")) { CLASS(BRANCH); SIM(SIM_PC_T = field_e); INST("$pc <- %u (0x%x)", field_e, field_e); }
@@ -958,6 +958,34 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           // short immediate branch
           if (pattern_match(insn_code, "20fe")) { CLASS(BRANCH); SIM(SIM_PC_T = field_e); INST("$pc <- short %u (0x%x)", field_e, field_e); }
           if (pattern_match(insn_code, "30fe")) { CLASS(BRANCH); SIM(SIM_TPC_T = field_e); INST("$tpc <- short %u (0x%x)", field_e, field_e); }
+
+          // bulk type load immediate
+          if (pattern_match(insn_code, "80ef") || pattern_match(insn_code, "90ef")) {
+            int reg_ofs = (FIELD_D == 9) ? 8 : 0;
+            SIM(CLASS(TYPE));
+            char regs[1024];
+            char types[1024];
+            regs[0] = 0;
+            types[0] = 0;
+            for(int i=0;i<8;++i)
+              {
+                int type = (field_e >> i*4) & 0xf;
+                SIM(if (type != BREW_REG_TYPE_MASK) SIM_REG_T(i+reg_ofs) = MAKE_INT(SIM_REG(i+reg_ofs).val, type));
+                if (fpr)
+                  {
+                    if (type != BREW_REG_TYPE_MASK)
+                      {
+                        if (types[0] != 0)
+                          strncat(types, ", ", ARRAY_SIZE(types)-1);
+                        strncat(types, brew_reg_type_name(type), ARRAY_SIZE(types)-1);
+                        if (regs[0] != 0)
+                          strncat(regs, ", ", ARRAY_SIZE(regs)-1);
+                        strncat(regs, REG(i+reg_ofs), ARRAY_SIZE(regs)-1);
+                      }
+                  }
+              }
+            INST("type %s <- %s", regs, types);
+          }
 
           UNKNOWN;
           break;
@@ -972,23 +1000,6 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
         REGULAR_ALU_PATTERN(9, *, mul_op, "", MUL);
         case 0xa:
           if (pattern_match(insn_code, ".a..")) { CLASS(BIT); SIM(SIM_REGD_T = nand_op(SIM_REG(FIELD_A), SIM_REG(FIELD_B))); INST("%s <- ~%s & %s", REG_D, REG_A, REG_B); }
-          if (pattern_match(insn_code, ".a.f")) {
-            SIM(CLASS(TYPE));
-            char types[1024];
-            types[0] = 0;
-            for(int i=0;i<8;++i)
-              {
-                int type = (field_e >> i*4) & 0xf;
-                SIM(SIM_REG_T(i) = MAKE_INT(SIM_REG(i).val, type));
-                if (fpr)
-                  {
-                    if (types[0] != 0)
-                      strncat(types, ", ", ARRAY_SIZE(types)-1);
-                    strncat(types, brew_reg_type_name(type), ARRAY_SIZE(types)-1);
-                  }
-              }
-            INST("type $r0...$r7 <- %s", types);
-          }
           if (pattern_match(insn_code, ".af.")) {
             SIM(CLASS(VECTOR));
             SIM(SIM_REGD_T = lane_swizzle_op(SIM_REG(FIELD_A), field_e));
@@ -1007,23 +1018,6 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
             SIM(CLASS(ARITH));
             SIM(SIM_REGD_T = add_op(MAKE_INT(imm, SIM_REG_TYPE(FIELD_B)), SIM_REG(FIELD_B)));
             INST("%s <- tiny %s %s%d", REG_D, REG_B, imm < 0 ? "- " : "+ ", imm < 0 ? -imm : imm);
-          }
-          if (pattern_match(insn_code, ".b.f")) {
-            SIM(CLASS(TYPE));
-            char types[1024];
-            types[0] = 0;
-            for(int i=8;i<15;++i)
-              {
-                int type = (field_e >> i*4) & 0xf;
-                SIM(SIM_REG_T(i) = MAKE_INT(SIM_REG(i).val, type));
-                if (fpr)
-                  {
-                    if (types[0] != 0)
-                      strncat(types, ", ", ARRAY_SIZE(types)-1);
-                    strncat(types, brew_reg_type_name(type), ARRAY_SIZE(types)-1);
-                  }
-              }
-            INST("type $r8...$r14 <- %s", types);
           }
           UNKNOWN;
           break;
@@ -1339,13 +1333,12 @@ static const char *reg_type_names[] = {
   "type7",
   "fp32",         //  BREW_REG_TYPE_FP32
   "fp16x2",       //  BREW_REG_TYPE_FP16x2
-  "type9",
   "type10",
   "type11",
   "type12",
   "type13",
   "type14",
-  "MASK"
+  "mask"
 };
 
 const char *

@@ -212,6 +212,7 @@ static const token_declS token_library[] = {
   { "sint8x4s",     T_TYPENAME,      BREW_REG_TYPE_SINT8x4S },
   { "fp32",         T_TYPENAME,      BREW_REG_TYPE_FP32 },
   { "fp16x2",       T_TYPENAME,      BREW_REG_TYPE_FP16x2 },
+  { "mask",         T_TYPENAME,      BREW_REG_TYPE_MASK },
   { "$fp",          T_REG,           BREW_REG_FP },
   { "$sp",          T_REG,           BREW_REG_SP },
   { "$lr",          T_REG,           BREW_REG_LINK },

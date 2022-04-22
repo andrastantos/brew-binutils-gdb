@@ -729,15 +729,15 @@ static int action_set_type_reg(void *context ATTRIBUTE_UNUSED, const brew_parser
 static int action_set_type_imm(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(2);
-  A_CHECK(5);
+  A_CHECK(4);
 
   gas_assert(tokens[1].parser_token == T_REG);
-  gas_assert(tokens[4].parser_token == T_TYPENAME);
+  gas_assert(tokens[3].parser_token == T_TYPENAME);
   insn_code =
     FIELD_D(tokens[1].first_lexer_token->sub_type) |
     FIELD_C(0x0) |
     FIELD_B(0xe) |
-    FIELD_A(tokens[4].first_lexer_token->sub_type);
+    FIELD_A(tokens[3].first_lexer_token->sub_type);
   A_RETURN();
 }
 
@@ -1515,6 +1515,122 @@ static int action_load_multi_type(void *context ATTRIBUTE_UNUSED, const brew_par
   A_RETURN();
 }
 
+static bool parse_multi_reg_list(const brew_lexer_tokenS *start, uint16_t *mask, bool *is_upper)
+{
+  *mask = 0;
+  const brew_lexer_tokenS *reg = start;
+  while (true)
+    {
+      if (reg->type != T_REG)
+        {
+          as_bad(_("Expected register in register list"));
+          return false;
+        }
+      *mask |= 1 << reg->sub_type;
+      ++reg;
+      if (reg->type != T_COMMA && reg->type != T_ASSIGN)
+        {
+          as_bad(_("Register list must be comma-separated"));
+          return false;
+        }
+      if (reg->type == T_ASSIGN)
+        {
+          break;
+        }
+      ++reg;
+      if (reg->type == T_ASSIGN) // Allow a final comma
+        {
+          break;
+        }
+    }
+  if ((*mask & 0xff00) != 0 && (*mask & 0x00ff) != 0)
+    {
+      as_bad(_("Register list must be either between $r0 and $r7 or $r8 and $r14, %x"), *mask);
+      return false;
+    }
+  *is_upper = *mask & 0xff00;
+  if (*is_upper)
+    *mask >>= 8;
+  return true;
+}
+
+static int action_load_multi_type_imm(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  uint16_t mask = 0;
+  uint64_t imm = 0xffffffffffffffffull; // start with all registers masked
+  bool is_upper;
+  const brew_lexer_tokenS *reg_tok;
+  const brew_lexer_tokenS *type_tok;
+
+  A_PROLOG(6);
+  A_CHECK(4);
+
+  gas_assert(tokens[1].parser_token == ~T_ASSIGN);
+  gas_assert(tokens[3].parser_token == ~T_NULL);
+
+  // Look through the type list and generate the immediate
+  reg_tok = tokens[1].first_lexer_token;
+  type_tok = tokens[3].first_lexer_token;
+  while (true)
+    {
+      if (reg_tok->type != T_REG)
+        {
+          as_bad(_("Expected register in register list"));
+          return A_ERR;
+        }
+      if (type_tok->type != T_TYPENAME)
+        {
+          as_bad(_("Expected register type in assignment list"));
+          return A_ERR;
+        }
+      mask |= 1 << reg_tok->sub_type;
+      imm = (imm & ~(0xfull << (reg_tok->sub_type*4))) | (((uint64_t)type_tok->sub_type) << (reg_tok->sub_type*4));
+      ++reg_tok;
+      ++type_tok;
+      if (type_tok->type != T_COMMA && type_tok->type != T_NULL)
+        {
+          as_bad(_("Register type list must be comma-separated"));
+          return A_ERR;
+        }
+      if (reg_tok->type != T_COMMA && reg_tok->type != T_ASSIGN)
+        {
+          as_bad(_("Register list must be comma-separated"));
+          return A_ERR;
+        }
+      if ((reg_tok->type == T_ASSIGN || reg_tok->type == T_COMMA) && type_tok->type == T_NULL)
+        {
+          break;
+        }
+      if (reg_tok->type == T_ASSIGN || type_tok->type == T_NULL)
+        {
+          as_bad(_("Register list and type list must be of the same length"));
+          return A_ERR;
+        }
+      ++reg_tok;
+      ++type_tok;
+    }
+  if ((mask & 0xff00) != 0 && (mask & 0x00ff) != 0)
+    {
+      as_bad(_("Register list must be either between $r0 and $r7 or $r8 and $r14, %x"), mask);
+      return false;
+    }
+  is_upper = mask & 0xff00;
+  if (is_upper)
+    {
+      mask >>= 8;
+      imm >>= 32;
+    }
+
+  md_number_to_chars(frag+2, (uint32_t)imm, 4);
+
+  insn_code =
+    FIELD_D(is_upper ? 0x9 : 0x8) |
+    FIELD_C(0x0) |
+    FIELD_B(0xe) |
+    FIELD_A(0xf);
+  A_RETURN();
+}
+
 static int action_load_multi_type2(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   uint16_t mask;
@@ -1529,35 +1645,9 @@ static int action_load_multi_type2(void *context ATTRIBUTE_UNUSED, const brew_pa
   gas_assert(tokens[7].parser_token == ~T_RBRACKET);
 
   // Look through the register list and generate mask
-  const brew_lexer_tokenS *reg = tokens[1].first_lexer_token;
-  while (true)
-    {
-      if (reg->type != T_REG)
-        {
-          as_bad(_("Expected register in register list"));
-          return A_ERR;
-        }
-      mask |= 1 << reg->sub_type;
-      ++reg;
-      if (reg->type != T_COMMA && reg->type != T_ASSIGN)
-        {
-          as_bad(_("Register list must be comma-separated"));
-          return A_ERR;
-        }
-      if (reg->type == T_ASSIGN)
-        {
-          break;
-        }
-      ++reg;
-    }
-  if ((mask & 0xff00) != 0 && (mask & 0x00ff) != 0)
-    {
-      as_bad(_("Register list must be either between $r0 and $r7 or $r8 and $r14"));
-      return A_ERR;
-    }
-  is_upper = mask & 0xff00;
-  if (is_upper)
-    mask >>= 8;
+  if (!parse_multi_reg_list(tokens[1].first_lexer_token, &mask, &is_upper))
+    return A_ERR;
+
   md_number_to_chars(frag+2, mask, 2);
 
   // Work out offset
@@ -1661,7 +1751,7 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_PC, T_ASSIGN, T_SHORT, ~T_NULL),                                                                                            ACTION(action_move_short_imm_to_pc),
 
   PATTERN(T_TYPE, T_REG, T_ASSIGN, T_REG),                                                                                              ACTION(action_set_type_reg),
-  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_TYPE, T_TYPENAME),                                                                                 ACTION(action_set_type_imm),
+  PATTERN(T_TYPE, T_REG, T_ASSIGN, T_TYPENAME),                                                                                         ACTION(action_set_type_imm),
 
   PATTERN(T_REG, T_ASSIGN, T_PC, T_PLUS_MINUS, ~T_NULL),                                                                                ACTION(action_link),
   PATTERN(T_REG, T_ASSIGN, T_PC),                                                                                                       ACTION(action_move_pc_to_reg),
@@ -1736,6 +1826,7 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_TYPE, ~T_ASSIGN, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                ACTION(action_load_multi_type2),
   PATTERN(T_TYPE, T_REG, T_ELLIPSIS, T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_AND, ~T_NULL), ACTION(action_load_multi_type),
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_TYPE, T_REG, T_ELLIPSIS, T_REG),                 ACTION(action_store_multi_type),
+  PATTERN(T_TYPE, ~T_ASSIGN, T_ASSIGN, ~T_NULL),                                                                                        ACTION(action_load_multi_type_imm),
 };
 
 // This is the guts of the machine-dependent assembler.  STR points to
