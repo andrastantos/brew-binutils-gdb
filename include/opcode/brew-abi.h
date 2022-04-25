@@ -25,25 +25,19 @@
 //       kept in sync with the ones here. In fact, one could argue that the ABI is defined
 //       *by* the GCC sources.
 
-#define BREW_REG_SP 13
-#define BREW_REG_FP 12
-#define BREW_REG_LINK 14
-#define BREW_REG_SYSCALL_ERRNO 2
-#define BREW_REG_ARG0 4
-#define BREW_REG_ARG1 5
-#define BREW_REG_ARG2 6
-#define BREW_REG_ARG3 7
-#define BREW_REG_STATIC_CHAIN 8
-#define BREW_REG_THUNK 9
-#define BREW_REG_STRUCT_VAL_ADDR 10
-#define BREW_REG_EH_RETURN_DATA0 13
-#define BREW_REG_EH_RETURN_DATA1 14
-
-#define BREW_REG_CALL_CLOBBERED_MAP \
-  0, 0, 0, 0, \
-  1, 1, 1, 1, \
-  1, 1, 1, 0, \
-  0, 0, 0     \
+#define BREW_REG_THUNK           0
+#define BREW_REG_STRUCT_VAL_ADDR 1
+#define BREW_REG_STATIC_CHAIN    2
+#define BREW_REG_ARG0            4
+#define BREW_REG_ARG1            5
+#define BREW_REG_ARG2            6
+#define BREW_REG_ARG3            7
+#define BREW_REG_EH_RETURN_DATA0 8 // TODO: change this to the first call-saved register - TODO: this is done, but why was that important ???
+#define BREW_REG_EH_RETURN_DATA1 9
+#define BREW_REG_FP              12
+#define BREW_REG_SP              13
+#define BREW_REG_LINK            14
+#define BREW_REG_SYSCALL_ERRNO   14
 
 extern const char * brew_reg_names[];
 extern const char * brew_sreg_names[];

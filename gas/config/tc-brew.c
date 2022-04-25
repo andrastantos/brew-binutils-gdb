@@ -210,7 +210,7 @@ parse_expression(
   if (*end_expr != 0)
     goto DONE;
   const char *old_fr_literal = frag_now->fr_literal; // this is just for debug
-  printf("where: %lx, offset: %ld, size: %ld\n", fragment_ofs + (fragment_data - frag_now->fr_literal), fragment_ofs, fragment_size);
+  //printf("where: %lx, offset: %ld, size: %ld\n", fragment_ofs + (fragment_data - frag_now->fr_literal), fragment_ofs, fragment_size);
   fix_new_exp(
     frag_now,
     fragment_ofs + (fragment_data - frag_now->fr_literal),
@@ -241,7 +241,7 @@ DONE:
 #define A_PROLOG(_insn_len) \
   uint16_t insn_code; \
   size_t insn_len = _insn_len; \
-  frag_new(0); \
+  /*frag_new(0);*/ \
   char *frag = frag_more(insn_len); \
   frag_now->fr_type = rs_fill
 
@@ -255,7 +255,7 @@ DONE:
   uint16_t ext_code; \
   uint16_t insn_code; \
   size_t insn_len = _insn_len; \
-  frag_new(0); \
+  /*frag_new(0);*/ \
   char *frag = frag_more(insn_len); \
   frag_now->fr_type = rs_fill
 
@@ -2058,7 +2058,6 @@ md_pcrel_from(fixS *fixP)
 {
   gas_assert(fixP->fx_r_type == BFD_RELOC_BREW_PCREL16);
 
-  fprintf(stderr, "FIXME: %s:%d do we need the -2 here?\n", __FILE__, __LINE__);
   valueT addr = fixP->fx_where + fixP->fx_frag->fr_address - 2;
   return addr;
 }
