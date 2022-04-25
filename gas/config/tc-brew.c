@@ -1122,7 +1122,7 @@ static int action_lane_cmp(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
   const brew_parser_tokenS *cmp = &tokens[is_signed ? 4 : 3];
   const brew_parser_tokenS *second_arg = &tokens[is_signed ? 5 : 4];
   gas_assert(first_arg->parser_token == T_REG);
-  gas_assert(second_arg->parser_token == T_REG || !is_signed);
+  gas_assert(second_arg->parser_token == T_REG || second_arg->parser_token == T_ZERO);
 
   is_zero = second_arg->parser_token == T_ZERO;
 
@@ -1179,7 +1179,7 @@ static int action_cbranch(void *context ATTRIBUTE_UNUSED, const brew_parser_toke
     is_any = (tokens[1].first_lexer_token->sub_type == ST_IF_ANY);
 
   gas_assert(first_arg->parser_token == T_REG);
-  gas_assert(second_arg->parser_token == T_REG || !is_signed);
+  gas_assert(second_arg->parser_token == T_REG || second_arg->parser_token == T_ZERO);
   gas_assert(cmp->parser_token == T_CMP);
   gas_assert(target->parser_token == ~T_NULL);
 
