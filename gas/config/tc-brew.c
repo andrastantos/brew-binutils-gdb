@@ -181,24 +181,38 @@ parse_expression(
   // GAS also doesn't support any floating point expressions. We need that for float immediates, so let's test for them
   // NOTE: this still doesn't support floating point expressions, such as 1.3+2.6,
   //       but that's not supported in GAS anywhere, not even in .float
-  if (support_float && fragment_size == 4)
+  if (support_float && (fragment_size - fragment_ofs) == 4)
     {
-      LITTLENUM_TYPE float_store[8]; // We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow
-
-      parse_end = atof_ieee(expression_str, 'f', float_store);
-      if (parse_end != NULL && *parse_end == 0)
+      int32_t int_val;
+      // Try it as an integer first as the float parser happily accepts those as floats as well.
+      if (parse_int(first_token, last_token, &int_val))
         {
-          DEBUG("float parser for %s returns with 0x%04x 0x%04x", expression_str, float_store[0], float_store[1]);
-          int float_part = fragment_size / 2; // float_store is in 16-bit entities
+          DEBUG("int parser for %s returns with 0x%x", expression_str, int_val);
           char *frag_ptr = fragment_data + fragment_ofs;
-          LITTLENUM_TYPE *float_ptr;
-          for (float_ptr = float_store + float_part; float_part--;)
-            {
-              md_number_to_chars(frag_ptr, (valueT)(*--float_ptr), sizeof(LITTLENUM_TYPE));
-              frag_ptr += sizeof (LITTLENUM_TYPE);
-            }
+          md_number_to_chars(frag_ptr, (uint32_t)int_val, 4);
           ret_val = true;
           goto DONE;
+
+        }
+      else
+        {
+          LITTLENUM_TYPE float_store[8]; // We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow
+
+          parse_end = atof_ieee(expression_str, 'f', float_store);
+          if (parse_end != NULL && *parse_end == 0)
+            {
+              DEBUG("float parser for %s returns with 0x%04x 0x%04x", expression_str, float_store[0], float_store[1]);
+              int float_part = (fragment_size - fragment_ofs) / 2; // float_store is in 16-bit entities
+              char *frag_ptr = fragment_data + fragment_ofs;
+              LITTLENUM_TYPE *float_ptr;
+              for (float_ptr = float_store + float_part; float_part--;)
+                {
+                  md_number_to_chars(frag_ptr, (valueT)(*--float_ptr), sizeof(LITTLENUM_TYPE));
+                  frag_ptr += sizeof (LITTLENUM_TYPE);
+                }
+              ret_val = true;
+              goto DONE;
+            }
         }
     }
 
@@ -850,7 +864,7 @@ static int action_binary_reg_imm(void *context ATTRIBUTE_UNUSED, const brew_pars
   op_code = op_tok->first_lexer_token->sub_type;
 
   // We don't have this op in this format. We have only VALUE-$rX. So we'll implement it as $rx+(-VALUE)
-  if (imm_op->first_lexer_token->sub_type == ST_MINUS)
+  if (op_tok->first_lexer_token->sub_type == ST_MINUS)
     {
       reloc_type = is_short ? BFD_RELOC_BREW_NEG16 : BFD_RELOC_BREW_NEG32;
       op_code = 0x4; // override operation to '+' instead of '-'
@@ -886,14 +900,16 @@ static int action_move_imm_to_reg(void *context ATTRIBUTE_UNUSED, const brew_par
   const brew_parser_tokenS *reg_dst;
   const brew_parser_tokenS *imm_op;
   bool is_short;
+  bool is_tiny;
 
   is_short = tokens[2].parser_token == T_SHORT;
+  is_tiny = tokens[2].parser_token == T_TINY;
 
-  A_PROLOG(is_short ? 4 : 6);
-  A_CHECK(is_short ? 4 : 3);
+  A_PROLOG(is_short ? 4 : is_tiny ? 2 : 6);
+  A_CHECK(is_short ? 4 : is_tiny ? 4 : 3);
 
   reg_dst = &tokens[0];
-  if (is_short)
+  if (is_short || is_tiny)
     {
       imm_op = &tokens[3];
     }
@@ -905,27 +921,53 @@ static int action_move_imm_to_reg(void *context ATTRIBUTE_UNUSED, const brew_par
   gas_assert(reg_dst->parser_token == T_REG);
   gas_assert(imm_op->parser_token == ~T_NULL);
 
-  if (!parse_expression(imm_op->first_lexer_token, imm_op->last_lexer_token, frag, 2, insn_len, false, is_short ? BFD_RELOC_16 : BFD_RELOC_32))
+  if (is_tiny)
     {
-      as_bad(_("Can't parse expression"));
-      return A_ERR;
-    }
-
-  if (is_short)
-    {
+      int imm;
+      if (!parse_int(imm_op->first_lexer_token, imm_op->last_lexer_token, &imm))
+        {
+          as_bad(_("Can't parse immediate"));
+          return A_ERR;
+        }
+      if (imm > 7 || imm < -7)
+        {
+          as_bad(_("Immediate is out of range"));
+          return A_ERR;
+        }
+      // Convert to 1's complement
+      if (imm < 0)
+        imm -= 1;
+      gas_assert((imm & 0xf) != 0xf);
       insn_code =
         FIELD_D(reg_dst->first_lexer_token->sub_type) |
         FIELD_C(0x0) |
-        FIELD_B(0xf) |
-        FIELD_A(0x0);
+        FIELD_B(0x1) |
+        FIELD_A(imm);
     }
   else
     {
-      insn_code =
-        FIELD_D(reg_dst->first_lexer_token->sub_type) |
-        FIELD_C(0x0) |
-        FIELD_B(0x0) |
-        FIELD_A(0xf);
+      if (!parse_expression(imm_op->first_lexer_token, imm_op->last_lexer_token, frag, 2, insn_len, false, is_short ? BFD_RELOC_16 : BFD_RELOC_32))
+        {
+          as_bad(_("Can't parse expression"));
+          return A_ERR;
+        }
+
+      if (is_short)
+        {
+          insn_code =
+            FIELD_D(reg_dst->first_lexer_token->sub_type) |
+            FIELD_C(0x0) |
+            FIELD_B(0xf) |
+            FIELD_A(0x0);
+        }
+      else
+        {
+          insn_code =
+            FIELD_D(reg_dst->first_lexer_token->sub_type) |
+            FIELD_C(0x0) |
+            FIELD_B(0x0) |
+            FIELD_A(0xf);
+        }
     }
   A_RETURN();
 }
@@ -964,7 +1006,6 @@ static int action_binary_imm_reg(void *context ATTRIBUTE_UNUSED, const brew_pars
   gas_assert(imm_op->parser_token == ~T_REG);
 
   DEBUG("op_tok: %d, %s", op_tok->type, brew_tok_name(op_tok->type));
-
   reloc_type = is_short ? BFD_RELOC_16 : BFD_RELOC_32;
   op_code = op_tok->sub_type;
 
@@ -1796,6 +1837,7 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_AND, ~T_NULL),                                                                             ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_REG, T_REG),                                                                                     ACTION(action_binary_imm_reg),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_NULL),                                                                                           ACTION(action_move_imm_to_reg),
+  PATTERN(T_REG, T_ASSIGN, T_TINY, ~T_NULL),                                                                                            ACTION(action_move_imm_to_reg),
 
   PATTERN(T_REG, T_ASSIGN, ~T_REG, T_REG),                                                                                              ACTION(action_binary_imm_reg),
   PATTERN(T_REG, T_ASSIGN, T_ONE, T_DIV, T_REG),                                                                                        ACTION(action_reciprocal),

@@ -156,6 +156,7 @@ static const token_declS token_library[] = {
   { "hwi",          T_INSN,          0x7000 },
   { "stm",          T_INSN,          0x8000 },
   { "woi",          T_INSN,          0x9000 },
+  { "nop",          T_INSN,          0x2222 },
   { "swi",          T_SWI,           0 },
   { "fence",        T_FENCE,         0x0001 },
   { "float",        T_PREFIX_OP,     0x7 },

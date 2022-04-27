@@ -563,6 +563,29 @@ static INLINE void pre_exec(sim_cpu *scpu, uint16_t insn_code ATTRIBUTE_UNUSED)
   scpu->decode_buf[0] = 0;
 }
 
+static INLINE void trace_exception(sim_cpu *scpu, char *message, size_t message_size)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+
+  switch(scpu->sim_state.insn_exception)
+    {
+      case BREW_EXCEPTION_NONE: break;
+      case BREW_EXCEPTION_FILL:              str_append(message, message_size, "exception: fill"); break;
+      case BREW_EXCEPTION_BREAK:             str_append(message, message_size, "exception: break"); break;
+      case BREW_EXCEPTION_SYSCALL:           str_append(message, message_size, "exception: syscall"); break;
+      case BREW_EXCEPTION_SWI3:              str_append(message, message_size, "exception: swi 3"); break;
+      case BREW_EXCEPTION_SWI4:              str_append(message, message_size, "exception: swi 4"); break;
+      case BREW_EXCEPTION_SWI5:              str_append(message, message_size, "exception: swi 5"); break;
+      case BREW_EXCEPTION_SII:               str_append(message, message_size, "exception: sii"); break;
+      case BREW_EXCEPTION_HWI:               str_append(message, message_size, "exception: hwi"); break;
+      case BREW_EXCEPTION_UNALIGNED:         str_append(message, message_size, "exception: unaligned access"); break;
+      case BREW_EXCEPTION_ACCESS_VIOLATION:  str_append(message, message_size, "exception: access violation"); break;
+      case BREW_EXCEPTION_F_DIV_BY_ZERO:     str_append(message, message_size, "exception: divide by zero"); break;
+      case BREW_EXCEPTION_F_NEG_RSQRT:       str_append(message, message_size, "exception: megative rsqrt"); break;
+      default:                               SIM_ASSERT(false); break;
+    }
+}
+
 static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_branch_tpc, uint32_t non_branch_spc)
 {
   SIM_DESC sd = CPU_STATE(scpu);
@@ -611,6 +634,11 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
           SIDE_EFFECT_INDENT;
           STR_APPEND(message, " | ");
           STR_APPEND(message, fragment);
+        }
+      if (scpu->sim_state.insn_exception != BREW_EXCEPTION_NONE)
+        {
+          SIDE_EFFECT_INDENT;
+          trace_exception(scpu, message, sizeof(message));
         }
       TRACE_INSN(scpu, "%s", message);
     }

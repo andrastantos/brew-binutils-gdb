@@ -324,8 +324,8 @@ binary_op(
   return true;
 }
 
-#define REGULAR_ALU_PATTERN(base, op, sim_op, prefix, insn_class)                                                                                    \
-  case 0x##base: if (!binary_op(sim_state, fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, prefix, CLASS_NAME(insn_class))) break; return;     \
+#define REGULAR_ALU_PATTERN(base, op, sim_op, prefix, insn_class)                                                                                                        \
+  case 0x##base: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, prefix, CLASS_NAME(insn_class))) break; return;     \
 
 static INLINE brew_typed_reg lane_swizzle_op(brew_typed_reg val, uint8_t swizzle_code)
 {
@@ -867,6 +867,7 @@ void
 brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_t insn_code, uint32_t field_e)
 {
   int length;
+  bool skip_print = false;
 
   char str_buffer[255];
 
@@ -881,10 +882,10 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
   if (FIELD_D != 0xf && FIELD_C < 0xc)
     {
       // Some rather special-case pseudo-ops:
-      // TODO: fix these...
-      //if (FIELD_C == 2 && FIELD_B == FIELD_A && FIELD_D == FIELD_A) { CLASS(NOP); INST("NOP"); } // $rD <- $rD | $rD
-      //if (FIELD_C == 1 && FIELD_B == FIELD_A) { CLASS(LOGIC); SIM(SIM_REGD_T = 0;) INST("%s <- 0", REG_D); } // $rD <- $rX ^ $rX
-      //if (FIELD_C == 2 && FIELD_B == FIELD_A) { CLASS(LOGIC); SIM(SIM_REGD_T = SIM_REG(FIELD_B)); INST("%s <- %s", REG_D, REG_B); } // $rD <- $rX | $rX
+      //    Here we only handle the disassembly part. Simulation goes through the normal path.
+      if (FIELD_C == 2 && FIELD_B == FIELD_A && FIELD_D == FIELD_A) { if(fpr) fpr(strm_or_buffer, "NOP"); skip_print = true; } // $rD <- $rD | $rD
+      if (FIELD_C == 1 && FIELD_B == FIELD_A) { if (fpr) fpr(strm_or_buffer, "%s <- 0", REG_D); skip_print = true; } // $rD <- $rX ^ $rX
+      if (FIELD_C == 2 && FIELD_B == FIELD_A) { if (fpr) fpr(strm_or_buffer, "%s <- %s", REG_D, REG_B); skip_print = true; } // $rD <- $rX | $rX
 
       // ALU group
       switch (FIELD_C)
