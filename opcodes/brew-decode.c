@@ -727,16 +727,16 @@ static INLINE bool all(bool a, bool b, bool c, bool d) { return a && b && c && d
 #define ANY_OR_ALL2(a,b) (all_not_any ? all(a,b,true,true) : any(a,b,false,false))
 #define ANY_OR_ALL4(a,b,c,d) (all_not_any ? all(a,b,c,d) : any(a,b,c,d))
 #define CMP(a,b) (      \
-  cond == COND_EQ ? (a) == (b) : \
-  cond == COND_NE ? (a) != (b) : \
-  cond == COND_GT ? (a) >  (b) : \
-  cond == COND_GE ? (a) >= (b) : \
-  cond == COND_LT ? (a) <  (b) : \
-  cond == COND_LE ? (a) <= (b) : \
-  opcodes_assert(__FILE__, __LINE__), false   \
+  ((cond) == COND_EQ) ? (a) == (b) : \
+  ((cond) == COND_NE) ? (a) != (b) : \
+  ((cond) == COND_GT) ? (a) >  (b) : \
+  ((cond) == COND_GE) ? (a) >= (b) : \
+  ((cond) == COND_LT) ? (a) <  (b) : \
+  ((cond) == COND_LE) ? (a) <= (b) : \
+  (opcodes_assert(__FILE__, __LINE__), false)   \
 )
 
-static INLINE bool cond(brew_typed_reg left, brew_cond cond, brew_typed_reg right, bool is_signed, bool all_not_any)
+static bool cond(brew_typed_reg left, brew_cond cond, brew_typed_reg right, bool is_signed, bool all_not_any)
 {
   switch (right.type)
     {
@@ -744,7 +744,7 @@ static INLINE bool cond(brew_typed_reg left, brew_cond cond, brew_typed_reg righ
         if (is_signed)
           return ANY_OR_ALL1(CMP((int32_t)L32_0(left), (int32_t)L32_0(right)));
         else
-          return ANY_OR_ALL1(CMP(FP32_0(left), FP32_0(right)));
+          return ANY_OR_ALL1(CMP(L32_0(left), L32_0(right)));
       case BREW_REG_TYPE_FP32:
         return ANY_OR_ALL1(CMP(L32_0(left), L32_0(right)));
       case BREW_REG_TYPE_INT16x2:
@@ -1189,12 +1189,12 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
         {
         case 0:
           // conditional branch group
-          if (pattern_match(field_e, ".00.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_EQ, SIM_REG(FIELD_A), true)); INST("%s <- %s == 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".01.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_NE, SIM_REG(FIELD_A), true)); INST("%s <- %s != 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".02.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_GT, SIM_REG(FIELD_A), true)); INST("%s <- %s < 0",  REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".03.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_LE, SIM_REG(FIELD_A), true)); INST("%s <- %s >= 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".04.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_LT, SIM_REG(FIELD_A), true)); INST("%s <- %s > 0",  REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".05.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_GE, SIM_REG(FIELD_A), true)); INST("%s <- %s <= 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".00.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_EQ, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s == 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".01.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_NE, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s != 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".02.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_GT, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s < 0",  REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".03.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_LE, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s >= 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".04.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_LT, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s > 0",  REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".05.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_GE, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s <= 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
           if (pattern_match(field_e, ".06.")) { UNKNOWN; }
           if (pattern_match(field_e, ".07.")) { UNKNOWN; }
           if (pattern_match(field_e, ".08.")) { UNKNOWN; }
@@ -1205,12 +1205,12 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           if (pattern_match(field_e, ".0d.")) { UNKNOWN; }
           if (pattern_match(field_e, ".0e.")) { UNKNOWN; }
 
-          if (pattern_match(field_e, ".1..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(FIELD_B), COND_EQ, SIM_REG(FIELD_A), false)); INST("%s <- %s == %s",        REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".2..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(FIELD_B), COND_NE, SIM_REG(FIELD_A), false)); INST("%s <- %s != %s",        REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".3..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), true )); INST("%s <- signed %s < %s",  REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".4..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), true )); INST("%s <- signed %s >= %s", REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".5..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), false)); INST("%s <- %s < %s",         REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".6..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), false)); INST("%s <- %s > %s",         REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".1..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_EQ, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s == %s",        REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".2..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_NE, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s != %s",        REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".3..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_LT, SIM_REG(EXT_FIELD_A), true )); INST("%s <- signed %s < %s",  REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".4..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_GE, SIM_REG(EXT_FIELD_A), true )); INST("%s <- signed %s >= %s", REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".5..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_LT, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s < %s",         REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (pattern_match(field_e, ".6..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_GE, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s > %s",         REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
           if (pattern_match(field_e, ".7..")) { UNKNOWN; }
           if (pattern_match(field_e, ".8..")) { UNKNOWN; }
           if (pattern_match(field_e, ".9..")) { UNKNOWN; }

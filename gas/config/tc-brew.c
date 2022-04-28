@@ -78,9 +78,9 @@ parse_int(const brew_lexer_tokenS *first_token, const brew_lexer_tokenS *last_to
       size_t len;
       len = last_token->start + last_token->len - first_token->start;
       gas_assert(len > 0);
-      if (len == 1)
+      if (len == 0)
         return false;
-      tok_end = (char *)(first_token->start + len - 1);
+      tok_end = (char *)(first_token->start + len);
       terminator = *tok_end;
       *tok_end = 0;
     }
@@ -172,10 +172,10 @@ parse_expression(
     {
       expression_len = last_token->start + last_token->len - expression_str;
       gas_assert(expression_len > 0);
-      if (expression_len == 1)
+      if (expression_len == 0)
         return false;
-      terminator = expression_str[expression_len-1];
-      expression_str[expression_len-1] = 0;
+      terminator = expression_str[expression_len];
+      expression_str[expression_len] = 0;
     }
 
   // GAS also doesn't support any floating point expressions. We need that for float immediates, so let's test for them
@@ -185,22 +185,19 @@ parse_expression(
     {
       int32_t int_val;
       // Try it as an integer first as the float parser happily accepts those as floats as well.
-      if (parse_int(first_token, last_token, &int_val))
-        {
-          DEBUG("int parser for %s returns with 0x%x", expression_str, int_val);
-          char *frag_ptr = fragment_data + fragment_ofs;
-          md_number_to_chars(frag_ptr, (uint32_t)int_val, 4);
-          ret_val = true;
-          goto DONE;
-
-        }
-      else
+      // We don't actually use the result, let the expression parser take over.
+      if (!parse_int(first_token, last_token, &int_val))
         {
           LITTLENUM_TYPE float_store[8]; // We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow
 
           parse_end = atof_ieee(expression_str, 'f', float_store);
           if (parse_end != NULL && *parse_end == 0)
             {
+              if (reloc_type == BFD_RELOC_BREW_NEG32)
+                {
+                  // need to negate the expression. The sign bit is at the MSB
+                  float_store[1] ^= 0x8000;
+                }
               DEBUG("float parser for %s returns with 0x%04x 0x%04x", expression_str, float_store[0], float_store[1]);
               int float_part = (fragment_size - fragment_ofs) / 2; // float_store is in 16-bit entities
               char *frag_ptr = fragment_data + fragment_ofs;
@@ -237,7 +234,7 @@ parse_expression(
 DONE:
   if (last_token->type != T_NULL)
     {
-      expression_str[expression_len-1] = terminator;
+      expression_str[expression_len] = terminator;
     }
   return ret_val;
 }
@@ -376,7 +373,7 @@ static int action_move_reg_to_pc(void *context ATTRIBUTE_UNUSED, const brew_pars
     FIELD_D(tokens[2].first_lexer_token->sub_type) |
     FIELD_C(0x0) |
     FIELD_B(0x0) |
-    FIELD_A(tokens[2].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3);
+    FIELD_A(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3);
   A_RETURN();
 }
 
@@ -992,13 +989,13 @@ static int action_binary_imm_reg(void *context ATTRIBUTE_UNUSED, const brew_pars
   if (is_short)
     {
       reg_op = &tokens[4];
-      op_tok = tokens[3].last_lexer_token-1;
+      op_tok = tokens[3].last_lexer_token;
       imm_op = &tokens[3];
     }
   else
     {
       reg_op = &tokens[3];
-      op_tok = tokens[2].last_lexer_token-1;
+      op_tok = tokens[2].last_lexer_token;
       imm_op = &tokens[2];
     }
   gas_assert(reg_dst->parser_token == T_REG);
@@ -1506,7 +1503,7 @@ static int action_load_multi_type(void *context ATTRIBUTE_UNUSED, const brew_par
       mask = 0;
       size_t mask_len = is_upper ? 7 : 8;
       const char *mask_digit;
-      if (tokens[12].first_lexer_token != tokens[12].last_lexer_token-1)
+      if (tokens[12].first_lexer_token != tokens[12].last_lexer_token)
         {
           as_bad(_("Mask must be a single string of 0-s and 1-s"));
           return A_ERR;

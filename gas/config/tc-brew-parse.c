@@ -222,7 +222,6 @@ int brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, void
                         // Haven't found the end of the wild-card
                         if ( match_tokens[pattern_idx].first_lexer_token == NULL)
                           match_tokens[pattern_idx].first_lexer_token = &tokens[tok_idx];
-                        ;
                         match_tokens[pattern_idx].last_lexer_token = &tokens[tok_idx];
                         //DEBUG("    W ");
                         //DEBUG_BEGIN
@@ -233,11 +232,18 @@ int brew_parse(const brew_parser_t parser, const brew_lexer_tokenS *tokens, void
                       }
                     else if (~pattern[pattern_idx] == tokens[tok_idx].type)
                       {
-                        // Haven't found the end of the wild-card
-                        if ( match_tokens[pattern_idx].first_lexer_token == NULL)
-                          match_tokens[pattern_idx].first_lexer_token = &tokens[tok_idx];
-                        ;
-                        match_tokens[pattern_idx].last_lexer_token = &tokens[tok_idx];
+                        // Have found the end of the wild-card. If we haven't even seen the beginning yet,
+                        // the pattern doesn't match
+                        if (match_tokens[pattern_idx].first_lexer_token == NULL)
+                          {
+                            gas_assert(match_tokens[pattern_idx].last_lexer_token == NULL);
+                            //DEBUG("    ----- mismatch ----\n");
+                            break;
+                          }
+                        //if ( match_tokens[pattern_idx].first_lexer_token == NULL)
+                        //  match_tokens[pattern_idx].first_lexer_token = &tokens[tok_idx];
+                        //match_tokens[pattern_idx].last_lexer_token = &tokens[tok_idx-1];
+
                         // This is the end of the wild-card (well, rather, the previous token was)
                         // It is a pre-requisite of the pattern that after a wild-card, the next
                         // pattern token must be the inverse of the wild-card, we could fill-in both here.
@@ -364,13 +370,13 @@ void brew_dump_parsed_tokens(FILE *strm, const brew_parser_tokenS *tokens)
     {
       fprintf(strm, "    %-15s\n", brew_tok_name(t->parser_token));
       const brew_lexer_tokenS *tt = t->first_lexer_token;
-      do
+      while (true)
         {
           fprintf(strm, "            "); brew_dump_lexer_token(strm, tt); fprintf(strm, "\n");
-          if (tt != t->last_lexer_token)
-            ++tt;
+          if (tt == t->last_lexer_token)
+            break;
+          ++tt;
         }
-      while (tt != t->last_lexer_token);
       if (t->parser_token == T_NULL)
         break;
       t++;
