@@ -180,7 +180,7 @@ static const token_declS token_library[] = {
   { "short",        T_SHORT,         0 },
   { "tiny",         T_TINY,          0 },
   { "full",         T_FULL,          0 },
-  { "signed",       T_SIGNED,          0 },
+  { "signed",       T_SIGNED,        0 },
   { "mem",          T_MEM,           ST_MEM_32 },
   { "mem32",        T_MEM,           ST_MEM_32 },
   { "mem16",        T_MEM,           ST_MEM_16 },
@@ -334,7 +334,7 @@ brew_lexer_tokenS *brew_tokenize(const char *str)
       for (size_t i=0;i<ARRAY_SIZE(token_library);++i)
         {
           //printf("comparing <%s> to <%s>\n", token_library[i].str, tok_start);
-          if (strncmp(token_library[i].str, tok_start, tok_len) == 0)
+          if (strncmp(token_library[i].str, tok_start, tok_len) == 0 && strlen(token_library[i].str) == tok_len)
             {
               lexer_token_strm_append_token(&tokens, token_library[i].type, token_library[i].sub_type, tok_len, tok_start);
               found = true;
