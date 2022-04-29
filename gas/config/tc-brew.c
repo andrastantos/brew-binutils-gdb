@@ -1185,8 +1185,8 @@ static int action_lane_cmp(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
       insn_code =
         FIELD_D(tokens[0].first_lexer_token->sub_type) |
         FIELD_C(op_code) |
-        FIELD_B(swap_args ? first_arg->first_lexer_token->sub_type : second_arg->first_lexer_token->sub_type) |
-        FIELD_A(swap_args ? second_arg->first_lexer_token->sub_type : first_arg->first_lexer_token->sub_type);
+        FIELD_B(swap_args ? second_arg->first_lexer_token->sub_type : first_arg->first_lexer_token->sub_type) |
+        FIELD_A(swap_args ? first_arg->first_lexer_token->sub_type : second_arg->first_lexer_token->sub_type);
     }
   A_RETURN_EXT();
 }
@@ -1245,8 +1245,8 @@ static int action_cbranch(void *context ATTRIBUTE_UNUSED, const brew_parser_toke
       insn_code =
         FIELD_D(0xf) |
         FIELD_C(op_code) |
-        FIELD_B(swap_args ? first_arg->first_lexer_token->sub_type : second_arg->first_lexer_token->sub_type) |
-        FIELD_A(swap_args ? second_arg->first_lexer_token->sub_type : first_arg->first_lexer_token->sub_type);
+        FIELD_B(swap_args ? second_arg->first_lexer_token->sub_type : first_arg->first_lexer_token->sub_type) |
+        FIELD_A(swap_args ? first_arg->first_lexer_token->sub_type : second_arg->first_lexer_token->sub_type);
     }
   A_RETURN();
 }

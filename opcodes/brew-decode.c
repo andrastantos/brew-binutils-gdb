@@ -883,9 +883,9 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
     {
       // Some rather special-case pseudo-ops:
       //    Here we only handle the disassembly part. Simulation goes through the normal path.
-      if (FIELD_C == 2 && FIELD_B == FIELD_A && FIELD_D == FIELD_A) { if(fpr) fpr(strm_or_buffer, "NOP"); skip_print = true; } // $rD <- $rD | $rD
+      if (FIELD_C == 2 && FIELD_B == FIELD_A && FIELD_D == FIELD_A) { if(fpr) fpr(strm_or_buffer, "nop"); skip_print = true; } // $rD <- $rD | $rD
       if (FIELD_C == 1 && FIELD_B == FIELD_A) { if (fpr) fpr(strm_or_buffer, "%s <- 0", REG_D); skip_print = true; } // $rD <- $rX ^ $rX
-      if (FIELD_C == 2 && FIELD_B == FIELD_A) { if (fpr) fpr(strm_or_buffer, "%s <- %s", REG_D, REG_B); skip_print = true; } // $rD <- $rX | $rX
+      if (FIELD_C == 2 && FIELD_B == FIELD_A && !skip_print) { if (fpr) fpr(strm_or_buffer, "%s <- %s", REG_D, REG_B); skip_print = true; } // $rD <- $rX | $rX
 
       // ALU group
       switch (FIELD_C)
@@ -1169,7 +1169,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
       if (pattern_match(insn_code, "f3..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), true,  false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
       if (pattern_match(insn_code, "f4..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), true,  false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
       if (pattern_match(insn_code, "f5..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f6..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s > %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (pattern_match(insn_code, "f6..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
       if (pattern_match(insn_code, "f7..")) { UNKNOWN; }
       if (pattern_match(insn_code, "f8..")) { UNKNOWN; }
       if (pattern_match(insn_code, "f9..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_EQ, SIM_REG(FIELD_A), false, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
