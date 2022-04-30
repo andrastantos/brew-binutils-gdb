@@ -879,6 +879,22 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
     {
       field_e = (int32_t)field_e << 16 >> 16; // Sign-extend to 32-bits
     }
+
+  // Check for unused extension groups
+  if (FIELD_D == 0xf && FIELD_B == 0xf && FIELD_A == 0xf)
+    UNKNOWN;
+  if (FIELD_D == 0xf && FIELD_C == 0xf && FIELD_B == 0xf && FIELD_A == 0xf)
+    UNKNOWN;
+  if (FIELD_D == 0xf && FIELD_C == 0xf && FIELD_A == 0xf)
+    UNKNOWN;
+  if (FIELD_B == 0xf && FIELD_A == 0xf)
+    if (FIELD_C != 0xc && FIELD_C != 0xd)
+      UNKNOWN;
+  if (FIELD_C == 0xf && FIELD_B == 0xf && FIELD_A == 0xf)
+    UNKNOWN;
+  if (FIELD_C == 0xe && FIELD_A == 0xf)
+    UNKNOWN;
+
   if (FIELD_D != 0xf && FIELD_C < 0xc)
     {
       // Some rather special-case pseudo-ops:
