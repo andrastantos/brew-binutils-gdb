@@ -455,21 +455,25 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
 {
   bool is_pc_target;
   bool is_tiny;
+  bool is_tiny_prefix;
   const brew_parser_tokenS *offs;
+  const brew_parser_tokenS *base;
 
-  is_tiny = (tokens[6].parser_token == T_TINY);
+  is_tiny_prefix = (tokens[4].parser_token == T_TINY);
+  is_tiny = (tokens[6].parser_token == T_TINY) || is_tiny_prefix;
 
   A_PROLOG(is_tiny ? 2 : 4);
   A_CHECK(is_tiny ? 9 : 8);
 
   offs = is_tiny ? &tokens[7] : &tokens[6];
+  base = is_tiny_prefix ? &tokens[5] : &tokens[4];
 
   is_pc_target = tokens[0].parser_token == T_PC;
   gas_assert(tokens[0].parser_token == T_REG || is_pc_target);
   gas_assert(tokens[2].parser_token == T_MEM);
-  gas_assert(tokens[4].parser_token == T_REG);
+  gas_assert(base->parser_token == T_REG);
   gas_assert(offs->parser_token == ~T_RBRACKET);
-  if (is_tiny && tokens[5].first_lexer_token->sub_type == ST_MINUS)
+  if (is_tiny && (offs-1)->first_lexer_token->sub_type == ST_MINUS)
     {
       as_bad(_("Tiny offsets only support '+'. Encode negation after the 'tiny' marker"));
     }
@@ -484,11 +488,11 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
         FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
         FIELD_C(0xf) |
         FIELD_B(0xe) |
-        FIELD_A(tokens[4].first_lexer_token->sub_type);
+        FIELD_A(base->first_lexer_token->sub_type);
     }
   else if (is_tiny)
     {
-      switch (tokens[4].first_lexer_token->sub_type)
+      switch (base->first_lexer_token->sub_type)
         {
           case BREW_REG_FP:
           case BREW_REG_SP:
@@ -501,7 +505,7 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
         FIELD_D(tokens[0].first_lexer_token->sub_type) |
         FIELD_C(0xd) |
         FIELD_B(0x0) |
-        FIELD_A(tokens[4].first_lexer_token->sub_type & 1);
+        FIELD_A(base->first_lexer_token->sub_type & 1);
     }
   else
     {
@@ -515,7 +519,7 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
         FIELD_D(tokens[0].first_lexer_token->sub_type) |
         FIELD_C(0xf) |
         FIELD_B(op_code) |
-        FIELD_A(tokens[4].first_lexer_token->sub_type);
+        FIELD_A(base->first_lexer_token->sub_type);
     }
   A_RETURN();
 }
@@ -591,11 +595,14 @@ static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parse
 {
   bool is_invalidate;
   bool is_tiny;
+  bool is_tiny_prefix;
   int op_code;
   const brew_parser_tokenS *offs;
+  const brew_parser_tokenS *base;
   const brew_parser_tokenS *src;
 
-  is_tiny = (tokens[4].parser_token == T_TINY);
+  is_tiny_prefix = (tokens[2].parser_token == T_TINY);
+  is_tiny = (tokens[4].parser_token == T_TINY) || is_tiny_prefix;
   is_invalidate = tokens[6].parser_token == T_NULL;
 
   A_PROLOG(is_tiny ? 2 : 4);
@@ -603,12 +610,13 @@ static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parse
 
   offs = is_tiny ? &tokens[5] : &tokens[4];
   src = is_tiny ? &tokens[8] : is_invalidate ? NULL : &tokens[7];
+  base = is_tiny_prefix ? &tokens[3] : &tokens[2];
 
   gas_assert(tokens[0].parser_token == T_MEM);
-  gas_assert(tokens[2].parser_token == T_REG);
+  gas_assert(base->parser_token == T_REG);
   gas_assert(offs->parser_token == ~T_RBRACKET);
   gas_assert(is_invalidate || (src->parser_token == T_REG));
-  if (is_tiny && tokens[5].first_lexer_token->sub_type == ST_MINUS)
+  if (is_tiny && (offs-1)->first_lexer_token->sub_type == ST_MINUS)
     {
       as_bad(_("Tiny offsets only support '+'. Encode negation after the 'tiny' marker"));
     }
@@ -619,7 +627,7 @@ static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parse
     }
   if (is_tiny)
     {
-      switch (tokens[2].first_lexer_token->sub_type)
+      switch (base->first_lexer_token->sub_type)
         {
           case BREW_REG_FP:
           case BREW_REG_SP:
@@ -632,7 +640,7 @@ static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parse
         FIELD_D(src->first_lexer_token->sub_type) |
         FIELD_C(0xc) |
         FIELD_B(0x0) |
-        FIELD_A(tokens[2].first_lexer_token->sub_type & 1);
+        FIELD_A(base->first_lexer_token->sub_type & 1);
     }
   else
     {
@@ -645,7 +653,7 @@ static int action_store_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parse
         FIELD_D(is_invalidate ? 1 : src->first_lexer_token->sub_type) |
         FIELD_C(0xf) |
         FIELD_B(op_code) |
-        FIELD_A(tokens[2].first_lexer_token->sub_type);
+        FIELD_A(base->first_lexer_token->sub_type);
     }
   A_RETURN();
 }
@@ -1822,6 +1830,7 @@ static const brew_parser_tok_type_t raw_insn[] = {
 
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                                       ACTION(action_load_reg),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, T_TINY, ~T_RBRACKET, T_RBRACKET),                                    ACTION(action_load_reg_ofs),
+  PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_TINY, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                    ACTION(action_load_reg_ofs),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                            ACTION(action_load_reg_ofs),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                                 ACTION(action_load_ofs),
 
@@ -1847,6 +1856,7 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_RBRACKET, T_ASSIGN, T_REG),                                                                       ACTION(action_store_reg),
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                            ACTION(action_store_reg_ofs),
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, T_TINY, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                    ACTION(action_store_reg_ofs),
+  PATTERN(T_MEM, T_LBRACKET, T_TINY, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                    ACTION(action_store_reg_ofs),
   PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                                                 ACTION(action_store_ofs),
 
   PATTERN(T_IF, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                                                         ACTION(action_cbranch),
