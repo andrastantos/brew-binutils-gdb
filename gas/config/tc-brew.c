@@ -190,25 +190,34 @@ parse_expression(
         {
           LITTLENUM_TYPE float_store[8]; // We really shouldn't store more than 4 bytes, but we can only test for that after the call returns. So, oversize the buffer to make sure we won't overflow
 
-          parse_end = atof_ieee(expression_str, 'f', float_store);
-          if (parse_end != NULL && *parse_end == 0)
+          // The float parser also happy accepts things like 'e' as a floating point value.
+          // (I'm guessing as a degenerate case of 1e12 for instance). So let's limit it to
+          // strings that start with a number or a '.'.
+
+          const char *c = expression_str;
+          while (ISSPACE(*c)) ++c;
+          if (ISDIGIT(*c) || *c == '.')
             {
-              if (reloc_type == BFD_RELOC_BREW_NEG32)
+              parse_end = atof_ieee(expression_str, 'f', float_store);
+              if (parse_end != NULL && *parse_end == 0)
                 {
-                  // need to negate the expression. The sign bit is at the MSB
-                  float_store[1] ^= 0x8000;
+                  if (reloc_type == BFD_RELOC_BREW_NEG32)
+                    {
+                      // need to negate the expression. The sign bit is at the MSB
+                      float_store[1] ^= 0x8000;
+                    }
+                  DEBUG("float parser for %s returns with 0x%04x 0x%04x", expression_str, float_store[0], float_store[1]);
+                  int float_part = (fragment_size - fragment_ofs) / 2; // float_store is in 16-bit entities
+                  char *frag_ptr = fragment_data + fragment_ofs;
+                  LITTLENUM_TYPE *float_ptr;
+                  for (float_ptr = float_store + float_part; float_part--;)
+                    {
+                      md_number_to_chars(frag_ptr, (valueT)(*--float_ptr), sizeof(LITTLENUM_TYPE));
+                      frag_ptr += sizeof (LITTLENUM_TYPE);
+                    }
+                  ret_val = true;
+                  goto DONE;
                 }
-              DEBUG("float parser for %s returns with 0x%04x 0x%04x", expression_str, float_store[0], float_store[1]);
-              int float_part = (fragment_size - fragment_ofs) / 2; // float_store is in 16-bit entities
-              char *frag_ptr = fragment_data + fragment_ofs;
-              LITTLENUM_TYPE *float_ptr;
-              for (float_ptr = float_store + float_part; float_part--;)
-                {
-                  md_number_to_chars(frag_ptr, (valueT)(*--float_ptr), sizeof(LITTLENUM_TYPE));
-                  frag_ptr += sizeof (LITTLENUM_TYPE);
-                }
-              ret_val = true;
-              goto DONE;
             }
         }
     }
@@ -951,7 +960,7 @@ static int action_move_imm_to_reg(void *context ATTRIBUTE_UNUSED, const brew_par
     }
   else
     {
-      if (!parse_expression(imm_op->first_lexer_token, imm_op->last_lexer_token, frag, 2, insn_len, false, is_short ? BFD_RELOC_16 : BFD_RELOC_32))
+      if (!parse_expression(imm_op->first_lexer_token, imm_op->last_lexer_token, frag, 2, insn_len, true, is_short ? BFD_RELOC_16 : BFD_RELOC_32))
         {
           as_bad(_("Can't parse expression"));
           return A_ERR;
