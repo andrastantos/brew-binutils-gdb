@@ -20,6 +20,19 @@
 #define __OPCODE_BREW_H__
 
 typedef enum {
+  BREW_REG_TYPE_INT32        =  0,
+  BREW_REG_TYPE_INT16x2      =  1,
+  BREW_REG_TYPE_INT8x4       =  2,
+  BREW_REG_TYPE_UINT16x2S    =  3,
+  BREW_REG_TYPE_SINT16x2S    =  4,
+  BREW_REG_TYPE_UINT8x4S     =  5,
+  BREW_REG_TYPE_SINT8x4S     =  6,
+  BREW_REG_TYPE_FP32         =  8,
+  BREW_REG_TYPE_FP16x2       =  9,
+  BREW_REG_TYPE_MASK         =  0xf
+} brew_reg_types;
+
+typedef enum {
   BREW_EXCEPTION_FILL,
   BREW_EXCEPTION_BREAK,
   BREW_EXCEPTION_SYSCALL,
@@ -54,9 +67,9 @@ typedef enum
   BREW_INSN_CLS_BRANCH,
   BREW_INSN_CLS_CBRANCH,
   BREW_INSN_CLS_CBRANCH0,
-  BREW_INSN_CLS_CBRANCHFP,
-  BREW_INSN_CLS_CBRANCH0FP,
   BREW_INSN_CLS_CBRANCHBIT,
+  BREW_INSN_CLS_TYPE,
+  BREW_INSN_CLS_VECTOR,
   BREW_INSN_CLS_LINK,
   BREW_INSN_CLS_POWER,
   BREW_INSN_CLS_NOP,
@@ -66,11 +79,20 @@ typedef enum
 typedef brew_exception_type (*brew_read_mem_ftype)(void *context, uint32_t vma, int length, uint32_t *value);
 typedef brew_exception_type (*brew_write_mem_ftype)(void *context, uint32_t vma, int length, uint32_t value);
 typedef void (*brew_handle_stu_ftype)(void *context, uint32_t pc, bool is_task_mode);
-typedef int32_t (*brew_floor_ftype)(float);
+#if __HAVE_FLOAT16 == 0
+#define _Float16 uint16_t
+#else
+#endif
+typedef _Float16 (*brew_rsqrt_fp16_ftype)(_Float16);
 typedef float (*brew_rsqrt_ftype)(float);
 
 typedef struct {
-  uint32_t reg[15];
+  uint32_t val;
+  brew_reg_types type;
+} brew_typed_reg;
+
+typedef struct {
+  brew_typed_reg reg[15];
   uint32_t spc;
   uint32_t tpc;
   uint32_t nspc;
@@ -88,7 +110,7 @@ typedef struct {
   void *tracer_strm;
 
   // helpers for floating point operations: this avoids linking all binutils utilities against a math library
-  brew_floor_ftype floor;
+  brew_rsqrt_fp16_ftype rsqrt_fp16;
   brew_rsqrt_ftype rsqrt;
 } brew_sim_state;
 
@@ -98,5 +120,6 @@ extern uint16_t brew_munge_address(int32_t offset);
 extern void brew_print_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t insn_code, uint32_t field_e);
 extern void brew_sim_insn(void *context, brew_sim_state *sim_state, uint16_t insn_code, uint32_t field_e);
 extern const char *brew_insn_class_name(brew_insn_classes cls);
+extern const char *brew_reg_type_name(brew_reg_types reg_type);
 
 #endif // __OPCODE_BREW_H__

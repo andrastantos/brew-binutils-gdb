@@ -12242,6 +12242,16 @@ _ACEOF
 	fi
         using_cgen=yes
         ;;
+
+      brew)
+	for f in config/tc-brew-parse.o config/tc-brew-lex.o; do
+	  case " $extra_objects " in
+	    *" $f "*) ;;
+	    *) extra_objects="$extra_objects $f" ;;
+	  esac
+	done
+	;;
+
       epiphany | fr30 | ip2k | iq2000 | lm32 | m32r | or1k)
 	using_cgen=yes
 	;;

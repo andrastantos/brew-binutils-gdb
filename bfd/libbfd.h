@@ -3463,6 +3463,7 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
   "BFD_RELOC_BREW_NEG32",
   "BFD_RELOC_BREW_NEG16",
   "BFD_RELOC_BREW_PCREL16"
+  "BFD_RELOC_BREW_7",
  "@@overflow: BFD_RELOC_UNUSED@@",
 };
 #endif
