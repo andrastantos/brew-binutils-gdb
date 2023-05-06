@@ -863,6 +863,11 @@ static int action_binary_reg_imm(void *context ATTRIBUTE_UNUSED, const brew_pars
       reg_op = &tokens[3];
       op_tok = &tokens[4];
       imm_op = &tokens[5];
+      if ((op_tok->parser_token == T_RSHIFT) || (op_tok->parser_token == T_LSHIFT))
+        {
+          as_bad(_("Short immediates are only supported as second operands for shifts"));
+          return A_ERR;
+        }
     }
   else
     {
@@ -906,6 +911,48 @@ static int action_binary_reg_imm(void *context ATTRIBUTE_UNUSED, const brew_pars
         FIELD_B(reg_op->first_lexer_token->sub_type) |
         FIELD_A(0xf);
     }
+  A_RETURN();
+}
+
+// $r5 <- short 43 << $r11 and similar operations
+static int action_short_shift_imm_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  bool support_float = true;
+  const brew_parser_tokenS *reg_dst;
+  const brew_parser_tokenS *reg_op;
+  const brew_parser_tokenS *op_tok;
+  const brew_parser_tokenS *imm_op;
+  enum bfd_reloc_code_real reloc_type;
+  size_t op_code;
+
+  gas_assert(tokens[2].parser_token == T_SHORT);
+
+  A_PROLOG(4);
+  A_CHECK(6);
+
+  reg_dst = &tokens[0];
+  imm_op = &tokens[3];
+  op_tok = &tokens[4];
+  reg_op = &tokens[5];
+  gas_assert((op_tok->parser_token == T_RSHIFT) || (op_tok->parser_token == T_LSHIFT));
+  gas_assert(reg_dst->parser_token == T_REG);
+  //gas_assert(imm_op->parser_token == ~T_NULL);
+  gas_assert(reg_op->parser_token == T_REG);
+
+  reloc_type = BFD_RELOC_16;
+  op_code = op_tok->first_lexer_token->sub_type;
+
+  if (!parse_expression(imm_op->first_lexer_token, imm_op->last_lexer_token, frag, 2, insn_len, support_float, reloc_type))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+
+  insn_code =
+    FIELD_D(reg_dst->first_lexer_token->sub_type) |
+    FIELD_C(op_code) |
+    FIELD_B(0xf) |
+    FIELD_A(reg_op->first_lexer_token->sub_type);
   A_RETURN();
 }
 
@@ -1819,8 +1866,8 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, T_REG),                                                                                        ACTION(action_binary_reg_reg),
   PATTERN(T_REG, T_ASSIGN, T_REG, T_HAT, ~T_NULL),                                                                                      ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_REG, T_BAR, ~T_NULL),                                                                                      ACTION(action_binary_reg_imm),
-  //PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, ~T_NULL),                                                                                   ACTION(INVALID_PATTERN),
-  //PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, ~T_NULL),                                                                                   ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_LSHIFT, ~T_NULL),                                                                                   ACTION(action_binary_reg_imm),
+  PATTERN(T_REG, T_ASSIGN, T_REG, T_RSHIFT, ~T_NULL),                                                                                   ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_REG, T_PLUS_MINUS, ~T_NULL),                                                                               ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_REG, T_STAR, ~T_NULL),                                                                                     ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_REG, T_AND, ~T_NULL),                                                                                      ACTION(action_binary_reg_imm),
@@ -1845,8 +1892,8 @@ static const brew_parser_tok_type_t raw_insn[] = {
 
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_HAT, ~T_NULL),                                                                             ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_BAR, ~T_NULL),                                                                             ACTION(action_binary_reg_imm),
-  //PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_LSHIFT, ~T_NULL),                                                                          ACTION(INVALID_PATTERN),
-  //PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_RSHIFT, ~T_NULL),                                                                          ACTION(INVALID_PATTERN),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_LSHIFT, T_LSHIFT, T_REG),                                                                        ACTION(action_short_shift_imm_reg),
+  PATTERN(T_REG, T_ASSIGN, T_SHORT, ~T_RSHIFT, T_RSHIFT, T_REG),                                                                        ACTION(action_short_shift_imm_reg),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_PLUS_MINUS, ~T_NULL),                                                                      ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_STAR, ~T_NULL),                                                                            ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_AND, ~T_NULL),                                                                             ACTION(action_binary_reg_imm),
