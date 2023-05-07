@@ -27,7 +27,7 @@ class cli_ui_out : public ui_out
 {
 public:
 
-  explicit cli_ui_out (ui_file *stream, ui_out_flags flags);
+  explicit cli_ui_out (ui_file *stream, ui_out_flags flags = ui_source_list);
   virtual ~cli_ui_out ();
 
   ui_file *set_stream (ui_file *stream);
@@ -67,7 +67,7 @@ protected:
   virtual void do_message (const ui_file_style &style,
 			   const char *format, va_list args) override
     ATTRIBUTE_PRINTF (3,0);
-  virtual void do_wrap_hint (const char *identstring) override;
+  virtual void do_wrap_hint (int indent) override;
   virtual void do_flush () override;
   virtual void do_redirect (struct ui_file *outstream) override;
 
@@ -112,8 +112,6 @@ private:
   /* Stack of progress meters.  */
   std::vector<cli_progress_info> m_meters;
 };
-
-extern cli_ui_out *cli_out_new (struct ui_file *stream);
 
 extern void cli_display_match_list (char **matches, int len, int max);
 

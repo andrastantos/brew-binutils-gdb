@@ -499,6 +499,7 @@ enum elf_target_id
 {
   AARCH64_ELF_DATA = 1,
   ALPHA_ELF_DATA,
+  AMDGCN_ELF_DATA,
   ARC_ELF_DATA,
   ARM_ELF_DATA,
   AVR_ELF_DATA,
@@ -598,6 +599,9 @@ struct elf_link_hash_table
 
   /* TRUE if DT_JMPREL is a required dynamic tag.  */
   bool dt_jmprel_required;
+
+  /* TRUE when we are handling DT_NEEDED entries.  */
+  bool handling_dt_needed;
 
   /* The BFD used to hold special sections created by the linker.
      This will be the first BFD found which requires these sections to
@@ -945,9 +949,6 @@ struct elf_backend_data
 
   /* The common page size for this backend.  */
   bfd_vma commonpagesize;
-
-  /* The value of commonpagesize to use when -z relro for this backend.  */
-  bfd_vma relropagesize;
 
   /* The p_align value for this backend.  If it is set, p_align of
       PT_LOAD alignment will be to p_align by default.  */
@@ -1909,10 +1910,6 @@ struct output_elf_obj_tdata
   /* STT_SECTION symbols for each section */
   asymbol **section_syms;
 
-  /* Used to determine if PT_GNU_EH_FRAME segment header should be
-     created.  */
-  asection *eh_frame_hdr;
-
   /* NT_GNU_BUILD_ID note type info.  */
   struct
   {
@@ -1920,6 +1917,14 @@ struct output_elf_obj_tdata
     const char *style;
     asection *sec;
   } build_id;
+
+  /* FDO_PACKAGING_METADATA note type info.  */
+  struct
+  {
+    bool (*after_write_object_contents) (bfd *);
+    const char *json;
+    asection *sec;
+  } package_metadata;
 
   /* Records the result of `get_program_header_size'.  */
   bfd_size_type program_header_size;
@@ -2116,7 +2121,6 @@ struct elf_obj_tdata
 #define elf_seg_map(bfd)	(elf_tdata(bfd) -> o->seg_map)
 #define elf_link_info(bfd)	(elf_tdata(bfd) -> o->link_info)
 #define elf_next_file_pos(bfd)	(elf_tdata(bfd) -> o->next_file_pos)
-#define elf_eh_frame_hdr(bfd)	(elf_tdata(bfd) -> o->eh_frame_hdr)
 #define elf_stack_flags(bfd)	(elf_tdata(bfd) -> o->stack_flags)
 #define elf_shstrtab(bfd)	(elf_tdata(bfd) -> o->strtab_ptr)
 #define elf_onesymtab(bfd)	(elf_tdata(bfd) -> symtab_section)
@@ -2412,7 +2416,7 @@ extern bool _bfd_elf_discard_section_eh_frame
 extern bool _bfd_elf_adjust_eh_frame_global_symbol
   (struct elf_link_hash_entry *, void *);
 extern bool _bfd_elf_discard_section_eh_frame_hdr
-  (bfd *, struct bfd_link_info *);
+  (struct bfd_link_info *);
 extern bfd_vma _bfd_elf_eh_frame_section_offset
   (bfd *, struct bfd_link_info *, asection *, bfd_vma);
 extern bool _bfd_elf_write_section_eh_frame
@@ -2789,6 +2793,8 @@ extern char *elfcore_write_prfpreg
 extern char *elfcore_write_prxfpreg
   (bfd *, char *, int *, const void *, int);
 extern char *elfcore_write_xstatereg
+  (bfd *, char *, int *, const void *, int);
+extern char *elfcore_write_x86_segbases
   (bfd *, char *, int *, const void *, int);
 extern char *elfcore_write_ppc_vmx
   (bfd *, char *, int *, const void *, int);

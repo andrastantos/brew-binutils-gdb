@@ -111,10 +111,6 @@ enum
   CpuAVX512DQ,
   /* Intel AVX-512 BW Instructions support required.  */
   CpuAVX512BW,
-  /* Intel L1OM support required */
-  CpuL1OM,
-  /* Intel K1OM support required */
-  CpuK1OM,
   /* Intel IAMCU support required */
   CpuIAMCU,
   /* Xsave/xrstor New Instructions support required */
@@ -276,6 +272,9 @@ enum
   CpuTLBSYNC,
   /* SNP instructions required */
   CpuSNP,
+
+  /* NOTE: These last three items need to remain last and in this order. */
+
   /* 64bit support required  */
   Cpu64,
   /* Not supported in the 64bit mode  */
@@ -340,8 +339,6 @@ typedef union i386_cpu_flags
       unsigned int cpuavx512vl:1;
       unsigned int cpuavx512dq:1;
       unsigned int cpuavx512bw:1;
-      unsigned int cpul1om:1;
-      unsigned int cpuk1om:1;
       unsigned int cpuiamcu:1;
       unsigned int cpuxsave:1;
       unsigned int cpuxsaveopt:1;
@@ -423,6 +420,7 @@ typedef union i386_cpu_flags
       unsigned int cpuinvlpgb:1;
       unsigned int cputlbsync:1;
       unsigned int cpusnp:1;
+      /* NOTE: These last three fields need to remain last and in this order. */
       unsigned int cpu64:1;
       unsigned int cpuno64:1;
 #ifdef CpuUnused
@@ -834,10 +832,8 @@ enum
   Disp8,
   /* 16 bit displacement */
   Disp16,
-  /* 32 bit displacement */
+  /* 32 bit displacement (64-bit: sign-extended) */
   Disp32,
-  /* 32 bit signed displacement */
-  Disp32S,
   /* 64 bit displacement */
   Disp64,
   /* Register which can be used for base or index in memory operand.  */
@@ -894,7 +890,6 @@ typedef union i386_operand_type
       unsigned int disp8:1;
       unsigned int disp16:1;
       unsigned int disp32:1;
-      unsigned int disp32s:1;
       unsigned int disp64:1;
       unsigned int baseindex:1;
       unsigned int byte:1;
@@ -920,6 +915,11 @@ typedef struct insn_template
   /* instruction name sans width suffix ("mov" for movl insns) */
   char *name;
 
+  /* Bitfield arrangement is such that individual fields can be easily
+     extracted (in native builds at least) - either by at most a masking
+     operation (base_opcode, operands), or by just a (signed) right shift
+     (extension_opcode).  Please try to maintain this property.  */
+
   /* base_opcode is the fundamental opcode byte without optional
      prefix(es).  */
   unsigned int base_opcode:16;
@@ -930,6 +930,15 @@ typedef struct insn_template
 #define Opcode_FloatD 0x400 /* Direction bit for float insns. */
 #define Opcode_SIMD_FloatD 0x1 /* Direction bit for SIMD fp insns. */
 #define Opcode_SIMD_IntD 0x10 /* Direction bit for SIMD int insns. */
+/* The next value is arbitrary, as long as it's non-zero and distinct
+   from all other values above.  */
+#define Opcode_VexW	0xf /* Operand order controlled by VEX.W. */
+
+  /* how many operands */
+  unsigned int operands:3;
+
+  /* spare bits */
+  unsigned int :4;
 
 /* (Fake) base opcode value for pseudo prefixes.  */
 #define PSEUDO_PREFIX 0
@@ -953,9 +962,6 @@ typedef struct insn_template
 #define Prefix_EVEX		7	/* {evex} */
 #define Prefix_REX		8	/* {rex} */
 #define Prefix_NoOptimize	9	/* {nooptimize} */
-
-  /* how many operands */
-  unsigned int operands:3;
 
   /* the bits in opcode_modifier are used to generate the final opcode from
      the base_opcode.  These bits also are used to detect alternate forms of

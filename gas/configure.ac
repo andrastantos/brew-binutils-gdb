@@ -655,10 +655,6 @@ changequote([,])dnl
 	using_cgen=yes
 	;;
 
-      xc16x)
-	using_cgen=yes
-	;;
-
       xtensa)
 	f=config/xtensa-relax.o
 	case " $extra_objects " in

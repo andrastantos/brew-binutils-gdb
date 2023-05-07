@@ -42,8 +42,10 @@
 #include "gcore.h"
 #include "gcore-elf.h"
 #include "solib-svr4.h"
+#include "memtag.h"
 
 #include <ctype.h>
+#include <unordered_map>
 
 /* This enum represents the values that the user can choose when
    informing the Linux kernel about which memory mappings will be
@@ -441,42 +443,55 @@ linux_core_pid_to_str (struct gdbarch *gdbarch, ptid_t ptid)
   return normal_pid_to_str (ptid);
 }
 
+/* Data from one mapping from /proc/PID/maps.  */
+
+struct mapping
+{
+  ULONGEST addr;
+  ULONGEST endaddr;
+  gdb::string_view permissions;
+  ULONGEST offset;
+  gdb::string_view device;
+  ULONGEST inode;
+
+  /* This field is guaranteed to be NULL-terminated, hence it is not a
+     gdb::string_view.  */
+  const char *filename;
+};
+
 /* Service function for corefiles and info proc.  */
 
-static void
-read_mapping (const char *line,
-	      ULONGEST *addr, ULONGEST *endaddr,
-	      const char **permissions, size_t *permissions_len,
-	      ULONGEST *offset,
-	      const char **device, size_t *device_len,
-	      ULONGEST *inode,
-	      const char **filename)
+static mapping
+read_mapping (const char *line)
 {
+  struct mapping mapping;
   const char *p = line;
 
-  *addr = strtoulst (p, &p, 16);
+  mapping.addr = strtoulst (p, &p, 16);
   if (*p == '-')
     p++;
-  *endaddr = strtoulst (p, &p, 16);
+  mapping.endaddr = strtoulst (p, &p, 16);
 
   p = skip_spaces (p);
-  *permissions = p;
+  const char *permissions_start = p;
   while (*p && !isspace (*p))
     p++;
-  *permissions_len = p - *permissions;
+  mapping.permissions = {permissions_start, (size_t) (p - permissions_start)};
 
-  *offset = strtoulst (p, &p, 16);
+  mapping.offset = strtoulst (p, &p, 16);
 
   p = skip_spaces (p);
-  *device = p;
+  const char *device_start = p;
   while (*p && !isspace (*p))
     p++;
-  *device_len = p - *device;
+  mapping.device = {device_start, (size_t) (p - device_start)};
 
-  *inode = strtoulst (p, &p, 10);
+  mapping.inode = strtoulst (p, &p, 10);
 
   p = skip_spaces (p);
-  *filename = p;
+  mapping.filename = p;
+
+  return mapping;
 }
 
 /* Helper function to decode the "VmFlags" field in /proc/PID/smaps.
@@ -824,7 +839,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
   if (args && args[0])
     error (_("Too many parameters: %s"), args);
 
-  printf_filtered (_("process %ld\n"), pid);
+  gdb_printf (_("process %ld\n"), pid);
   if (cmdline_f)
     {
       xsnprintf (filename, sizeof filename, "/proc/%ld/cmdline", pid);
@@ -842,7 +857,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 		buffer[pos] = ' ';
 	    }
 	  buffer[len - 1] = '\0';
-	  printf_filtered ("cmdline = '%s'\n", buffer);
+	  gdb_printf ("cmdline = '%s'\n", buffer);
 	}
       else
 	warning (_("unable to open /proc file '%s'"), filename);
@@ -853,7 +868,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
       gdb::optional<std::string> contents
 	= target_fileio_readlink (NULL, filename, &target_errno);
       if (contents.has_value ())
-	printf_filtered ("cwd = '%s'\n", contents->c_str ());
+	gdb_printf ("cwd = '%s'\n", contents->c_str ());
       else
 	warning (_("unable to read link '%s'"), filename);
     }
@@ -863,7 +878,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
       gdb::optional<std::string> contents
 	= target_fileio_readlink (NULL, filename, &target_errno);
       if (contents.has_value ())
-	printf_filtered ("exe = '%s'\n", contents->c_str ());
+	gdb_printf ("exe = '%s'\n", contents->c_str ());
       else
 	warning (_("unable to read link '%s'"), filename);
     }
@@ -876,20 +891,18 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 	{
 	  char *line;
 
-	  printf_filtered (_("Mapped address spaces:\n\n"));
+	  gdb_printf (_("Mapped address spaces:\n\n"));
 	  if (gdbarch_addr_bit (gdbarch) == 32)
 	    {
-	      printf_filtered ("\t%10s %10s %10s %10s %s\n",
-			   "Start Addr",
-			   "  End Addr",
-			   "      Size", "    Offset", "objfile");
+	      gdb_printf ("\t%10s %10s %10s %10s  %s %s\n",
+			  "Start Addr", "  End Addr", "      Size",
+			  "    Offset", "Perms  ", "objfile");
 	    }
 	  else
 	    {
-	      printf_filtered ("  %18s %18s %10s %10s %s\n",
-			   "Start Addr",
-			   "  End Addr",
-			   "      Size", "    Offset", "objfile");
+	      gdb_printf ("  %18s %18s %10s %10s  %s %s\n",
+			  "Start Addr", "  End Addr", "      Size",
+			  "    Offset", "Perms ", "objfile");
 	    }
 
 	  char *saveptr;
@@ -897,32 +910,29 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 	       line;
 	       line = strtok_r (NULL, "\n", &saveptr))
 	    {
-	      ULONGEST addr, endaddr, offset, inode;
-	      const char *permissions, *device, *mapping_filename;
-	      size_t permissions_len, device_len;
-
-	      read_mapping (line, &addr, &endaddr,
-			    &permissions, &permissions_len,
-			    &offset, &device, &device_len,
-			    &inode, &mapping_filename);
+	      struct mapping m = read_mapping (line);
 
 	      if (gdbarch_addr_bit (gdbarch) == 32)
 		{
-		  printf_filtered ("\t%10s %10s %10s %10s %s\n",
-				   paddress (gdbarch, addr),
-				   paddress (gdbarch, endaddr),
-				   hex_string (endaddr - addr),
-				   hex_string (offset),
-				   *mapping_filename ? mapping_filename : "");
+		  gdb_printf ("\t%10s %10s %10s %10s  %-5.*s  %s\n",
+			      paddress (gdbarch, m.addr),
+			      paddress (gdbarch, m.endaddr),
+			      hex_string (m.endaddr - m.addr),
+			      hex_string (m.offset),
+			      (int) m.permissions.size (),
+			      m.permissions.data (),
+			      m.filename);
 		}
 	      else
 		{
-		  printf_filtered ("  %18s %18s %10s %10s %s\n",
-				   paddress (gdbarch, addr),
-				   paddress (gdbarch, endaddr),
-				   hex_string (endaddr - addr),
-				   hex_string (offset),
-				   *mapping_filename ? mapping_filename : "");
+		  gdb_printf ("  %18s %18s %10s %10s  %-5.*s  %s\n",
+			      paddress (gdbarch, m.addr),
+			      paddress (gdbarch, m.endaddr),
+			      hex_string (m.endaddr - m.addr),
+			      hex_string (m.offset),
+			      (int) m.permissions.size (),
+			      m.permissions.data (),
+			      m.filename);
 		}
 	    }
 	}
@@ -935,7 +945,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
       gdb::unique_xmalloc_ptr<char> status
 	= target_fileio_read_stralloc (NULL, filename);
       if (status)
-	puts_filtered (status.get ());
+	gdb_puts (status.get ());
       else
 	warning (_("unable to open /proc file '%s'"), filename);
     }
@@ -948,8 +958,8 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 	{
 	  const char *p = statstr.get ();
 
-	  printf_filtered (_("Process: %s\n"),
-			   pulongest (strtoulst (p, &p, 10)));
+	  gdb_printf (_("Process: %s\n"),
+		      pulongest (strtoulst (p, &p, 10)));
 
 	  p = skip_spaces (p);
 	  if (*p == '(')
@@ -959,117 +969,117 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 	      const char *ep = strrchr (p, ')');
 	      if (ep != NULL)
 		{
-		  printf_filtered ("Exec file: %.*s\n",
-				   (int) (ep - p - 1), p + 1);
+		  gdb_printf ("Exec file: %.*s\n",
+			      (int) (ep - p - 1), p + 1);
 		  p = ep + 1;
 		}
 	    }
 
 	  p = skip_spaces (p);
 	  if (*p)
-	    printf_filtered (_("State: %c\n"), *p++);
+	    gdb_printf (_("State: %c\n"), *p++);
 
 	  if (*p)
-	    printf_filtered (_("Parent process: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Parent process: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Process group: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Process group: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Session id: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Session id: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("TTY: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("TTY: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("TTY owner process group: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("TTY owner process group: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 
 	  if (*p)
-	    printf_filtered (_("Flags: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Flags: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Minor faults (no memory page): %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Minor faults (no memory page): %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Minor faults, children: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Minor faults, children: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Major faults (memory page faults): %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Major faults (memory page faults): %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Major faults, children: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Major faults, children: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("utime: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("utime: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("stime: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("stime: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("utime, children: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("utime, children: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("stime, children: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("stime, children: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("jiffies remaining in current "
-			       "time slice: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("jiffies remaining in current "
+			  "time slice: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("'nice' value: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("'nice' value: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("jiffies until next timeout: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("jiffies until next timeout: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("jiffies until next SIGALRM: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("jiffies until next SIGALRM: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("start time (jiffies since "
-			       "system boot): %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("start time (jiffies since "
+			  "system boot): %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Virtual memory size: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Virtual memory size: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Resident set size: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Resident set size: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("rlim: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("rlim: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Start of text: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Start of text: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("End of text: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("End of text: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Start of stack: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Start of stack: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 #if 0	/* Don't know how architecture-dependent the rest is...
 	   Anyway the signal bitmap info is available from "status".  */
 	  if (*p)
-	    printf_filtered (_("Kernel stack pointer: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Kernel stack pointer: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Kernel instr pointer: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Kernel instr pointer: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Pending signals bitmap: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Pending signals bitmap: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Blocked signals bitmap: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Blocked signals bitmap: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Ignored signals bitmap: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Ignored signals bitmap: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Catched signals bitmap: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Catched signals bitmap: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("wchan (system call): %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("wchan (system call): %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 #endif
 	}
       else
@@ -1177,6 +1187,22 @@ linux_read_core_file_mappings
   if (f != descend)
     warning (_("malformed note - filename area is too big"));
 
+  const bfd_build_id *orig_build_id = cbfd->build_id;
+  std::unordered_map<ULONGEST, const bfd_build_id *> vma_map;
+
+  /* Search for solib build-ids in the core file.  Each time one is found,
+     map the start vma of the corresponding elf header to the build-id.  */
+  for (bfd_section *sec = cbfd->sections; sec != nullptr; sec = sec->next)
+    {
+      cbfd->build_id = nullptr;
+
+      if (sec->flags & SEC_LOAD
+	  && (get_elf_backend_data (cbfd)->elf_backend_core_find_build_id
+	       (cbfd, (bfd_vma) sec->filepos)))
+	vma_map[sec->vma] = cbfd->build_id;
+    }
+
+  cbfd->build_id = orig_build_id;
   pre_loop_cb (count);
 
   for (int i = 0; i < count; i++)
@@ -1190,8 +1216,13 @@ linux_read_core_file_mappings
       descdata += addr_size;
       char * filename = filenames;
       filenames += strlen ((char *) filenames) + 1;
+      const bfd_build_id *build_id = nullptr;
+      auto vma_map_it = vma_map.find (start);
 
-      loop_cb (i, start, end, file_ofs, filename, nullptr);
+      if (vma_map_it != vma_map.end ())
+	build_id = vma_map_it->second;
+
+      loop_cb (i, start, end, file_ofs, filename, build_id);
     }
 }
 
@@ -1203,39 +1234,39 @@ linux_core_info_proc_mappings (struct gdbarch *gdbarch, const char *args)
   linux_read_core_file_mappings (gdbarch, core_bfd,
     [=] (ULONGEST count)
       {
-	printf_filtered (_("Mapped address spaces:\n\n"));
+	gdb_printf (_("Mapped address spaces:\n\n"));
 	if (gdbarch_addr_bit (gdbarch) == 32)
 	  {
-	    printf_filtered ("\t%10s %10s %10s %10s %s\n",
-			     "Start Addr",
-			     "  End Addr",
-			     "      Size", "    Offset", "objfile");
+	    gdb_printf ("\t%10s %10s %10s %10s %s\n",
+			"Start Addr",
+			"  End Addr",
+			"      Size", "    Offset", "objfile");
 	  }
 	else
 	  {
-	    printf_filtered ("  %18s %18s %10s %10s %s\n",
-			     "Start Addr",
-			     "  End Addr",
-			     "      Size", "    Offset", "objfile");
+	    gdb_printf ("  %18s %18s %10s %10s %s\n",
+			"Start Addr",
+			"  End Addr",
+			"      Size", "    Offset", "objfile");
 	  }
       },
     [=] (int num, ULONGEST start, ULONGEST end, ULONGEST file_ofs,
 	 const char *filename, const bfd_build_id *build_id)
       {
 	if (gdbarch_addr_bit (gdbarch) == 32)
-	  printf_filtered ("\t%10s %10s %10s %10s %s\n",
-			   paddress (gdbarch, start),
-			   paddress (gdbarch, end),
-			   hex_string (end - start),
-			   hex_string (file_ofs),
-			   filename);
+	  gdb_printf ("\t%10s %10s %10s %10s %s\n",
+		      paddress (gdbarch, start),
+		      paddress (gdbarch, end),
+		      hex_string (end - start),
+		      hex_string (file_ofs),
+		      filename);
 	else
-	  printf_filtered ("  %18s %18s %10s %10s %s\n",
-			   paddress (gdbarch, start),
-			   paddress (gdbarch, end),
-			   hex_string (end - start),
-			   hex_string (file_ofs),
-			   filename);
+	  gdb_printf ("  %18s %18s %10s %10s %s\n",
+		      paddress (gdbarch, start),
+		      paddress (gdbarch, end),
+		      hex_string (end - start),
+		      hex_string (file_ofs),
+		      filename);
       });
 }
 
@@ -1254,7 +1285,7 @@ linux_core_info_proc (struct gdbarch *gdbarch, const char *args,
 
       exe = bfd_core_file_failing_command (core_bfd);
       if (exe != NULL)
-	printf_filtered ("exe = '%s'\n", exe);
+	gdb_printf ("exe = '%s'\n", exe);
       else
 	warning (_("unable to find command name in core file"));
     }
@@ -1290,6 +1321,7 @@ typedef int linux_find_memory_region_ftype (ULONGEST vaddr, ULONGEST size,
 					    ULONGEST offset, ULONGEST inode,
 					    int read, int write,
 					    int exec, int modified,
+					    bool memory_tagged,
 					    const char *filename,
 					    void *data);
 
@@ -1322,19 +1354,15 @@ parse_smaps_data (const char *data,
 
   while (line != NULL)
     {
-      ULONGEST addr, endaddr, offset, inode;
-      const char *permissions, *device, *filename;
       struct smaps_vmflags v;
-      size_t permissions_len, device_len;
       int read, write, exec, priv;
       int has_anonymous = 0;
       int mapping_anon_p;
       int mapping_file_p;
 
       memset (&v, 0, sizeof (v));
-      read_mapping (line, &addr, &endaddr, &permissions, &permissions_len,
-		    &offset, &device, &device_len, &inode, &filename);
-      mapping_anon_p = mapping_is_anonymous_p (filename);
+      struct mapping m = read_mapping (line);
+      mapping_anon_p = mapping_is_anonymous_p (m.filename);
       /* If the mapping is not anonymous, then we can consider it
 	 to be file-backed.  These two states (anonymous or
 	 file-backed) seem to be exclusive, but they can actually
@@ -1347,9 +1375,12 @@ parse_smaps_data (const char *data,
       mapping_file_p = !mapping_anon_p;
 
       /* Decode permissions.  */
-      read = (memchr (permissions, 'r', permissions_len) != 0);
-      write = (memchr (permissions, 'w', permissions_len) != 0);
-      exec = (memchr (permissions, 'x', permissions_len) != 0);
+      auto has_perm = [&m] (char c)
+	{ return m.permissions.find (c) != gdb::string_view::npos; };
+      read = has_perm ('r');
+      write = has_perm ('w');
+      exec = has_perm ('x');
+
       /* 'private' here actually means VM_MAYSHARE, and not
 	 VM_SHARED.  In order to know if a mapping is really
 	 private or not, we must check the flag "sh" in the
@@ -1359,7 +1390,7 @@ parse_smaps_data (const char *data,
 	 not have the VmFlags there.  In this case, there is
 	 really no way to know if we are dealing with VM_SHARED,
 	 so we just assume that VM_MAYSHARE is enough.  */
-      priv = memchr (permissions, 'p', permissions_len) != 0;
+      priv = has_perm ('p');
 
       /* Try to detect if region should be dumped by parsing smaps
 	 counters.  */
@@ -1421,9 +1452,9 @@ parse_smaps_data (const char *data,
       /* Save the smaps entry to the vector.  */
 	struct smaps_data map;
 
-	map.start_address = addr;
-	map.end_address = endaddr;
-	map.filename = filename;
+	map.start_address = m.addr;
+	map.end_address = m.endaddr;
+	map.filename = m.filename;
 	map.vmflags = v;
 	map.read = read? true : false;
 	map.write = write? true : false;
@@ -1432,8 +1463,8 @@ parse_smaps_data (const char *data,
 	map.has_anonymous = has_anonymous;
 	map.mapping_anon_p = mapping_anon_p? true : false;
 	map.mapping_file_p = mapping_file_p? true : false;
-	map.offset = offset;
-	map.inode = inode;
+	map.offset = m.offset;
+	map.inode = m.inode;
 
 	smaps.emplace_back (map);
     }
@@ -1441,10 +1472,11 @@ parse_smaps_data (const char *data,
   return smaps;
 }
 
-/* See linux-tdep.h.  */
+/* Helper that checks if an address is in a memory tag page for a live
+   process.  */
 
-bool
-linux_address_in_memtag_page (CORE_ADDR address)
+static bool
+linux_process_address_in_memtag_page (CORE_ADDR address)
 {
   if (current_inferior ()->fake_pid_p)
     return false;
@@ -1474,6 +1506,30 @@ linux_address_in_memtag_page (CORE_ADDR address)
     }
 
   return false;
+}
+
+/* Helper that checks if an address is in a memory tag page for a core file
+   process.  */
+
+static bool
+linux_core_file_address_in_memtag_page (CORE_ADDR address)
+{
+  if (core_bfd == nullptr)
+    return false;
+
+  memtag_section_info info;
+  return get_next_core_memtag_section (core_bfd, nullptr, address, info);
+}
+
+/* See linux-tdep.h.  */
+
+bool
+linux_address_in_memtag_page (CORE_ADDR address)
+{
+  if (!target_has_execution ())
+    return linux_core_file_address_in_memtag_page (address);
+
+  return linux_process_address_in_memtag_page (address);
 }
 
 /* List memory regions in the inferior for a corefile.  */
@@ -1564,6 +1620,7 @@ linux_find_memory_regions_full (struct gdbarch *gdbarch,
 		map.offset, map.inode, map.read, map.write, map.exec,
 		1, /* MODIFIED is true because we want to dump
 		      the mapping.  */
+		map.vmflags.memory_tagging != 0,
 		map.filename.c_str (), obfd);
 	}
     }
@@ -1592,12 +1649,14 @@ static int
 linux_find_memory_regions_thunk (ULONGEST vaddr, ULONGEST size,
 				 ULONGEST offset, ULONGEST inode,
 				 int read, int write, int exec, int modified,
+				 bool memory_tagged,
 				 const char *filename, void *arg)
 {
   struct linux_find_memory_regions_data *data
     = (struct linux_find_memory_regions_data *) arg;
 
-  return data->func (vaddr, size, read, write, exec, modified, data->obfd);
+  return data->func (vaddr, size, read, write, exec, modified, memory_tagged,
+		     data->obfd);
 }
 
 /* A variant of linux_find_memory_regions_full that is suitable as the
@@ -1646,6 +1705,7 @@ static int
 linux_make_mappings_callback (ULONGEST vaddr, ULONGEST size,
 			      ULONGEST offset, ULONGEST inode,
 			      int read, int write, int exec, int modified,
+			      bool memory_tagged,
 			      const char *filename, void *data)
 {
   struct linux_make_mappings_data *map_data
@@ -2630,8 +2690,8 @@ static void
 show_use_coredump_filter (struct ui_file *file, int from_tty,
 			  struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Use of /proc/PID/coredump_filter file to generate"
-			    " corefiles is %s.\n"), value);
+  gdb_printf (file, _("Use of /proc/PID/coredump_filter file to generate"
+		      " corefiles is %s.\n"), value);
 }
 
 /* Display whether the gcore command is dumping mappings marked with
@@ -2641,8 +2701,8 @@ static void
 show_dump_excluded_mappings (struct ui_file *file, int from_tty,
 			     struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Dumping of mappings marked with the VM_DONTDUMP"
-			    " flag is %s.\n"), value);
+  gdb_printf (file, _("Dumping of mappings marked with the VM_DONTDUMP"
+		      " flag is %s.\n"), value);
 }
 
 /* To be called from the various GDB_OSABI_LINUX handlers for the

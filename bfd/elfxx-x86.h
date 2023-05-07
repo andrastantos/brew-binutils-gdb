@@ -50,7 +50,11 @@
 #define X86_64_GOT_TYPE_P(TYPE) \
   ((TYPE) == R_X86_64_GOTPCREL \
    || (TYPE) == R_X86_64_GOTPCRELX \
-   || (TYPE) == R_X86_64_REX_GOTPCRELX)
+   || (TYPE) == R_X86_64_REX_GOTPCRELX \
+   || (TYPE) == R_X86_64_GOT32 \
+   || (TYPE) == R_X86_64_GOT64 \
+   || (TYPE) == R_X86_64_GOTPCREL64 \
+   || (TYPE) == R_X86_64_GOTPLT64)
 #define I386_GOT_TYPE_P(TYPE) \
   ((TYPE) == R_386_GOT32 || (TYPE) == R_386_GOT32X)
 #define X86_GOT_TYPE_P(IS_X86_64, TYPE) \
@@ -76,6 +80,7 @@
 #define I386_NEED_DYNAMIC_RELOC_TYPE_P(TYPE) \
   (I386_SIZE_TYPE_P (TYPE) \
    || I386_RELATIVE_RELOC_TYPE_P (TYPE) \
+   || (TYPE) == R_386_TLS_IE \
    || (TYPE) == R_386_TLS_LE \
    || (TYPE) == R_386_TLS_LE_32)
 #define X86_NEED_DYNAMIC_RELOC_TYPE_P(IS_X86_64, TYPE) \
@@ -130,12 +135,11 @@
 
 /* Should copy relocation be generated for a symbol.  Don't generate
    copy relocation against a protected symbol defined in a shared
-   object with GNU_PROPERTY_NO_COPY_ON_PROTECTED.  */
+   object.  */
 #define SYMBOL_NO_COPYRELOC(INFO, EH) \
   ((EH)->def_protected \
    && ((EH)->elf.root.type == bfd_link_hash_defined \
        || (EH)->elf.root.type == bfd_link_hash_defweak) \
-   && elf_has_no_copy_on_protected ((EH)->elf.root.u.def.section->owner) \
    && ((EH)->elf.root.u.def.section->owner->flags & DYNAMIC) != 0 \
    && ((EH)->elf.root.u.def.section->flags & SEC_CODE) == 0)
 

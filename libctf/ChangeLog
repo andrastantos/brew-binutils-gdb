@@ -1,3 +1,11 @@
+2022-07-08  Nick Clifton  <nickc@redhat.com>
+
+	* 2.39 branch created.
+
+2022-01-22  Nick Clifton  <nickc@redhat.com>
+
+	* 2.38 release branch created.
+
 2021-11-08  Nick Alcock  <nick.alcock@oracle.com>
 
 	* doc/ctf-spec.texi: New file.

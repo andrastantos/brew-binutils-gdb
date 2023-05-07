@@ -85,7 +85,6 @@ static int set_target_endian = 0;
 
 static bool reg_names_p = TARGET_REG_NAMES_P;
 
-static void ppc_macro (char *, const struct powerpc_macro *);
 static void ppc_byte (int);
 
 #if defined (OBJ_XCOFF) || defined (OBJ_ELF)
@@ -786,8 +785,6 @@ static const struct pd_reg pre_defined_registers[] =
   { "xer", 1, PPC_OPERAND_SPR }
 };
 
-#define REG_NAME_CNT	(sizeof (pre_defined_registers) / sizeof (struct pd_reg))
-
 /* Given NAME, find the register number associated with that name, return
    the integer value associated with the given name or -1 on failure.  */
 
@@ -816,76 +813,43 @@ reg_name_search (const struct pd_reg *regs, int regcount, const char *name)
   return NULL;
 }
 
-/*
- * Summary of register_name.
- *
- * in:	Input_line_pointer points to 1st char of operand.
- *
- * out:	A expressionS.
- *      The operand may have been a register: in this case, X_op == O_register,
- *      X_add_number is set to the register number, and truth is returned.
- *	Input_line_pointer->(next non-blank) char after operand, or is in its
- *      original state.
- */
+/* Called for a non-symbol, non-number operand.  Handles %reg.  */
 
-static bool
-register_name (expressionS *expressionP)
+void
+md_operand (expressionS *expressionP)
 {
   const struct pd_reg *reg;
   char *name;
   char *start;
   char c;
 
-  /* Find the spelling of the operand.  */
-  start = name = input_line_pointer;
-  if (name[0] == '%' && ISALPHA (name[1]))
-    name = ++input_line_pointer;
+  if (input_line_pointer[0] != '%' || !ISALPHA (input_line_pointer[1]))
+    return;
 
-  else if (!reg_names_p || !ISALPHA (name[0]))
-    return false;
+  start = input_line_pointer;
+  ++input_line_pointer;
 
   c = get_symbol_name (&name);
-  reg = reg_name_search (pre_defined_registers, REG_NAME_CNT, name);
-
-  /* Put back the delimiting char.  */
+  reg = reg_name_search (pre_defined_registers,
+			 ARRAY_SIZE (pre_defined_registers), name);
   *input_line_pointer = c;
 
-  /* Look to see if it's in the register table.  */
   if (reg != NULL)
     {
       expressionP->X_op = O_register;
       expressionP->X_add_number = reg->value;
       expressionP->X_md = reg->flags;
-
-      /* Make the rest nice.  */
-      expressionP->X_add_symbol = NULL;
-      expressionP->X_op_symbol = NULL;
-      return true;
     }
-
-  /* Reset the line as if we had not done anything.  */
-  input_line_pointer = start;
-  return false;
+  else
+    input_line_pointer = start;
 }
-
-/* This function is called for each symbol seen in an expression.  It
-   handles the special parsing which PowerPC assemblers are supposed
-   to use for condition codes.  */
 
 /* Whether to do the special parsing.  */
 static bool cr_operand;
 
-/* Names to recognize in a condition code.  This table is sorted.  */
-static const struct pd_reg cr_names[] =
+/* Extra names to recognise in a condition code.  This table is sorted.  */
+static const struct pd_reg cr_cond[] =
 {
-  { "cr0", 0, PPC_OPERAND_CR_REG },
-  { "cr1", 1, PPC_OPERAND_CR_REG },
-  { "cr2", 2, PPC_OPERAND_CR_REG },
-  { "cr3", 3, PPC_OPERAND_CR_REG },
-  { "cr4", 4, PPC_OPERAND_CR_REG },
-  { "cr5", 5, PPC_OPERAND_CR_REG },
-  { "cr6", 6, PPC_OPERAND_CR_REG },
-  { "cr7", 7, PPC_OPERAND_CR_REG },
   { "eq", 2, PPC_OPERAND_CR_BIT },
   { "gt", 1, PPC_OPERAND_CR_BIT },
   { "lt", 0, PPC_OPERAND_CR_BIT },
@@ -893,29 +857,58 @@ static const struct pd_reg cr_names[] =
   { "un", 3, PPC_OPERAND_CR_BIT }
 };
 
-/* Parsing function.  This returns non-zero if it recognized an
-   expression.  */
+/* This function is called for each symbol seen in an expression.  It
+   handles the special parsing which PowerPC assemblers are supposed
+   to use for condition codes, and recognises other registers when
+   -mregnames.  */
 
-int
-ppc_parse_name (const char *name, expressionS *exp)
+void
+ppc_parse_name (const char *name, expressionS *exp, enum expr_mode mode)
 {
-  const struct pd_reg *reg;
+  const struct pd_reg *reg = NULL;
 
-  if (! cr_operand)
-    return 0;
+  if (cr_operand)
+    reg = reg_name_search (cr_cond, ARRAY_SIZE (cr_cond), name);
+  if (reg == NULL && (cr_operand || reg_names_p))
+    reg = reg_name_search (pre_defined_registers,
+			   ARRAY_SIZE (pre_defined_registers), name);
+  if (reg != NULL)
+    {
+      exp->X_op = O_register;
+      exp->X_add_number = reg->value;
+      exp->X_md = reg->flags;
+      return;
+    }
 
-  if (*name == '%')
-    ++name;
-  reg = reg_name_search (cr_names, sizeof cr_names / sizeof cr_names[0],
-			 name);
-  if (reg == NULL)
-    return 0;
+  /* The following replaces code in expr.c operand() after the
+     md_parse_name call.  There is too much difference between targets
+     in the way X_md is used to move this code into expr.c.  If you
+     do, you'll get failures on x86 due to uninitialised X_md fields,
+     failures on alpha and other targets due to creating register
+     symbols as O_constant rather than O_register, and failures on arc
+     and others due to expecting expr() to leave X_md alone.  */
+  symbolS *sym = symbol_find_or_make (name);
 
-  exp->X_op = O_register;
-  exp->X_add_number = reg->value;
-  exp->X_md = reg->flags;
-
-  return 1;
+  /* If we have an absolute symbol or a reg, then we know its value
+     now.  Copy the symbol value expression to propagate X_md.  */
+  bool done = false;
+  if (mode != expr_defer
+      && !S_FORCE_RELOC (sym, 0))
+    {
+      segT segment = S_GET_SEGMENT (sym);
+      if (segment == absolute_section || segment == reg_section)
+	{
+	  resolve_symbol_value (sym);
+	  *exp = *symbol_get_value_expression (sym);
+	  done = true;
+	}
+    }
+  if (!done)
+    {
+      exp->X_op = O_symbol;
+      exp->X_add_symbol = sym;
+      exp->X_add_number = 0;
+    }
 }
 
 /* Propagate X_md and check register expressions.  This is to support
@@ -977,11 +970,12 @@ ppc_optimize_expr (expressionS *left, operatorT op, expressionS *right)
 /* Whether to target xcoff64/elf64.  */
 static unsigned int ppc_obj64 = BFD_DEFAULT_TARGET_SIZE == 64;
 
+/* A separate obstack for use by ppc_hash, so that we can quickly
+   throw away hash table memory .  */
+struct obstack insn_obstack;
+
 /* Opcode hash table.  */
 static htab_t ppc_hash;
-
-/* Macro hash table.  */
-static htab_t ppc_macro_hash;
 
 #ifdef OBJ_ELF
 /* What type of shared library support to use.  */
@@ -1557,7 +1551,7 @@ ppc_target_format (void)
 static bool
 insn_validate (const struct powerpc_opcode *op)
 {
-  const unsigned char *o;
+  const ppc_opindex_t *o;
   uint64_t omask = op->mask;
 
   /* The mask had better not trim off opcode bits.  */
@@ -1589,10 +1583,10 @@ insn_validate (const struct powerpc_opcode *op)
 	      val = -1;
 	      if ((operand->flags & PPC_OPERAND_NEGATIVE) != 0)
 		val = -val;
-	      else if ((operand->flags & PPC_OPERAND_PLUS1) != 0)
-		val += 1;
 	      mask = (*operand->insert) (0, val, ppc_cpu, &errmsg);
 	    }
+	  else if (operand->shift == (int) PPC_OPSHIFT_SH6)
+	    mask = (0x1f << 11) | 0x2;
 	  else if (operand->shift >= 0)
 	    mask = operand->bitm << operand->shift;
 	  else
@@ -1617,33 +1611,44 @@ insn_validate (const struct powerpc_opcode *op)
   return false;
 }
 
-/* Insert opcodes and macros into hash tables.  Called at startup and
-   for .machine pseudo.  */
+static void *
+insn_calloc (size_t n, size_t size)
+{
+  size_t amt = n * size;
+  void *ret = obstack_alloc (&insn_obstack, amt);
+  memset (ret, 0, amt);
+  return ret;
+}
+
+/* Insert opcodes into hash tables.  Called at startup and for
+   .machine pseudo.  */
 
 static void
 ppc_setup_opcodes (void)
 {
   const struct powerpc_opcode *op;
   const struct powerpc_opcode *op_end;
-  const struct powerpc_macro *macro;
-  const struct powerpc_macro *macro_end;
   bool bad_insn = false;
 
   if (ppc_hash != NULL)
-    htab_delete (ppc_hash);
-  if (ppc_macro_hash != NULL)
-    htab_delete (ppc_macro_hash);
+    {
+      htab_delete (ppc_hash);
+      _obstack_free (&insn_obstack, NULL);
+    }
+
+  obstack_begin (&insn_obstack, chunksize);
 
   /* Insert the opcodes into a hash table.  */
-  ppc_hash = str_htab_create ();
+  ppc_hash = htab_create_alloc (5000, hash_string_tuple, eq_string_tuple,
+				NULL, insn_calloc, NULL);
 
   if (ENABLE_CHECKING)
     {
       unsigned int i;
 
       /* An index into powerpc_operands is stored in struct fix
-	 fx_pcrel_adjust which is 8 bits wide.  */
-      gas_assert (num_powerpc_operands < 256);
+	 fx_pcrel_adjust which is a 16 bit field.  */
+      gas_assert (num_powerpc_operands <= PPC_OPINDEX_MAX + 1);
 
       /* Check operand masks.  Code here and in the disassembler assumes
 	 all the 1's in the mask are contiguous.  */
@@ -1839,19 +1844,6 @@ ppc_setup_opcodes (void)
 	str_hash_insert (ppc_hash, op->name, op, 0);
     }
 
-  /* Insert the macros into a hash table.  */
-  ppc_macro_hash = str_htab_create ();
-
-  macro_end = powerpc_macros + powerpc_num_macros;
-  for (macro = powerpc_macros; macro < macro_end; macro++)
-    if (((macro->flags & ppc_cpu) != 0
-	 || (ppc_cpu & PPC_OPCODE_ANY) != 0)
-	&& str_hash_insert (ppc_macro_hash, macro->name, macro, 0) != NULL)
-      {
-	as_bad (_("duplicate %s"), macro->name);
-	bad_insn = true;
-      }
-
   if (bad_insn)
     abort ();
 }
@@ -1894,6 +1886,17 @@ md_begin (void)
   ppc_init_xcoff_section (&ppc_xcoff_data_section, data_section);
   ppc_init_xcoff_section (&ppc_xcoff_bss_section, bss_section);
 #endif
+}
+
+void
+ppc_md_end (void)
+{
+  if (ppc_hash)
+    {
+      htab_delete (ppc_hash);
+      _obstack_free (&insn_obstack, NULL);
+    }
+  ppc_hash = NULL;
 }
 
 void
@@ -2555,7 +2558,7 @@ ppc_elf_gnu_attribute (int ignored ATTRIBUTE_UNUSED)
 
 /* Set ABI version in output file.  */
 void
-ppc_elf_end (void)
+ppc_elf_md_finish (void)
 {
   if (ppc_obj64 && ppc_abiversion != 0)
     {
@@ -3272,7 +3275,7 @@ md_assemble (char *str)
   char *s;
   const struct powerpc_opcode *opcode;
   uint64_t insn;
-  const unsigned char *opindex_ptr;
+  const ppc_opindex_t *opindex_ptr;
   int need_paren;
   int next_opindex;
   struct ppc_fixup fixups[MAX_INSN_FIXUPS];
@@ -3292,15 +3295,7 @@ md_assemble (char *str)
   opcode = (const struct powerpc_opcode *) str_hash_find (ppc_hash, str);
   if (opcode == (const struct powerpc_opcode *) NULL)
     {
-      const struct powerpc_macro *macro;
-
-      macro = (const struct powerpc_macro *) str_hash_find (ppc_macro_hash,
-							    str);
-      if (macro == (const struct powerpc_macro *) NULL)
-	as_bad (_("unrecognized opcode: `%s'"), str);
-      else
-	ppc_macro (s, macro);
-
+      as_bad (_("unrecognized opcode: `%s'"), str);
       ppc_clear_labels ();
       return;
     }
@@ -3377,7 +3372,7 @@ md_assemble (char *str)
 	{
 	  if (num_optional_operands == 0)
 	    {
-	      const unsigned char *optr;
+	      const ppc_opindex_t *optr;
 	      int total = 0;
 	      int provided = 0;
 	      int omitted;
@@ -3436,25 +3431,10 @@ md_assemble (char *str)
       /* Gather the operand.  */
       hold = input_line_pointer;
       input_line_pointer = str;
-
-      if ((reg_names_p
-	   && (((operand->flags & PPC_OPERAND_CR_BIT) != 0)
-	       || ((operand->flags & PPC_OPERAND_CR_REG) != 0)))
-	  || !register_name (&ex))
-	{
-	  char save_lex = lex_type['%'];
-
-	  if (((operand->flags & PPC_OPERAND_CR_REG) != 0)
-	      || (operand->flags & PPC_OPERAND_CR_BIT) != 0)
-	    {
-	      cr_operand = true;
-	      lex_type['%'] |= LEX_BEGIN_NAME;
-	    }
-	  expression (&ex);
-	  cr_operand = false;
-	  lex_type['%'] = save_lex;
-	}
-
+      cr_operand = ((operand->flags & PPC_OPERAND_CR_BIT) != 0
+		    || (operand->flags & PPC_OPERAND_CR_REG) != 0);
+      expression (&ex);
+      cr_operand = false;
       str = input_line_pointer;
       input_line_pointer = hold;
 
@@ -4133,85 +4113,6 @@ md_assemble (char *str)
       fixP->fx_pcrel_adjust = fixups[i].opindex;
     }
 }
-
-/* Handle a macro.  Gather all the operands, transform them as
-   described by the macro, and call md_assemble recursively.  All the
-   operands are separated by commas; we don't accept parentheses
-   around operands here.  */
-
-static void
-ppc_macro (char *str, const struct powerpc_macro *macro)
-{
-  char *operands[10];
-  unsigned int count;
-  char *s;
-  unsigned int len;
-  const char *format;
-  unsigned int arg;
-  char *send;
-  char *complete;
-
-  /* Gather the users operands into the operands array.  */
-  count = 0;
-  s = str;
-  while (1)
-    {
-      if (count >= sizeof operands / sizeof operands[0])
-	break;
-      operands[count++] = s;
-      s = strchr (s, ',');
-      if (s == (char *) NULL)
-	break;
-      *s++ = '\0';
-    }
-
-  if (count != macro->operands)
-    {
-      as_bad (_("wrong number of operands"));
-      return;
-    }
-
-  /* Work out how large the string must be (the size is unbounded
-     because it includes user input).  */
-  len = 0;
-  format = macro->format;
-  while (*format != '\0')
-    {
-      if (*format != '%')
-	{
-	  ++len;
-	  ++format;
-	}
-      else
-	{
-	  arg = strtol (format + 1, &send, 10);
-	  know (send != format && arg < count);
-	  len += strlen (operands[arg]);
-	  format = send;
-	}
-    }
-
-  /* Put the string together.  */
-  complete = s = XNEWVEC (char, len + 1);
-  format = macro->format;
-  while (*format != '\0')
-    {
-      if (*format != '%')
-	*s++ = *format++;
-      else
-	{
-	  arg = strtol (format + 1, &send, 10);
-	  strcpy (s, operands[arg]);
-	  s += strlen (s);
-	  format = send;
-	}
-    }
-  *s = '\0';
-
-  /* Assemble the constructed instruction.  */
-  md_assemble (complete);
-  free (complete);
-}
 
 #ifdef OBJ_ELF
 /* For ELF, add support for SHT_ORDERED.  */
@@ -4339,6 +4240,7 @@ static void ppc_GNU_visibility (int visibility) {
       if ((name = read_symbol_name ()) == NULL)
 	break;
       symbolP = symbol_find_or_make (name);
+      free (name);
       coffsym = coffsymbol (symbol_get_bfdsym (symbolP));
 
       coffsym->native->u.syment.n_type &= ~SYM_V_MASK;
@@ -4945,6 +4847,7 @@ ppc_extern (int ignore ATTRIBUTE_UNUSED)
     return;
 
   sym = symbol_find_or_make (name);
+  free (name);
 
   if (*input_line_pointer == ',')
     {
@@ -4980,6 +4883,7 @@ ppc_globl (int ignore ATTRIBUTE_UNUSED)
     return;
 
   sym = symbol_find_or_make (name);
+  free (name);
   S_SET_EXTERNAL (sym);
 
   if (*input_line_pointer == ',')
@@ -5016,6 +4920,7 @@ ppc_weak (int ignore ATTRIBUTE_UNUSED)
     return;
 
   sym = symbol_find_or_make (name);
+  free (name);
   S_SET_WEAK (sym);
 
   if (*input_line_pointer == ',')
@@ -5302,7 +5207,7 @@ ppc_file (int ignore ATTRIBUTE_UNUSED)
 	}
 
       /* Use coff dot_file creation and adjust auxiliary entries.  */
-      c_dot_file_symbol (sfname, 0);
+      c_dot_file_symbol (sfname);
       S_SET_NUMBER_AUXILIARY (symbol_rootP, auxnb);
       coffsym = coffsymbol (symbol_get_bfdsym (symbol_rootP));
       coffsym->native[1].u.auxent.x_file.x_ftype = XFT_FN;
@@ -5770,7 +5675,7 @@ ppc_vbyte (int dummy ATTRIBUTE_UNUSED)
 }
 
 void
-ppc_xcoff_end (void)
+ppc_xcoff_md_finish (void)
 {
   int i;
 
@@ -5965,7 +5870,30 @@ ppc_machine (int ignore ATTRIBUTE_UNUSED)
 	     options do not count as a new machine, instead they add
 	     to currently selected opcodes.  */
 	  ppc_cpu_t machine_sticky = 0;
-	  new_cpu = ppc_parse_cpu (ppc_cpu, &machine_sticky, cpu_string);
+	  /* Unfortunately, some versions of gcc emit a .machine
+	     directive very near the start of the compiler's assembly
+	     output file.  This is bad because it overrides user -Wa
+	     cpu selection.  Worse, there are versions of gcc that
+	     emit the *wrong* cpu, not even respecting the -mcpu given
+	     to gcc.  See gcc pr101393.  And to compound the problem,
+	     as of 20220222 gcc doesn't pass the correct cpu option to
+	     gas on the command line.  See gcc pr59828.  Hack around
+	     this by keeping sticky options for an early .machine.  */
+	  asection *sec;
+	  for (sec = stdoutput->sections; sec != NULL; sec = sec->next)
+	    {
+	      segment_info_type *info = seg_info (sec);
+	      /* Are the frags for this section perturbed from their
+		 initial state?  Even .align will count here.  */
+	      if (info != NULL
+		  && (info->frchainP->frch_root != info->frchainP->frch_last
+		      || info->frchainP->frch_root->fr_type != rs_fill
+		      || info->frchainP->frch_root->fr_fix != 0))
+		break;
+	    }
+	  new_cpu = ppc_parse_cpu (ppc_cpu,
+				   sec == NULL ? &sticky : &machine_sticky,
+				   cpu_string);
 	  if (new_cpu != 0)
 	    ppc_cpu = new_cpu;
 	  else
@@ -7096,7 +7024,7 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg)
   if (fixP->fx_pcrel_adjust != 0)
     {
       /* This is a fixup on an instruction.  */
-      int opindex = fixP->fx_pcrel_adjust & 0xff;
+      ppc_opindex_t opindex = fixP->fx_pcrel_adjust & PPC_OPINDEX_MAX;
 
       operand = &powerpc_operands[opindex];
 #ifdef OBJ_XCOFF

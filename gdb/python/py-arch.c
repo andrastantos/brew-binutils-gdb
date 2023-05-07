@@ -62,14 +62,23 @@ arch_object_data_init (struct gdbarch *gdbarch)
 }
 
 /* Returns the struct gdbarch value corresponding to the given Python
-   architecture object OBJ.  */
+   architecture object OBJ, which must be a gdb.Architecture object.  */
 
 struct gdbarch *
 arch_object_to_gdbarch (PyObject *obj)
 {
-  arch_object *py_arch = (arch_object *) obj;
+  gdb_assert (gdbpy_is_architecture (obj));
 
+  arch_object *py_arch = (arch_object *) obj;
   return py_arch->gdbarch;
+}
+
+/* See python-internal.h.  */
+
+bool
+gdbpy_is_architecture (PyObject *obj)
+{
+  return PyObject_TypeCheck (obj, &arch_object_type);
 }
 
 /* Returns the Python architecture object corresponding to GDBARCH.
@@ -100,7 +109,7 @@ archpy_name (PyObject *self, PyObject *args)
   ARCHPY_REQUIRE_VALID (self, gdbarch);
 
   name = (gdbarch_bfd_arch_info (gdbarch))->printable_name;
-  return PyString_FromString (name);
+  return PyUnicode_FromString (name);
 }
 
 /* Implementation of
@@ -113,45 +122,26 @@ static PyObject *
 archpy_disassemble (PyObject *self, PyObject *args, PyObject *kw)
 {
   static const char *keywords[] = { "start_pc", "end_pc", "count", NULL };
-  CORE_ADDR start, end = 0;
+  CORE_ADDR start = 0, end = 0;
   CORE_ADDR pc;
-  gdb_py_ulongest start_temp;
   long count = 0, i;
-  PyObject *end_obj = NULL, *count_obj = NULL;
+  PyObject *start_obj = nullptr, *end_obj = nullptr, *count_obj = nullptr;
   struct gdbarch *gdbarch = NULL;
 
   ARCHPY_REQUIRE_VALID (self, gdbarch);
 
-  if (!gdb_PyArg_ParseTupleAndKeywords (args, kw, GDB_PY_LLU_ARG "|OO",
-					keywords, &start_temp, &end_obj,
+  if (!gdb_PyArg_ParseTupleAndKeywords (args, kw, "O|OO",
+					keywords, &start_obj, &end_obj,
 					&count_obj))
     return NULL;
 
-  start = start_temp;
-  if (end_obj)
-    {
-      /* Make a long logic check first.  In Python 3.x, internally,
-	 all integers are represented as longs.  In Python 2.x, there
-	 is still a differentiation internally between a PyInt and a
-	 PyLong.  Explicitly do this long check conversion first. In
-	 GDB, for Python 3.x, we #ifdef PyInt = PyLong.  This check has
-	 to be done first to ensure we do not lose information in the
-	 conversion process.  */
-      if (PyLong_Check (end_obj))
-	end = PyLong_AsUnsignedLongLong (end_obj);
-#if PY_MAJOR_VERSION == 2
-      else if (PyInt_Check (end_obj))
-	/* If the end_pc value is specified without a trailing 'L', end_obj will
-	   be an integer and not a long integer.  */
-	end = PyInt_AsLong (end_obj);
-#endif
-      else
-	{
-	  PyErr_SetString (PyExc_TypeError,
-			   _("Argument 'end_pc' should be a (long) integer."));
+  if (get_addr_from_python (start_obj, &start) < 0)
+    return nullptr;
 
-	  return NULL;
-	}
+  if (end_obj != nullptr)
+    {
+      if (get_addr_from_python (end_obj, &end) < 0)
+	return nullptr;
 
       if (end < start)
 	{
@@ -164,7 +154,7 @@ archpy_disassemble (PyObject *self, PyObject *args, PyObject *kw)
     }
   if (count_obj)
     {
-      count = PyInt_AsLong (count_obj);
+      count = PyLong_AsLong (count_obj);
       if (PyErr_Occurred () || count < 0)
 	{
 	  PyErr_SetString (PyExc_TypeError,
@@ -213,9 +203,8 @@ archpy_disassemble (PyObject *self, PyObject *args, PyObject *kw)
       if (pc_obj == nullptr)
 	return nullptr;
 
-      gdbpy_ref<> asm_obj (PyString_FromString (!stb.empty ()
-						? stb.c_str ()
-						: "<unknown>"));
+      gdbpy_ref<> asm_obj
+	(PyUnicode_FromString (!stb.empty () ? stb.c_str () : "<unknown>"));
       if (asm_obj == nullptr)
 	return nullptr;
 
@@ -338,7 +327,7 @@ gdbpy_all_architecture_names (PyObject *self, PyObject *args)
   std::vector<const char *> name_list = gdbarch_printable_names ();
   for (const char *name : name_list)
     {
-      gdbpy_ref <> py_name (PyString_FromString (name));
+      gdbpy_ref <> py_name (PyUnicode_FromString (name));
       if (py_name == nullptr)
 	return nullptr;
       if (PyList_Append (list.get (), py_name.get ()) < 0)

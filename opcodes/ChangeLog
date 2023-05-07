@@ -1,3 +1,67 @@
+2022-07-18  Claudiu Zissulescu  <claziss@synopsys.com>
+
+	* disassemble.c (disassemble_init_for_target): Set
+	created_styled_output for ARC based targets.
+	* arc-dis.c (find_format_from_table): Use fprintf_styled_ftype
+	instead of fprintf_ftype throughout.
+	(find_format): Likewise.
+	(print_flags): Likewise.
+	(print_insn_arc): Likewise.
+
+2022-07-08  Nick Clifton  <nickc@redhat.com>
+
+	* 2.39 branch created.
+
+2022-07-04  Marcus Nilsson  <brainbomb@gmail.com>
+
+	* disassemble.c: (disassemble_init_for_target): Set
+	created_styled_output for AVR based targets.
+	* avr-dis.c: (print_insn_avr): Use fprintf_styled_ftype
+	instead of fprintf_ftype throughout.
+	(avr_operand): Pass in and fill disassembler_style when
+	parsing operands.
+
+2022-04-07  Andreas Krebbel  <krebbel@linux.ibm.com>
+
+	* s390-mkopc.c (main): Enable z16 as CPU string in the opcode
+	table.
+
+2022-03-16  Simon Marchi  <simon.marchi@efficios.com>
+
+	* configure.ac: Handle bfd_amdgcn_arch.
+	* configure: Re-generate.
+
+2022-03-06  Sagar Patel  <sagarmp@cs.unc.edu>
+	    Maciej W. Rozycki  <macro@orcam.me.uk>
+
+	* mips-opc.c (mips_builtin_opcodes): Fix INSN2_ALIAS annotation
+	for "bal", "beqz", "beqzl", "bnez" and "bnezl" instructions.
+	* micromips-opc.c (micromips_opcodes): Likewise for "beqz" and
+	"bnez" instructions.
+
+2022-02-17  Nick Clifton  <nickc@redhat.com>
+
+	* po/sr.po: Updated Serbian translation.
+
+2022-02-14  Sergei Trofimovich  <siarheit@google.com>
+
+	* microblaze-opcm.h: Renamed 'fsqrt' to 'microblaze_fsqrt'.
+	* microblaze-opc.h: Follow 'fsqrt' rename.
+
+2022-01-24  Nick Clifton  <nickc@redhat.com>
+
+	* po/ro.po: Updated Romanian translation.
+	* po/uk.po: Updated Ukranian translation.
+
+2022-01-22  Nick Clifton  <nickc@redhat.com>
+
+	* configure: Regenerate.
+	* po/opcodes.pot: Regenerate.
+
+2022-01-22  Nick Clifton  <nickc@redhat.com>
+
+	* 2.38 release branch created.
+
 2022-01-17  Nick Clifton  <nickc@redhat.com>
 
 	* Makefile.in: Regenerate.

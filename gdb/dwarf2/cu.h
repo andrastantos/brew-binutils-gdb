@@ -23,6 +23,7 @@
 #include "buildsym.h"
 #include "dwarf2/comp-unit-head.h"
 #include "gdbsupport/gdb_optional.h"
+#include "language.h"
 
 /* Type used for delaying computation of method physnames.
    See comments for compute_delayed_physnames.  */
@@ -59,11 +60,11 @@ struct dwarf2_cu
      We don't need the pc/line-number mapping for type units.  */
   void setup_type_unit_groups (struct die_info *die);
 
-  /* Start a symtab for DWARF.  NAME, COMP_DIR, LOW_PC are passed to the
-     buildsym_compunit constructor.  */
-  struct compunit_symtab *start_symtab (const char *name,
-					const char *comp_dir,
-					CORE_ADDR low_pc);
+  /* Start a compunit_symtab for DWARF.  NAME, COMP_DIR, LOW_PC are passed to
+     the buildsym_compunit constructor.  */
+  struct compunit_symtab *start_compunit_symtab (const char *name,
+						 const char *comp_dir,
+						 CORE_ADDR low_pc);
 
   /* Reset the builder.  */
   void reset_builder () { m_builder.reset (); }
@@ -104,6 +105,12 @@ struct dwarf2_cu
 
   /* The language we are debugging.  */
   const struct language_defn *language_defn = nullptr;
+
+  enum language lang () const
+  {
+    gdb_assert (language_defn != language_def (language_unknown));
+    return language_defn->la_language;
+  }
 
   const char *producer = nullptr;
 
@@ -253,6 +260,7 @@ public:
   bool checked_producer : 1;
   bool producer_is_gxx_lt_4_6 : 1;
   bool producer_is_gcc_lt_4_3 : 1;
+  bool producer_is_gcc_11 : 1;
   bool producer_is_icc : 1;
   bool producer_is_icc_lt_14 : 1;
   bool producer_is_codewarrior : 1;

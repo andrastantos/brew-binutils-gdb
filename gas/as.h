@@ -122,6 +122,14 @@ void *mempcpy(void *, const void *, size_t);
 
 #define xfree free
 
+#if GCC_VERSION >= 7000
+#define gas_mul_overflow(a, b, res) __builtin_mul_overflow (a, b, res)
+#else
+/* Assumes unsigned values.  Careful!  Args evaluated multiple times.  */
+#define gas_mul_overflow(a, b, res) \
+  ((*res) = (a), (*res) *= (b), (b) != 0 && (*res) / (b) != (a))
+#endif
+
 #include "asintl.h"
 
 #define BAD_CASE(val)							    \
@@ -332,6 +340,9 @@ COMMON int flag_noexecstack;
 /* name of emitted object file */
 COMMON const char *out_file_name;
 
+/* Keep the output file.  */
+COMMON int keep_it;
+
 /* name of file defining extensions to the basic instruction set */
 COMMON char *insttbl_file_name;
 
@@ -384,6 +395,8 @@ extern int max_macro_nest;
 
 /* Verbosity level.  */
 extern int verbose;
+
+struct obstack;
 
 /* Obstack chunk size.  Keep large for efficient space use, make small to
    increase malloc calls for monitoring memory allocation.  */
@@ -473,9 +486,10 @@ void   do_scrub_begin (int);
 void   input_scrub_begin (void);
 void   input_scrub_close (void);
 void   input_scrub_end (void);
-int    new_logical_line (const char *, int);
-int    new_logical_line_flags (const char *, int, int);
+void   new_logical_line (const char *, int);
+void   new_logical_line_flags (const char *, int, int);
 void   subsegs_begin (void);
+void   subsegs_end (struct obstack **);
 void   subseg_change (segT, int);
 segT   subseg_new (const char *, subsegT);
 segT   subseg_force_new (const char *, subsegT);
@@ -487,7 +501,7 @@ void   register_dependency (const char *);
 void   print_dependencies (void);
 segT   subseg_get (const char *, int);
 
-const char *remap_debug_filename (const char *);
+char *remap_debug_filename (const char *);
 void add_debug_prefix_map (const char *);
 
 static inline char *
@@ -527,10 +541,10 @@ int generic_force_reloc (struct fix *);
 
 #include "write.h"
 #include "frags.h"
-#include "hashtab.h"
-#include "hash.h"
 #include "read.h"
 #include "symbols.h"
+#include "hashtab.h"
+#include "hash.h"
 
 #include "tc.h"
 #include "obj.h"
