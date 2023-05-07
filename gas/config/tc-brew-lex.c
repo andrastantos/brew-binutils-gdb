@@ -321,7 +321,11 @@ brew_lexer_tokenS *brew_tokenize(const char *str)
           if (ISSPACE(*tok_end) && paren_cnt == 0)
             break;
           if (*tok_end == '(')
-            ++paren_cnt;
+            {
+              if (tok_end != tok_start && paren_cnt == 0) // If we see an open paren after we started finding other stuff, it should be a delimiter.
+                break;
+              ++paren_cnt;
+            }
           if (*tok_end == ')')
             {
               --paren_cnt;
