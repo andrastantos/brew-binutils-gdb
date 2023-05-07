@@ -286,7 +286,7 @@ brew_process_readu (CORE_ADDR addr, gdb_byte *buf,
   if (target_read_memory (addr, buf, length))
     {
       if (record_debug)
-        printf_unfiltered (_("Process record: error reading memory at "
+        gdb_printf (_("Process record: error reading memory at "
                              "addr 0x%s len = %d.\n"),
                            paddress (target_gdbarch (), addr), length);
       return -1;
@@ -635,7 +635,7 @@ brew_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
 
   if (record_debug > 1)
-    fprintf_unfiltered (gdb_stdlog, "Process record: brew_process_record "
+    gdb_printf (gdb_stdlog, "Process record: brew_process_record "
                                     "addr = 0x%s\n",
                         paddress (target_gdbarch (), addr));
 
