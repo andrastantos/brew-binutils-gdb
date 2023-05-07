@@ -7,10 +7,23 @@
   fill
   break
   syscall
-  stu
+  stm
   sii
-  fence
-  wfence
+  fence_rw_rw
+  fence_r__rw
+  fence__w_rw
+  fence____rw
+  fence_rw__w
+  fence_r___w
+  fence__w__w
+  fence_____w
+  fence_rw_r_
+  fence_r__r_
+  fence__w_r_
+  fence____r_
+  fence_rw___
+  fence_r____
+  fence__w___
   woi
   nop
 
@@ -41,16 +54,15 @@
 
   $r\D <- $r\A + 1
   $r\D <- $r\A - 1
-  $sr\D <- -$sr\A
+  $r\D <- -$r\A
   $r\D <- ~$r\A
-  $r\D <- BSWAP $r\A
-  $r\D <- WSWAP $r\A
-  $sr\D <- WSI $r\A
-  $sr\D <- BSI $r\A
-  $fr\D <- $sr\A
-  $sr\D <- floor $fr\A
-  $fr\D <- rsqrt $fr\A
-  $fr\D <- 1 / $fr\A
+  $r\D <- wse $r\A
+  $r\D <- bse $r\A
+  $r\D <- int $r\A
+  $r\D <- float $r\A
+  $r\D <- rsqrt $r\A
+  $r\D <- sum $r\A
+  $r\D <- 1 / $r\A
 
   .endr
   .endr
@@ -70,14 +82,8 @@
   $r\D <- $r\A + $r\B
   $r\D <- $r\A << $r\B
   $r\D <- $r\A >> $r\B
-  $sr\D <- $sr\A >> $r\B
+  $r\D <- $r\A >>> $r\B
   $r\D <- $r\A * $r\B
-  $sr\D <- $sr\A * $sr\B
-  $r\D <- upper $r\A * $r\B
-  $sr\D <- upper $sr\A * $sr\B
-  $fr\D <- $fr\A + $fr\B
-  $fr\D <- $fr\A - $fr\B
-  $fr\D <- $fr\A * $fr\B
 
   .endr
   .endr

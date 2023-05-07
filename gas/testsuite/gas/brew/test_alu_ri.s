@@ -41,27 +41,10 @@
 
   $r\D <- (\IMM) << $r\B
   $r\D <- (\IMM) >> $r\B
-  $sr\D <- (\IMM) >> $r\B
+  $r\D <- (\IMM) >>> $r\B
 
   $r\D <- $r\B * \IMM
   $r\D <- (\IMM) * $r\B
-
-  $sr\D <- $sr\B * \IMM
-  $sr\D <- (\IMM) * $sr\B
-
-  $r\D <- upper $r\B * \IMM
-  $r\D <- upper (\IMM) * $r\B
-
-  $sr\D <- upper $sr\B * \IMM
-  $sr\D <- upper (\IMM) * $sr\B
-
-  $fr\D <- $fr\B + \IMM
-  $fr\D <- \IMM + $fr\B
-
-  $fr\D <- \IMM - $fr\B
-
-  $fr\D <- $fr\B * \IMM
-  $fr\D <- \IMM * $fr\B
 
   .endr
   .endr
