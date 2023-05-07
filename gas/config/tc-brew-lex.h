@@ -30,7 +30,6 @@ enum TOK_TYPES
   T_PC,
   T_INSN,
   T_SWI,
-  T_FENCE,
   T_ASSIGN,
   T_PREFIX_OP,
   T_TILDE,

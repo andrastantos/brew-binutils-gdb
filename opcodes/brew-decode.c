@@ -944,7 +944,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
               if ((insn_code & (1 << 13)) == 0) strcat(before, "w");
               if ((insn_code & (1 << 14)) == 0) strcat(after, "r");
               if ((insn_code & (1 << 15)) == 0) strcat(after, "w");
-              CLASS(ATOMIC); INST("fence %s, %s", before, after);
+              CLASS(ATOMIC); INST("fence_%s_%s", before, after);
               UNKNOWN;
             }
           if ((insn_code & 0x0ff0) == 0x000)
