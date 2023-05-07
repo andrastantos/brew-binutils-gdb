@@ -1356,7 +1356,7 @@ static int action_cbranch_bittest(void *context ATTRIBUTE_UNUSED, const brew_par
       as_bad(_("Invalid bit-index"));
       return A_ERR;
     }
-  gas_assert(bit_idx > 0 && bit_idx < 0xf);
+  gas_assert(bit_idx >= 0 && bit_idx < 0xf);
 
   if (is_zero)
     {
