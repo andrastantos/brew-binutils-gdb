@@ -288,7 +288,7 @@ binary_op(
   brew_typed_reg (*sim_op)(brew_typed_reg, brew_typed_reg),
   const char *operation_prefix,
   brew_insn_classes insn_class,
-  bool swap_long_ops
+  bool swap_short_ops
 ) {
   bool is_immedate = FIELD_A == 0xf || FIELD_B == 0xf;
   bool is_short = FIELD_B == 0xf;
@@ -312,7 +312,7 @@ binary_op(
 
       sprintf(immed_str, "%d (0x%x)", field_e, field_e);
 
-      if (swap_long_ops && !is_short)
+      if (swap_short_ops && is_short)
         {
           if (fpr)
             fpr(strm_or_buffer, "%s <- %s%s%s %s %s", REG_D, prefix, operation_prefix, REG(reg_idx), operation, immed_str);
