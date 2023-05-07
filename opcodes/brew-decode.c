@@ -287,7 +287,8 @@ binary_op(
   const char *operation,
   brew_typed_reg (*sim_op)(brew_typed_reg, brew_typed_reg),
   const char *operation_prefix,
-  brew_insn_classes insn_class
+  brew_insn_classes insn_class,
+  bool swap_long_ops
 ) {
   bool is_immedate = FIELD_A == 0xf || FIELD_B == 0xf;
   bool is_short = FIELD_B == 0xf;
@@ -311,9 +312,18 @@ binary_op(
 
       sprintf(immed_str, "%d (0x%x)", field_e, field_e);
 
-      if (fpr)
-        fpr(strm_or_buffer, "%s <- %s%s%s %s %s", REG_D, prefix, operation_prefix, immed_str, operation, REG(reg_idx));
-      SIM(SIM_REGD_T = sim_op((brew_typed_reg){field_e, SIM_REG(reg_idx).type}, SIM_REG(reg_idx)));
+      if (swap_long_ops && !is_short)
+        {
+          if (fpr)
+            fpr(strm_or_buffer, "%s <- %s%s%s %s %s", REG_D, prefix, operation_prefix, REG(reg_idx), operation, immed_str);
+          SIM(SIM_REGD_T = sim_op(SIM_REG(reg_idx), (brew_typed_reg){field_e, SIM_REG(reg_idx).type}));
+        }
+      else
+        {
+          if (fpr)
+            fpr(strm_or_buffer, "%s <- %s%s%s %s %s", REG_D, prefix, operation_prefix, immed_str, operation, REG(reg_idx));
+          SIM(SIM_REGD_T = sim_op((brew_typed_reg){field_e, SIM_REG(reg_idx).type}, SIM_REG(reg_idx)));
+        }
     }
   else
     {
@@ -324,8 +334,8 @@ binary_op(
   return true;
 }
 
-#define REGULAR_ALU_PATTERN(base, op, sim_op, prefix, insn_class)                                                                                                        \
-  case 0x##base: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, prefix, CLASS_NAME(insn_class))) break; return;     \
+#define REGULAR_ALU_PATTERN(base, op, sim_op, prefix, insn_class)                                                                                                               \
+  case 0x##base: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, prefix, CLASS_NAME(insn_class), false)) break; return;     \
 
 static INLINE brew_typed_reg lane_swizzle_op(brew_typed_reg val, uint8_t swizzle_code)
 {
@@ -350,7 +360,7 @@ static INLINE brew_typed_reg lane_swizzle_op(brew_typed_reg val, uint8_t swizzle
   };
 }
 
-static INLINE brew_typed_reg bsi_op(brew_typed_reg val)
+static INLINE brew_typed_reg bse_op(brew_typed_reg val)
 {
   return (brew_typed_reg) {
     ((val.val & 0x80) != 0) ?
@@ -360,7 +370,7 @@ static INLINE brew_typed_reg bsi_op(brew_typed_reg val)
   };
 }
 
-static INLINE brew_typed_reg wsi_op(brew_typed_reg val)
+static INLINE brew_typed_reg wse_op(brew_typed_reg val)
 {
   return (brew_typed_reg) {
     ((val.val & 0x8000) != 0) ?
@@ -954,8 +964,8 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           if (pattern_match(insn_code, ".02.")) { CLASS(LINK); SIM(SIM_REGD_T = MAKE_INT(SIM_PC + sim_link_offset(FIELD_A), BREW_REG_TYPE_INT32)); INST("%s <- $pc + %s", REG_D, format_link_offset(FIELD_A, str_buffer)); }
           if (pattern_match(insn_code, ".03.")) { CLASS(ARITH); SIM(SIM_REGD_T = neg_op(SIM_REG(FIELD_A))); INST("%s <- -%s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".04.")) { CLASS(BIT); SIM(SIM_REGD_T = not_op(SIM_REG(FIELD_A))); INST("%s <- ~%s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".05.")) { CLASS(BIT); SIM(SIM_REGD_T = bsi_op(SIM_REG(FIELD_A))); INST("%s <- bsi %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".06.")) { CLASS(BIT); SIM(SIM_REGD_T = wsi_op(SIM_REG(FIELD_A))); INST("%s <- wsi %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, ".05.")) { CLASS(BIT); SIM(SIM_REGD_T = bse_op(SIM_REG(FIELD_A))); INST("%s <- bse %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, ".06.")) { CLASS(BIT); SIM(SIM_REGD_T = wse_op(SIM_REG(FIELD_A))); INST("%s <- wse %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".07.")) { CLASS(FP); SIM(SIM_REGD_T = to_float_op(SIM_REG(FIELD_A))); INST("%s <- float %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".08.")) { CLASS(FP); SIM(SIM_REGD_T = to_int_op(SIM_REG(FIELD_A))); INST("%s <- int %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".09.")) { CLASS(FP); SIM(SIM_REGD_T = reciprocal_op(SIM_REG(FIELD_A))); INST("%s <- 1 / %s", REG_D, REG_A); }
@@ -1011,9 +1021,9 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
         REGULAR_ALU_PATTERN(3, &, and_op, "", LOGIC);
         REGULAR_ALU_PATTERN(4, +, add_op, "", ARITH);
         REGULAR_ALU_PATTERN(5, -, sub_op, "", ARITH);
-        REGULAR_ALU_PATTERN(6, <<, lsh_op, "", SHIFT);
-        REGULAR_ALU_PATTERN(7, >>, rsh_op, "", SHIFT);
-        REGULAR_ALU_PATTERN(8, >>>, srsh_op, "", SHIFT);
+        case 0x6: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, "<<", lsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
+        case 0x7: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>", rsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
+        case 0x8: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>>", srsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
         REGULAR_ALU_PATTERN(9, *, mul_op, "", MUL);
         case 0xa:
           if (pattern_match(insn_code, ".a..")) { CLASS(BIT); SIM(SIM_REGD_T = nand_op(SIM_REG(FIELD_A), SIM_REG(FIELD_B))); INST("%s <- ~%s & %s", REG_D, REG_A, REG_B); }
