@@ -52,7 +52,7 @@ static reloc_howto_type brew_elf_howto_table[] =
   HOWTO (
     R_BREW_32,                  /* type */
     0,                          /* rightshift */
-    2,                          /* size (0 = byte, 1 = short, 2 = long) */
+    4,                          /* size (0 = byte, 1 = short, 2 = long) */
     32,                         /* bitsize */
     false,                      /* pc_relative */
     0,                          /* bitpos */
@@ -69,7 +69,7 @@ static reloc_howto_type brew_elf_howto_table[] =
   HOWTO (
     R_BREW_NEG32,               /* type */
     0,                          /* rightshift */
-    -2,                         /* size (0 = byte, 1 = short, 2 = long) negative: negate*/
+    -4,                         /* size (0 = byte, 1 = short, 2 = long) negative: negate*/
     32,                         /* bitsize */
     false,                      /* pc_relative */
     0,                          /* bitpos */
@@ -86,7 +86,7 @@ static reloc_howto_type brew_elf_howto_table[] =
   HOWTO (
     R_BREW_16,                  /* type */
     0,                          /* rightshift */
-    1,                          /* size (0 = byte, 1 = short, 2 = long) */
+    2,                          /* size (0 = byte, 1 = short, 2 = long) */
     16,                         /* bitsize */
     false,                      /* pc_relative */
     0,                          /* bitpos */
@@ -103,7 +103,7 @@ static reloc_howto_type brew_elf_howto_table[] =
   HOWTO (
     R_BREW_NEG16,               /* type */
     0,                          /* rightshift */
-    -1,                         /* size (0 = byte, 1 = short, 2 = long) */
+    -2,                         /* size (0 = byte, 1 = short, 2 = long) */
     16,                         /* bitsize */
     false,                      /* pc_relative */
     0,                          /* bitpos */
@@ -121,7 +121,7 @@ static reloc_howto_type brew_elf_howto_table[] =
   HOWTO (
     R_BREW_16_SPCREL,           /* type */
     1,                          /* rightshift */
-    1,                          /* size (0 = byte, 1 = short, 2 = long) */
+    2,                          /* size (0 = byte, 1 = short, 2 = long) */
     16,                         /* bitsize */
     true,                       /* pc_relative */
     0,                          /* bitpos */
