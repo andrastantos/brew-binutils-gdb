@@ -19,8 +19,8 @@
 #ifndef __OPCODE_BREW_ABI_H__
 #define __OPCODE_BREW_ABI_H__
 
-// NOTE: these register defines need to be kept in sync with the ones in brew-decode.c
-//       These are brew_reg_names, brew_sreg_names and brew_freg_names;
+// NOTE: these register defines need to be kept in sync with the ones in brew-decode.c.
+//       An array there called `brew_reg_names` defines the actual names.
 //       Also, GCC sources have their own definition of ABI constants, which needs to be
 //       kept in sync with the ones here. In fact, one could argue that the ABI is defined
 //       *by* the GCC sources.
@@ -40,7 +40,5 @@
 #define BREW_REG_SYSCALL_ERRNO   14
 
 extern const char * brew_reg_names[];
-extern const char * brew_sreg_names[];
-extern const char * brew_freg_names[];
 
 #endif // __OPCODE_BREW_ABI_H__
