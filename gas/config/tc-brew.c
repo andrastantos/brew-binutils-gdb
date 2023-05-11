@@ -2063,6 +2063,7 @@ md_apply_fix(
   long val = *valP;
   uint16_t munged_val;
   long max, min;
+  bool mark_done = false;
 
   max = min = 0;
   switch (fixP->fx_r_type)
@@ -2115,6 +2116,7 @@ md_apply_fix(
       buf[1] = munged_val >> 8;
       buf[0] = munged_val >> 0;
       buf += 2;
+      mark_done = true;
       break;
     default:
       as_fatal("Relocation type %d is not supported on brew. Do you have an undefined symbol?", fixP->fx_r_type);
@@ -2123,7 +2125,7 @@ md_apply_fix(
   if (max != 0 && (val < min || val > max))
     as_bad_where (fixP->fx_file, fixP->fx_line, _("offset out of range"));
 
-  if (fixP->fx_addsy == NULL && fixP->fx_pcrel == 0)
+  if ((fixP->fx_addsy == NULL) || mark_done)
     fixP->fx_done = 1;
 }
 

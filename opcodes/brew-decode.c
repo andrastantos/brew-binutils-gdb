@@ -150,17 +150,18 @@ print_unknown_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t insn_code, 
 int32_t
 brew_unmunge_address(uint16_t field_e)
 {
-  // For now, we're simply shifting
-  // FIXME: we should do proper munging.
-  return ((int32_t)(field_e)) << 16 >> 15;
+  // We put LSB to top, then sign-extend to 32-bits (with LSB set to 0)
+  int lsb = field_e & 1;
+  return (int32_t)((field_e & 0xfffe) | (lsb ? 0xffff0000: 0x00000000));
 }
 
 uint16_t
 brew_munge_address(int32_t offset)
 {
-  // For now, we're simply shifting
-  // FIXME: we should do proper munging.
-  return (uint16_t)(offset >> 1);
+  int lsb = (offset >> 16) & 1;
+  uint16_t ret_val = (uint16_t)((offset & 0xfffe) | lsb);
+  //printf("=================== 0x%08x %d -> 0x%04x %d\n", offset, offset, ret_val, ret_val);
+  return ret_val;
 }
 
 typedef union {
