@@ -27,16 +27,8 @@
    bit-fields (and ENUM_BITFIELD), when the fields must have separate
    memory locations to avoid data races.  */
 
-/* We need gcc_struct on Windows GCC, as otherwise the size of e.g.,
-   "packed<int, 1>" will be larger than what we want.  */
-#if defined _WIN32
-# define ATTRIBUTE_GCC_STRUCT __attribute__((__gcc_struct__))
-#else
-# define ATTRIBUTE_GCC_STRUCT
-#endif
-
 template<typename T, size_t Bytes = sizeof (T)>
-struct ATTRIBUTE_GCC_STRUCT packed
+struct packed
 {
 public:
   packed () noexcept = default;
