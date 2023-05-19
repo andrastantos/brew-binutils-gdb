@@ -1497,7 +1497,7 @@ static int action_full_mult(void *context ATTRIBUTE_UNUSED, const brew_parser_to
 //T_REG, T_ASSIGN, T_SWIZZLE, T_REG, T_COMMA, ~T_NULL
 static int action_swizzle(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
-  uint swizzle_pattern = 0;
+  unsigned int swizzle_pattern = 0;
   A_PROLOG(4);
   A_CHECK(6);
 
@@ -1512,7 +1512,7 @@ static int action_swizzle(void *context ATTRIBUTE_UNUSED, const brew_parser_toke
       return A_ERR;
     }
   const char *lane_digit = tokens[5].first_lexer_token->start;
-  for (uint i=0;i<tokens[5].first_lexer_token->len;++i) {
+  for (unsigned int i=0;i<tokens[5].first_lexer_token->len;++i) {
     if (*lane_digit< '0' || *lane_digit > '3')
       {
         as_bad(_("Invalid swizzle expression at digit %d"), i);
@@ -1583,7 +1583,7 @@ static int action_load_multi_type(void *context ATTRIBUTE_UNUSED, const brew_par
           return A_ERR;
         }
       mask_digit = tokens[12].first_lexer_token->start;
-      for (uint i=0;i<tokens[12].first_lexer_token->len;++i) {
+      for (unsigned int i=0;i<tokens[12].first_lexer_token->len;++i) {
         if (*mask_digit < '0' || *mask_digit > '1')
           {
             as_bad(_("Invalid mask at digit %d"), i);

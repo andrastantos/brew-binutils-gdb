@@ -33,7 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <unistd.h>
 #include <utime.h>
 #include <time.h>
+#if ! defined __MINGW32__
 #include <sys/times.h>
+#endif // __MINGW32__
 #include <errno.h>
 #include <math.h>
 #include "bfd.h"
@@ -55,6 +57,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "gdb-if.h"
 
 #define MAKE_INT(l0, type) (brew_typed_reg) { l0, type }
+
+#ifndef MIN
+#define MIN(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })
+#endif // MIN
 
 static _Float16
 rsqrt_fp16(_Float16 num)
@@ -401,12 +407,14 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       ret_val = getpid();
       SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       break;
+#if ! defined __MINGW32__
     case SYS_kill:
       ret_val = kill(arg1, arg2);
       SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
+#endif // __MINGW32__
     case SYS_fstat: {
       struct stat statbuf;
       ret_val = fstat(arg1, &statbuf);
@@ -478,6 +486,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       SIM_ASSERT(false);
       break;
     }
+#if ! defined __MINGW32__
     case SYS_times: {
       struct tms time_buf;
       ret_val = times(&time_buf);
@@ -486,6 +495,8 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       SIM_ASSERT(false);
       break;
     }
+#endif // __MINGW32__
+#if ! defined __MINGW32__
     case SYS_link:
       str1 = sim_core_read_str(scpu, arg1);
       str2 = sim_core_read_str(scpu, arg2);
@@ -496,6 +507,7 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
       if (ret_val == -1)
         SET_ERRNO(errno);
       break;
+#endif // __MINGW32__
 
     // These are not implemented
     case SYS_argc:
