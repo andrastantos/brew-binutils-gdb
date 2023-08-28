@@ -337,7 +337,7 @@ binary_op(
 
 #define REGULAR_ALU_PATTERN(base, op, sim_op, prefix, insn_class)                                                                                                               \
   case 0x##base: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, prefix, CLASS_NAME(insn_class), false)) break; return;     \
-
+/*
 static INLINE brew_typed_reg lane_swizzle_op(brew_typed_reg val, uint8_t swizzle_code)
 {
   uint8_t lanes_in[4];
@@ -360,7 +360,7 @@ static INLINE brew_typed_reg lane_swizzle_op(brew_typed_reg val, uint8_t swizzle
     val.type
   };
 }
-
+*/
 static INLINE brew_typed_reg bse_op(brew_typed_reg val)
 {
   return (brew_typed_reg) {
@@ -414,7 +414,6 @@ static INLINE brew_typed_reg wse_op(brew_typed_reg val)
 static INLINE brew_typed_reg xor_op(brew_typed_reg a, brew_typed_reg b) { return (brew_typed_reg) {a.val ^ b.val, a.type}; }
 static INLINE brew_typed_reg ior_op(brew_typed_reg a, brew_typed_reg b) { return (brew_typed_reg) {a.val | b.val, a.type}; }
 static INLINE brew_typed_reg and_op(brew_typed_reg a, brew_typed_reg b) { return (brew_typed_reg) {a.val & b.val, a.type}; }
-static INLINE brew_typed_reg nand_op(brew_typed_reg a, brew_typed_reg b) { return (brew_typed_reg) {~a.val & b.val, a.type}; }
 static INLINE brew_typed_reg not_op(brew_typed_reg a) { return (brew_typed_reg) {~a.val, a.type}; }
 static INLINE brew_typed_reg add_op(brew_typed_reg a, brew_typed_reg b)
 {
@@ -494,6 +493,7 @@ static INLINE brew_typed_reg mul_op(brew_typed_reg a, brew_typed_reg b)
         OPCODES_ASSERT(false);
     }
 }
+/*
 static INLINE brew_typed_reg sfullmul_op(brew_typed_reg a, brew_typed_reg b, uint8_t shift)
 {
   switch (a.type)
@@ -546,7 +546,7 @@ static INLINE brew_typed_reg fullmul_op(brew_typed_reg a, brew_typed_reg b, uint
         OPCODES_ASSERT(false);
     }
 }
-
+*/
 static INLINE brew_typed_reg lsh_op(brew_typed_reg a, brew_typed_reg b)
 {
   switch (a.type)
@@ -630,44 +630,7 @@ static INLINE brew_typed_reg neg_op(brew_typed_reg a)
         OPCODES_ASSERT(false);
     }
 }
-static INLINE brew_typed_reg to_float_op(brew_typed_reg a)
-{
-  switch (a.type)
-    {
-      case BREW_REG_TYPE_INT32:
-      case BREW_REG_TYPE_FP32:
-        return MAKE_FP32((int32_t)L32_0(a), a.type);
-      case BREW_REG_TYPE_INT16x2:
-      case BREW_REG_TYPE_UINT16x2S:
-      case BREW_REG_TYPE_SINT16x2S:
-      case BREW_REG_TYPE_FP16x2:
-        return MAKE_FP16X2((int16_t)L16_0(a), (int16_t)L16_1(a), a.type);
-      case BREW_REG_TYPE_INT8x4:
-      case BREW_REG_TYPE_UINT8x4S:
-      case BREW_REG_TYPE_SINT8x4S:
-      default:
-        OPCODES_ASSERT(false);
-    }
-}
-static INLINE brew_typed_reg to_int_op(brew_typed_reg a)
-{
-  switch (a.type)
-    {
-      case BREW_REG_TYPE_INT32:
-      case BREW_REG_TYPE_FP32:
-        return MAKE_INT((int32_t)(FP32_0(a)+0.5), a.type);
-      case BREW_REG_TYPE_INT16x2:
-      case BREW_REG_TYPE_UINT16x2S:
-      case BREW_REG_TYPE_SINT16x2S:
-      case BREW_REG_TYPE_FP16x2:
-        return MAKE_INT2((int16_t)(FP16_0(a)+0.5), (int16_t)(FP16_1(a)+0.5), a.type);
-      case BREW_REG_TYPE_INT8x4:
-      case BREW_REG_TYPE_UINT8x4S:
-      case BREW_REG_TYPE_SINT8x4S:
-      default:
-        OPCODES_ASSERT(false);
-    }
-}
+
 static INLINE brew_typed_reg reciprocal_op(brew_typed_reg a)
 {
   switch (a.type)
@@ -706,30 +669,78 @@ static INLINE brew_typed_reg rsqrt_op(brew_typed_reg a, const brew_sim_state *si
         OPCODES_ASSERT(false);
     }
 }
-static INLINE brew_typed_reg sum_op(brew_typed_reg a)
+
+#define OPCODES_ASSERT_UNREACHABLE \
+  opcodes_assert (__FILE__, __LINE__);
+
+static INLINE brew_typed_reg type_conv_op(uint8_t reg_type, brew_typed_reg a)
 {
-  switch (a.type)
+  switch (reg_type)
     {
       case BREW_REG_TYPE_INT32:
+        {
+          switch (a.type)
+            {
+              case BREW_REG_TYPE_INT32:
+                return a;
+              case BREW_REG_TYPE_FP32:
+                return MAKE_INT((int32_t)(FP32_0(a)+0.5), BREW_REG_TYPE_INT32);
+              case BREW_REG_TYPE_INT16x2:
+              case BREW_REG_TYPE_UINT16x2S:
+              case BREW_REG_TYPE_SINT16x2S:
+              case BREW_REG_TYPE_FP16x2:
+              case BREW_REG_TYPE_INT8x4:
+              case BREW_REG_TYPE_UINT8x4S:
+              case BREW_REG_TYPE_SINT8x4S:
+              default:
+                OPCODES_ASSERT(false);
+            }
+        }
+        OPCODES_ASSERT_UNREACHABLE;
       case BREW_REG_TYPE_FP32:
-        return MAKE_INT(L32_0(a), a.type);
+        {
+          switch (a.type)
+            {
+              case BREW_REG_TYPE_INT32:
+                return MAKE_FP32((float)L32_0(a), BREW_REG_TYPE_FP32);
+              case BREW_REG_TYPE_FP32:
+                return a;
+              case BREW_REG_TYPE_INT16x2:
+              case BREW_REG_TYPE_UINT16x2S:
+              case BREW_REG_TYPE_SINT16x2S:
+              case BREW_REG_TYPE_FP16x2:
+              case BREW_REG_TYPE_INT8x4:
+              case BREW_REG_TYPE_UINT8x4S:
+              case BREW_REG_TYPE_SINT8x4S:
+              default:
+                OPCODES_ASSERT(false);
+            }
+        }
+        OPCODES_ASSERT_UNREACHABLE;
       case BREW_REG_TYPE_INT16x2:
       case BREW_REG_TYPE_UINT16x2S:
       case BREW_REG_TYPE_SINT16x2S:
-        return MAKE_INT(L16_0(a) + L16_1(a), BREW_REG_TYPE_INT32);
+      case BREW_REG_TYPE_FP16x2:
       case BREW_REG_TYPE_INT8x4:
       case BREW_REG_TYPE_UINT8x4S:
       case BREW_REG_TYPE_SINT8x4S:
-        return MAKE_INT(L8_0(a) + L8_1(a) + L8_2(a) + L8_3(a), BREW_REG_TYPE_INT32);
-      case BREW_REG_TYPE_FP16x2:
-        return MAKE_FP32(FP16_0(a) + FP16_1(a), BREW_REG_TYPE_FP32);
       default:
         OPCODES_ASSERT(false);
     }
 }
-static INLINE brew_typed_reg interpolate_op(brew_typed_reg a ATTRIBUTE_UNUSED, brew_typed_reg b ATTRIBUTE_UNUSED)
+
+static INLINE brew_typed_reg popcnt_op(brew_typed_reg a)
 {
-  OPCODES_ASSERT(false);
+  int32_t val = L32_0(a);
+  int bit;
+  int32_t mask = 1;
+  int32_t pop_cnt = 0;
+  for (bit=0;bit<=31;++bit)
+    {
+      pop_cnt += (val & mask) != 0;
+      mask <<= 1;
+    }
+  return MAKE_INT(val, BREW_REG_TYPE_INT32);
 }
 
 static INLINE bool any(bool a, bool b, bool c, bool d) { return a || b || c || d; }
@@ -798,6 +809,7 @@ static bool cond(brew_typed_reg left, brew_cond cond, brew_typed_reg right, bool
     }
 }
 
+/*
 #define B32(a) (brew_typed_reg) {((a) ? 0xffffffff : 0x00000000), BREW_REG_TYPE_INT32 }
 #define B16x2(a,b) (brew_typed_reg) {(((b) ? 0xffff0000 : 0x00000000) | ((a) ? 0x0000ffff : 0x00000000)), BREW_REG_TYPE_INT16x2 }
 #define B8x4(a,b,c,d) (brew_typed_reg) {(((d) ? 0xff000000 : 0x00000000) | ((c) ? 0x00ff0000 : 0x00000000) | ((b) ? 0x0000ff00 : 0x00000000) | ((a) ? 0x000000ff : 0x00000000)), BREW_REG_TYPE_INT8x4 }
@@ -851,7 +863,7 @@ static INLINE brew_typed_reg lane_cond(brew_typed_reg left, brew_cond cond, brew
         OPCODES_ASSERT(false);
     }
 }
-
+*/
 static INLINE int get_bit(uint32_t word, int idx) { return (word >> idx) & 1; }
 
 static INLINE int sign_extend(uint32_t data, size_t bit_length)
@@ -927,11 +939,12 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
               if (pattern_match(insn_code, "3000")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SWI3); INST("swi 3"); }
               if (pattern_match(insn_code, "4000")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SWI4); INST("swi 4"); }
               if (pattern_match(insn_code, "5000")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SWI5); INST("swi 5"); }
-              if (pattern_match(insn_code, "6000")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SII); INST("sii"); }
-              if (pattern_match(insn_code, "7000")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_HWI); INST("hwi"); }
+              if (pattern_match(insn_code, "6000")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_SII); INST("swi 6"); }
+              if (pattern_match(insn_code, "7000")) { CLASS(EXCEPTION); SIM(sim_state->insn_exception =  BREW_EXCEPTION_HWI); INST("swi 7"); }
 
               if (pattern_match(insn_code, "8000")) { CLASS(BRANCH); SIM(sim_state->nis_task_mode = true); INST("stm"); }
               if (pattern_match(insn_code, "9000")) { CLASS(POWER); INST("woi"); }
+              if (pattern_match(insn_code, "a000")) { CLASS(POWER); INST("pflush"); }
               UNKNOWN;
             }
           if ((insn_code & 0x0fff) == 0x001)
@@ -967,11 +980,9 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           if (pattern_match(insn_code, ".04.")) { CLASS(BIT); SIM(SIM_REGD_T = not_op(SIM_REG(FIELD_A))); INST("%s <- ~%s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".05.")) { CLASS(BIT); SIM(SIM_REGD_T = bse_op(SIM_REG(FIELD_A))); INST("%s <- bse %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".06.")) { CLASS(BIT); SIM(SIM_REGD_T = wse_op(SIM_REG(FIELD_A))); INST("%s <- wse %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".07.")) { CLASS(FP); SIM(SIM_REGD_T = to_float_op(SIM_REG(FIELD_A))); INST("%s <- float %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".08.")) { CLASS(FP); SIM(SIM_REGD_T = to_int_op(SIM_REG(FIELD_A))); INST("%s <- int %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".09.")) { CLASS(FP); SIM(SIM_REGD_T = reciprocal_op(SIM_REG(FIELD_A))); INST("%s <- 1 / %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".0a.")) { CLASS(FP); SIM(SIM_REGD_T = rsqrt_op(SIM_REG(FIELD_A), sim_state)); INST("%s <- rsqrt %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".0b.")) { CLASS(ARITH); SIM(SIM_REGD_T = sum_op(SIM_REG(FIELD_A))); INST("%s <- sum %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, ".07.")) { CLASS(ARITH); SIM(SIM_REGD_T = popcnt_op(SIM_REG(FIELD_A))); INST("%s <- popcnt %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, ".08.")) { CLASS(FP); SIM(SIM_REGD_T = reciprocal_op(SIM_REG(FIELD_A))); INST("%s <- 1 / %s", REG_D, REG_A); }
+          if (pattern_match(insn_code, ".09.")) { CLASS(FP); SIM(SIM_REGD_T = rsqrt_op(SIM_REG(FIELD_A), sim_state)); INST("%s <- rsqrt %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".0c.")) { CLASS(TYPE); SIM(if ((SIM_REG(FIELD_A).val & 0xf) != BREW_REG_TYPE_MASK) SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), SIM_REG(FIELD_A).val & 0xf)); INST("type %s <- %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".0d.")) { CLASS(TYPE); SIM(SIM_REGD_T = MAKE_INT(SIM_REG(FIELD_A).type, BREW_REG_TYPE_INT32)); INST("%s <- type %s", REG_D, REG_A); }
           if (pattern_match(insn_code, ".0e.")) { CLASS(TYPE); SIM(if (FIELD_A != BREW_REG_TYPE_MASK) SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), FIELD_A)); INST("type %s <- %s", REG_D, brew_reg_type_name(FIELD_A)); }
@@ -986,6 +997,10 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           // short immediate branch
           if (pattern_match(insn_code, "20fe")) { CLASS(BRANCH); SIM(SIM_PC_T = field_e); INST("$pc <- short %u (0x%x)", field_e, field_e); }
           if (pattern_match(insn_code, "30fe")) { CLASS(BRANCH); SIM(SIM_TPC_T = field_e); INST("$tpc <- short %u (0x%x)", field_e, field_e); }
+
+          // CSR loads and stores
+          if (pattern_match(insn_code, ".0f8")) { CLASS(LD); SIM(OPCODES_ASSERT(false)); INST("%s <- CSR[%u (0x%x)]", REG_D, field_e, field_e); }
+          if (pattern_match(insn_code, ".0f9")) { CLASS(ST); SIM(OPCODES_ASSERT(false)); INST("CSR[%u (0x%x)] <- %s", field_e, field_e, REG_D); }
 
           // bulk type load immediate
           if (pattern_match(insn_code, "80ef") || pattern_match(insn_code, "90ef")) {
@@ -1027,17 +1042,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
         case 0x8: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>>", srsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
         REGULAR_ALU_PATTERN(9, *, mul_op, "", MUL);
         case 0xa:
-          if (pattern_match(insn_code, ".a..")) { CLASS(BIT); SIM(SIM_REGD_T = nand_op(SIM_REG(FIELD_A), SIM_REG(FIELD_B))); INST("%s <- ~%s & %s", REG_D, REG_A, REG_B); }
-          if (pattern_match(insn_code, ".af.")) {
-            SIM(CLASS(VECTOR));
-            SIM(SIM_REGD_T = lane_swizzle_op(SIM_REG(FIELD_A), field_e));
-            INST("%s <- lane_swizzle %s, %d%d%d%d", REG_D, REG_A,
-              (field_e >> 6) & 3,
-              (field_e >> 4) & 3,
-              (field_e >> 2) & 3,
-              (field_e >> 0) & 3
-            );
-          }
+          if (pattern_match(insn_code, ".a..")) { CLASS(TYPE); SIM(SIM_REGD_T = type_conv_op(FIELD_A, SIM_REG(FIELD_B))); INST("%s <- %s %s", REG_D, brew_reg_type_name(FIELD_A), REG_B); }
           UNKNOWN;
           break;
         case 0xb:
@@ -1211,6 +1216,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
     }
   else if (FIELD_D == 0xf && FIELD_C == 0xf && FIELD_B == 0xf)
     {
+      /*
       // Extension group A
       switch (FIELD_A)
         {
@@ -1256,10 +1262,12 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
             }
           UNKNOWN;
         }
+      */
       UNKNOWN;
     }
   else if (FIELD_D == 0xf && FIELD_C == 0xf)
     {
+      /*
       // extension group B
       switch (FIELD_B >> 1)
         {
@@ -1280,6 +1288,8 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
         default:
           UNKNOWN;
         }
+      */
+      UNKNOWN;
     }
   else if ((FIELD_C & 0xe) == 0xe && FIELD_B == 0xf)
     {

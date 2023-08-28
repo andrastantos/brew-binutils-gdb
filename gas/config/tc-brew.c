@@ -418,7 +418,7 @@ static bool mem_subtype_to_opcode_st(int sub_type, bool is_invalidate, int *op_c
       case ST_SMEM_16: *op_code = 0x9; break;
       case ST_MEM_16:  *op_code = 0x9; break;
       case ST_MEM_32:  *op_code = 0xa; break;
-      case ST_MEM_SR:  *op_code = 0xb; break;
+      case ST_MEM_SC:  *op_code = 0xb; break;
       default:
         return false;
     }
@@ -575,6 +575,31 @@ static int action_load_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
   A_RETURN();
 }
 
+static int action_load_csr(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  A_PROLOG(4);
+  A_CHECK(6);
+
+  gas_assert(tokens[0].parser_token == T_REG);
+  gas_assert(tokens[2].parser_token == T_CSR);
+  gas_assert(tokens[4].parser_token == ~T_RBRACKET);
+  // TODO: I don't think we should allow relocations at all for CSR addresses.
+  if (!parse_expression(tokens[4].first_lexer_token, tokens[4].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_16))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+
+
+  insn_code =
+    FIELD_D(tokens[0].first_lexer_token->sub_type) |
+    FIELD_C(0x0) |
+    FIELD_B(0xf) |
+    FIELD_A(0x8);
+
+  A_RETURN();
+}
+
 static int action_store_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_invalidate;
@@ -695,6 +720,31 @@ static int action_store_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_to
     FIELD_C(0xf) |
     FIELD_B(op_code) |
     FIELD_A(0xf);
+
+  A_RETURN();
+}
+
+static int action_store_csr(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+{
+  A_PROLOG(4);
+  A_CHECK(6);
+
+  gas_assert(tokens[0].parser_token == T_CSR);
+  gas_assert(tokens[2].parser_token == ~T_RBRACKET);
+  gas_assert(tokens[5].parser_token == T_REG);
+
+  // TODO: I don't think we should allow relocations at all for CSR addresses.
+  if (!parse_expression(tokens[2].first_lexer_token, tokens[2].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_16))
+    {
+      as_bad(_("Can't parse expression"));
+      return A_ERR;
+    }
+
+  insn_code =
+    FIELD_D(tokens[5].first_lexer_token->sub_type) |
+    FIELD_C(0x0) |
+    FIELD_B(0xf) |
+    FIELD_A(0x9);
 
   A_RETURN();
 }
@@ -1393,20 +1443,21 @@ static int action_move_reg_to_reg(void *context ATTRIBUTE_UNUSED, const brew_par
   A_RETURN();
 }
 
-static int action_inverse_and(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
+
+static int action_type_conversion(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(2);
   A_CHECK(6);
 
   gas_assert(tokens[0].parser_token == T_REG);
+  gas_assert(tokens[2].parser_token == T_TYPENAME);
   gas_assert(tokens[3].parser_token == T_REG);
-  gas_assert(tokens[5].parser_token == T_REG);
 
   insn_code =
     FIELD_D(tokens[0].first_lexer_token->sub_type) |
     FIELD_C(0xa) |
-    FIELD_B(tokens[5].first_lexer_token->sub_type) |
-    FIELD_A(tokens[3].first_lexer_token->sub_type);
+    FIELD_B(tokens[3].first_lexer_token->sub_type) |
+    FIELD_A(tokens[2].first_lexer_token->sub_type);
   A_RETURN();
 }
 
@@ -1438,98 +1489,6 @@ static int action_prefix_op(void *context ATTRIBUTE_UNUSED, const brew_parser_to
   A_RETURN();
 }
 
-static int action_interpolate(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
-{
-  A_PROLOG_EXT(4);
-  A_CHECK(6);
-
-  gas_assert(tokens[0].parser_token == T_REG);
-  gas_assert(tokens[3].parser_token == T_REG);
-  gas_assert(tokens[5].parser_token == T_REG);
-
-  ext_code =
-    FIELD_D(0xf) |
-    FIELD_C(0xf) |
-    FIELD_B(0xf) |
-    FIELD_A(0x1);
-  insn_code =
-    FIELD_D(tokens[0].first_lexer_token->sub_type) |
-    FIELD_C(0x0) |
-    FIELD_B(tokens[5].first_lexer_token->sub_type) |
-    FIELD_A(tokens[3].first_lexer_token->sub_type);
-  A_RETURN_EXT();
-}
-
-static int action_full_mult(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
-{
-  int shift_amount;
-  A_PROLOG_EXT(4);
-  A_CHECK(8);
-
-  gas_assert(tokens[0].parser_token == T_REG);
-  gas_assert(tokens[3].parser_token == T_REG);
-  gas_assert(tokens[5].parser_token == T_REG);
-  gas_assert(tokens[6].parser_token == T_RSHIFT);
-  gas_assert(tokens[7].parser_token == ~T_NULL);
-
-  if (!parse_int(tokens[7].first_lexer_token, tokens[7].last_lexer_token, &shift_amount))
-    {
-      as_bad(_("Can't parse shift expression"));
-      return A_ERR;
-    }
-  if (shift_amount < 0 || shift_amount > 31)
-    {
-      as_bad(_("Shift amount out of range"));
-      return A_ERR;
-    }
-  ext_code =
-    FIELD_D(0xf) |
-    FIELD_C(0xf) |
-    shift_amount;
-  insn_code =
-    FIELD_D(tokens[0].first_lexer_token->sub_type) |
-    FIELD_C(tokens[6].first_lexer_token->sub_type == 0x7 ? 1 : 0) |
-    FIELD_B(tokens[5].first_lexer_token->sub_type) |
-    FIELD_A(tokens[3].first_lexer_token->sub_type);
-  A_RETURN_EXT();
-}
-
-//T_REG, T_ASSIGN, T_SWIZZLE, T_REG, T_COMMA, ~T_NULL
-static int action_swizzle(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
-{
-  unsigned int swizzle_pattern = 0;
-  A_PROLOG(4);
-  A_CHECK(6);
-
-  gas_assert(tokens[0].parser_token == T_REG);
-  gas_assert(tokens[3].parser_token == T_REG);
-  gas_assert(tokens[5].parser_token == ~T_NULL);
-
-  // Parse the swizzle lane configuration
-  if (tokens[5].first_lexer_token->len != 4)
-    {
-      as_bad(_("Swizzle expression must be 4 digits"));
-      return A_ERR;
-    }
-  const char *lane_digit = tokens[5].first_lexer_token->start;
-  for (unsigned int i=0;i<tokens[5].first_lexer_token->len;++i) {
-    if (*lane_digit< '0' || *lane_digit > '3')
-      {
-        as_bad(_("Invalid swizzle expression at digit %d"), i);
-        return A_ERR;
-      }
-    swizzle_pattern = (swizzle_pattern << 2) | (*lane_digit - '0');
-    ++lane_digit;
-  }
-  gas_assert(swizzle_pattern <= 255);
-  md_number_to_chars(frag+2, swizzle_pattern, 2);
-  insn_code =
-    FIELD_D(tokens[0].first_lexer_token->sub_type) |
-    FIELD_C(0xa) |
-    FIELD_B(0xf) |
-    FIELD_A(tokens[3].first_lexer_token->sub_type);
-  A_RETURN();
-}
 
 static int action_load_multi_type(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
@@ -1883,19 +1842,18 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_REG, T_ASSIGN, T_REG, T_CMP, T_REG),                                                                                        ACTION(action_lane_cmp),
   PATTERN(T_REG, T_ASSIGN, T_SIGNED, T_REG, T_CMP, T_REG),                                                                              ACTION(action_lane_cmp),
   PATTERN(T_REG, T_ASSIGN, T_REG),                                                                                                      ACTION(action_move_reg_to_reg),
-  PATTERN(T_REG, T_ASSIGN, T_TILDE, T_REG, T_AND, T_REG),                                                                               ACTION(action_inverse_and),
+  PATTERN(T_REG, T_ASSIGN, T_TYPENAME, T_REG),                                                                                          ACTION(action_type_conversion),
   PATTERN(T_REG, T_ASSIGN, T_PREFIX_OP, T_REG),                                                                                         ACTION(action_prefix_op),
   PATTERN(T_REG, T_ASSIGN, T_PLUS_MINUS, T_REG),                                                                                        ACTION(action_prefix_op),
   PATTERN(T_REG, T_ASSIGN, T_TILDE, T_REG),                                                                                             ACTION(action_prefix_op),
-  PATTERN(T_REG, T_ASSIGN, T_INTERPOLATE, T_REG, T_COMMA, T_REG),                                                                       ACTION(action_interpolate),
-  PATTERN(T_REG, T_ASSIGN, T_FULL, T_REG, T_STAR, T_REG, T_RSHIFT, ~T_NULL),                                                            ACTION(action_full_mult),
-  PATTERN(T_REG, T_ASSIGN, T_SWIZZLE, T_REG, T_COMMA, ~T_NULL),                                                                         ACTION(action_swizzle),
 
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                                       ACTION(action_load_reg),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, T_TINY, ~T_RBRACKET, T_RBRACKET),                                    ACTION(action_load_reg_ofs),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_TINY, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                    ACTION(action_load_reg_ofs),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                            ACTION(action_load_reg_ofs),
   PATTERN(T_REG, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                                 ACTION(action_load_ofs),
+
+  PATTERN(T_REG, T_ASSIGN, T_CSR, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                                 ACTION(action_load_csr),
 
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_HAT, ~T_NULL),                                                                             ACTION(action_binary_reg_imm),
   PATTERN(T_REG, T_ASSIGN, T_SHORT, T_REG, T_BAR, ~T_NULL),                                                                             ACTION(action_binary_reg_imm),
@@ -1921,6 +1879,8 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, T_TINY, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                    ACTION(action_store_reg_ofs),
   PATTERN(T_MEM, T_LBRACKET, T_TINY, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                    ACTION(action_store_reg_ofs),
   PATTERN(T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                                                 ACTION(action_store_ofs),
+
+  PATTERN(T_CSR, T_LBRACKET, ~T_RBRACKET, T_RBRACKET, T_ASSIGN, T_REG),                                                                 ACTION(action_store_csr),
 
   PATTERN(T_IF, T_REG, T_CMP, T_ZERO, T_PC, T_ASSIGN, ~T_NULL),                                                                         ACTION(action_cbranch),
   PATTERN(T_IF, T_REG, T_CMP, T_REG, T_PC, T_ASSIGN, ~T_NULL),                                                                          ACTION(action_cbranch),

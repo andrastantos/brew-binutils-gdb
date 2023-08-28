@@ -33,8 +33,6 @@ enum TOK_TYPES
   T_ASSIGN,
   T_PREFIX_OP,
   T_TILDE,
-  T_SWIZZLE,
-  T_INTERPOLATE,
   T_HAT,
   T_BAR,
   T_LSHIFT,
@@ -47,6 +45,7 @@ enum TOK_TYPES
   T_TINY,
   T_FULL,
   T_MEM,
+  T_CSR,
   T_COMMA,
   T_LBRACKET,
   T_RBRACKET,
@@ -86,7 +85,7 @@ enum TOK_SUBTYPE_MEM {
   ST_SMEM_16,
   ST_SMEM_8,
   ST_MEM_LL,
-  ST_MEM_SR,
+  ST_MEM_SC,
   ST_MEM_INV
 };
 

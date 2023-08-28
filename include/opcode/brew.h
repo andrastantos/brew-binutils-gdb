@@ -21,14 +21,14 @@
 
 typedef enum {
   BREW_REG_TYPE_INT32        =  0,
-  BREW_REG_TYPE_INT16x2      =  1,
-  BREW_REG_TYPE_INT8x4       =  2,
-  BREW_REG_TYPE_UINT16x2S    =  3,
-  BREW_REG_TYPE_SINT16x2S    =  4,
-  BREW_REG_TYPE_UINT8x4S     =  5,
-  BREW_REG_TYPE_SINT8x4S     =  6,
-  BREW_REG_TYPE_FP32         =  8,
-  BREW_REG_TYPE_FP16x2       =  9,
+  BREW_REG_TYPE_FP32         =  1,
+  BREW_REG_TYPE_INT16x2      =  2,
+  BREW_REG_TYPE_INT8x4       =  3,
+  BREW_REG_TYPE_UINT16x2S    =  4,
+  BREW_REG_TYPE_SINT16x2S    =  5,
+  BREW_REG_TYPE_UINT8x4S     =  6,
+  BREW_REG_TYPE_SINT8x4S     =  7,
+  BREW_REG_TYPE_FP16x2       =  8,
   BREW_REG_TYPE_MASK         =  0xf
 } brew_reg_types;
 
