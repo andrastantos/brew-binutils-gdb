@@ -175,6 +175,7 @@ reset_cpu(brew_sim_state *sim_state, bool is_user_mode_sim)
   sim_state->dirty_map = 0;
   sim_state->spc = 0;
   sim_state->tpc = 0;
+  sim_state->reg[BREW_REG_SP] = MAKE_INT(0x01000000, BREW_REG_TYPE_INT32); // Setting $sp to something meaningful
   sim_state->is_task_mode = is_user_mode_sim;
   /* FIXME: do we want to get some other state in the registers? */
   /* Such as:
@@ -255,7 +256,7 @@ static char *sim_core_read_str(sim_cpu *scpu, uint32_t vma)
   return str;
 }
 
-#define SET_ERRNO(value) { if (errno_addr != 0) { write_mem(scpu, errno_addr, 32, value); } }
+#define SET_ERRNO(value) { SIM_REG_T(BREW_REG_SYSCALL_ERRNO) = MAKE_INT(value, BREW_REG_TYPE_INT32); }
 
 static int marshal_o_flags_from_sim(int oflags)
 {
@@ -320,7 +321,6 @@ static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
   // So, for now, I'll leave this code here.
 
   uint16_t syscall_no;
-  uint32_t errno_addr = scpu->sim_state.reg[BREW_REG_SYSCALL_ERRNO].val;
   uint32_t arg1 = scpu->sim_state.reg[BREW_REG_ARG0].val;
   uint32_t arg2 = scpu->sim_state.reg[BREW_REG_ARG1].val;
   uint32_t arg3 = scpu->sim_state.reg[BREW_REG_ARG2].val;
