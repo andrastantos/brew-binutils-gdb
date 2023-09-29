@@ -29,6 +29,38 @@
                         ],
                         "preLaunchTask": "C/C++: gcc build active file",
                         "miDebuggerPath": "/usr/bin/gdb"
+                },
+                {
+                        "name": "BREW Simulator with Hello World",
+                        "type": "cppdbg",
+                        "request": "launch",
+                        "program": "${workspaceFolder}/../brew-binutils-build/sim/brew/run",
+                        //"symbolSearchPath": "C:\\Symbols;C:\\SymbolDir2",
+                        "args": ["--model", "brew", "hello_world.elf"],
+                        "cwd": "${workspaceFolder}/../brew-binutils-build",
+                        "externalConsole": false,
+                        "logging": {
+                          "moduleLoad": false,
+                          "trace": true
+                        },
+                        "visualizerFile": "${workspaceFolder}/my.natvis",
+                        "showDisplayString": true
+                },
+                {
+                        "name": "Simulator with Hello World",
+                        "type": "cppdbg",
+                        "request": "launch",
+                        "program": "${workspaceFolder}/../brew-binutils-build/sim/brew/run",
+                        //"symbolSearchPath": "C:\\Symbols;C:\\SymbolDir2",
+                        "args": ["hello_world.elf"],
+                        "cwd": "${workspaceFolder}/../brew-binutils-build",
+                        "externalConsole": false,
+                        "logging": {
+                          "moduleLoad": false,
+                          "trace": true
+                        },
+                        "visualizerFile": "${workspaceFolder}/my.natvis",
+                        "showDisplayString": true
                 }
         ]
 }
