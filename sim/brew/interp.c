@@ -198,7 +198,7 @@ setup_sim_state(sim_cpu *scpu, bool is_user_mode_sim)
   else
     scpu->sim_state.tracer = NULL;
   scpu->sim_state.tracer_strm = scpu->decode_buf;
-  reset_cpu(&scpu->sim_state, is_user_mode_sim);
+  //reset_cpu(&scpu->sim_state, is_user_mode_sim);
 }
 
 #if 0
@@ -893,35 +893,30 @@ full_insn_class_name(SIM_CPU *scpu, int insn_class_code)
   return insn_name;
 }
 
+static const SIM_MODEL brew_models[];
+
 static void
 brew_model_init(SIM_CPU *cpu)
 {
-  CPU_MODEL_DATA(cpu) = NULL; // TODO: Not sure what this is, but hopefully it could be set to NULL. It appears to be something that's target specific.
+  printf("Setting model to BREW\n");
+}
+
+static void
+espresso_model_init(SIM_CPU *cpu)
+{
+  printf("Setting model to ESPRESSO\n");
 }
 
 static void
 brew_init_cpu(SIM_CPU *scpu)
 {
-  SIM_DESC sd = CPU_STATE(scpu);
-
   CPU_REG_FETCH(scpu) = brew_reg_fetch;
   CPU_REG_STORE(scpu) = brew_reg_store;
   CPU_PC_FETCH(scpu) = brew_pc_get;
   CPU_PC_STORE(scpu) = brew_pc_set;
   CPU_MAX_INSNS(scpu) = 0x10000; // To make is simple, every instruction code is counted separately (for now)
   CPU_INSN_NAME(scpu) = full_insn_class_name;
-  switch (STATE_ENVIRONMENT(CPU_STATE(scpu)))
-    {
-    case USER_ENVIRONMENT:
-    case VIRTUAL_ENVIRONMENT:
-      setup_sim_state(scpu, true);
-      break;
-    case OPERATING_ENVIRONMENT:
-      setup_sim_state(scpu, false);
-      break;
-    default:
-      SIM_ASSERT(false);
-    }
+  setup_sim_state(scpu, true);
 }
 
 static void
@@ -948,7 +943,9 @@ static const SIM_MACH brew_mach =
 
 static const SIM_MODEL brew_models[] =
 {
-  { "brew", &brew_mach, 0, NULL, brew_model_init},
+  // MODEL_NAME   MODEL_MACH        MODEL_NUM   MODEL_TIMING    MODEL_INIT
+  { "brew",       &brew_mach,       0,          NULL,           brew_model_init},
+  { "espresso",   &brew_mach,       1,          NULL,           espresso_model_init},
   { 0, NULL, 0, NULL, NULL, }
 };
 
@@ -966,6 +963,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
           struct bfd *abfd, char * const *argv)
 {
   int i;
+  bool is_user_mode;
   SIM_DESC sd = sim_state_alloc (kind, cb);
   SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
   STATE_MACHS(sd) = brew_sim_machs;
@@ -1023,12 +1021,27 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
 
   /* CPU specific initialization. */
   /* That is: setting up callbacks for load/store registers and for get/set of PC */
-//  for (i = 0; i < MAX_NR_PROCESSORS; ++i)
-//    {
-//      sim_cpu *scpu = STATE_CPU (sd, i);
-//
-//      brew_init_cpu(scpu);
-//    }
+  /*    ^----  this is not true anymore. That's done in brew_init_cpu. */
+  /*  what we do here is set things up based on 'sd', such as initial operating mode */
+
+  switch (STATE_ENVIRONMENT(sd))
+    {
+    case USER_ENVIRONMENT:
+    case VIRTUAL_ENVIRONMENT:
+      is_user_mode = true;
+      break;
+    case OPERATING_ENVIRONMENT:
+      is_user_mode = false;
+      break;
+    default:
+      SIM_ASSERT(false);
+    }
+  for (i = 0; i < MAX_NR_PROCESSORS; ++i)
+    {
+      sim_cpu *scpu = STATE_CPU (sd, i);
+
+      reset_cpu(&scpu->sim_state, is_user_mode);
+    }
 
   return sd;
 }
