@@ -94,6 +94,12 @@ COMPILE.post = -c -o $@
 COMPILE = $(ECHO_CC) $(COMPILE.pre) $(ALL_CFLAGS) $(COMPILE.post)
 POSTCOMPILE = @true
 
+# Note that these are overridden by GNU make-specific code below if
+# GNU make is used.  The overrides implement dependency tracking.
+COMPILE.CXX.pre = $(CXX) $(CXX_DIALECT)
+COMPILE.CXX.post = -c -o $@
+COMPILE.CXX = $(ECHO_CC) $(COMPILE.CXX.pre) $(ALL_CFLAGS) $(COMPILE.CXX.post)
+
 # igen leaks memory, and therefore makes AddressSanitizer unhappy.  Disable
 # leak detection while running it.
 IGEN = ../igen/igen$(EXEEXT)
@@ -419,9 +425,11 @@ test-hw-events: $(srccom)/hw-events.c libsim.a
 	$(CC) $(ALL_CFLAGS) -DMAIN -o test-hw-events$(EXEEXT) \
 		$(srccom)/hw-events.c libsim.a $(EXTRA_LIBS)
 
+SIM_CSRC ?= $(SIM_OBJS:.o=.c)
+
 # See sim_pre_argv_init and sim_module_install in sim-module.c for more details.
 modules.c: stamp-modules ; @true
-stamp-modules: Makefile $(SIM_OBJS:.o=.c)
+stamp-modules: Makefile $(SIM_CSRC) $(SIM_CPPSRC)
 	$(ECHO_STAMP) modules.c
 	$(SILENCE) LANG=C ; export LANG ; \
 	LC_ALL=C ; export LC_ALL ; \
