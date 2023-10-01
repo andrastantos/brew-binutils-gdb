@@ -188,6 +188,7 @@ AC_SUBST(sim_float)
 dnl Some arches have unique configure flags.
 m4_include([frv/acinclude.m4])
 m4_include([rx/acinclude.m4])
+m4_include([brew/acinclude.m4])
 
 AC_CONFIG_FILES([arch-subdir.mk Makefile .gdbinit:gdbinit.in])
 AC_OUTPUT

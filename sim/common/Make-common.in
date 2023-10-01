@@ -97,8 +97,13 @@ POSTCOMPILE = @true
 # Note that these are overridden by GNU make-specific code below if
 # GNU make is used.  The overrides implement dependency tracking.
 COMPILE.CXX.pre = $(CXX) $(CXX_DIALECT)
-COMPILE.CXX.post = -c -o $@
-COMPILE.CXX = $(ECHO_CC) $(COMPILE.CXX.pre) $(ALL_CFLAGS) $(COMPILE.CXX.post)
+# COMPILE.post will get overwritten later on (in gdb/Makefile.in)
+# That file doesn't have a notion of a CXX version and since we don't
+# want anything special, we can simply reuse that.
+# To still allow for C++-specific post-flags, we retain this variable,
+# but keep it empty.
+COMPILE.CXX.post =
+COMPILE.CXX = $(ECHO_CXX) $(COMPILE.CXX.pre) $(ALL_CXXFLAGS) $(COMPILE.CXX.post) $(COMPILE.post)
 
 # igen leaks memory, and therefore makes AddressSanitizer unhappy.  Disable
 # leak detection while running it.
@@ -203,6 +208,10 @@ CGEN_INCLUDE_DEPS = \
 
 ## COMMON_POST_CONFIG_FRAG
 
+SIM_WARN_CXXFLAGS ?= $(SIM_WARN_CFLAGS)
+SIM_WERROR_CXXFLAGS ?= $(SIM_WERROR_CFLAGS)
+SIM_EXTRA_CXXFLAGS ?= $(SIM_EXTRA_CFLAGS)
+
 CONFIG_CFLAGS = \
 	-DHAVE_CONFIG_H \
 	$(SIM_BITSIZE) \
@@ -212,6 +221,15 @@ CONFIG_CFLAGS = \
 	$(SIM_WARN_CFLAGS) \
 	$(SIM_WERROR_CFLAGS) \
 	$(SIM_HARDWARE)
+CONFIG_CXXFLAGS = \
+	-DHAVE_CONFIG_H \
+	$(SIM_BITSIZE) \
+	$(SIM_FLOAT) \
+	$(SIM_HW_CFLAGS) \
+	$(SIM_INLINE) \
+	$(SIM_WARN_CXXFLAGS) \
+	$(SIM_WERROR_CFXXLAGS) \
+	$(SIM_HARDWARE)
 CSEARCH = -I. -I$(srcdir) -I../common -I$(srccom) \
   -I../../include -I$(srcroot)/include \
   -I../../bfd -I$(srcroot)/bfd \
@@ -219,6 +237,7 @@ CSEARCH = -I. -I$(srcdir) -I../common -I$(srccom) \
   -I../.. \
   $(INTL_CFLAGS)
 ALL_CFLAGS = $(CONFIG_CFLAGS) $(CSEARCH) $(INCGNU) $(SIM_EXTRA_CFLAGS) $(CFLAGS)
+ALL_CXXFLAGS = $(CONFIG_CXXFLAGS) $(CSEARCH) $(INCGNU) $(SIM_EXTRA_CXXFLAGS) $(CXXFLAGS)
 BUILD_CFLAGS = $(CFLAGS_FOR_BUILD) $(CSEARCH)
 
 COMMON_DEP_CFLAGS = $(CONFIG_CFLAGS) $(CSEARCH) $(SIM_EXTRA_CFLAGS)
