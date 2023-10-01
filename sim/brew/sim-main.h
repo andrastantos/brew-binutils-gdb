@@ -36,11 +36,16 @@ typedef struct {
   uint32_t value;
   bool is_valid;
 } mem_trace_s;
+
+typedef void (*free_model_info_ftype)(sim_cpu *);
+
 struct _sim_cpu {
   sim_cpu_base base;
   brew_sim_state sim_state;
   char decode_buf[255];
   mem_trace_s mem_trace;
+  void *model_info; // pointer to model-specific data
+  free_model_info_ftype free_model_info; // pointer to function to free model-specific data
 };
 
 // sim_engine_halt normally tries to set the PC to whatever

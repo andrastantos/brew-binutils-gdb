@@ -55,6 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "opcode/brew.h"
 #include "opcode/brew-abi.h"
 #include "gdb-if.h"
+#include "models.h"
 
 #define MAKE_INT(l0, type) (brew_typed_reg) { l0, type }
 
@@ -896,18 +897,6 @@ full_insn_class_name(SIM_CPU *scpu, int insn_class_code)
 static const SIM_MODEL brew_models[];
 
 static void
-brew_model_init(SIM_CPU *cpu)
-{
-  printf("Setting model to BREW\n");
-}
-
-static void
-espresso_model_init(SIM_CPU *cpu)
-{
-  printf("Setting model to ESPRESSO\n");
-}
-
-static void
 brew_init_cpu(SIM_CPU *scpu)
 {
   CPU_REG_FETCH(scpu) = brew_reg_fetch;
@@ -946,6 +935,7 @@ static const SIM_MODEL brew_models[] =
   // MODEL_NAME   MODEL_MACH        MODEL_NUM   MODEL_TIMING    MODEL_INIT
   { "brew",       &brew_mach,       0,          NULL,           brew_model_init},
   { "espresso",   &brew_mach,       1,          NULL,           espresso_model_init},
+  { "anachron",   &brew_mach,       2,          NULL,           anachron_model_init},
   { 0, NULL, 0, NULL, NULL, }
 };
 

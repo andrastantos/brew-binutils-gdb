@@ -19,12 +19,24 @@
 
 dtbdir = $(datadir)/gdb/dtb
 
+.cpp.o:
+	$(COMPILE.CXX) $<
+	$(POSTCOMPILE)
+
 SIM_OBJS = \
 	$(SIM_NEW_COMMON_OBJS) \
 	interp.o \
+	models.o \
 	sim-resume.o
 
-SIM_EXTRA_LIBS = -lm -lz
+SIM_CSRC = $(SIM_NEW_COMMON_OBJS:.o=.c) \
+	interp.o \
+	sim-resume.o
+
+SIM_CPPSRC = \
+	models.cpp \
+
+SIM_EXTRA_LIBS = -lm -lz -lstdc++
 SIM_EXTRA_INSTALL = install-dtb
 SIM_EXTRA_CFLAGS = -DDTB="\"$(dtbdir)/brew-gdb.dtb\""
 
