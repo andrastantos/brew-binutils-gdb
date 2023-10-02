@@ -266,6 +266,7 @@ DONE:
   frag_now->fr_type = rs_fill
 
 #define A_RETURN() { \
+  DEBUG("    ====> INSN_CODE: 0x%04x", insn_code); \
   md_number_to_chars(frag, insn_code, 2); \
   dwarf2_emit_insn(insn_len); \
   return A_OK; \
@@ -428,25 +429,33 @@ static bool mem_subtype_to_opcode_st(int sub_type, bool is_invalidate, int *op_c
 static int action_load_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_pc_target;
+  bool is_call = tokens[0].parser_token == T_CALL;
+  const brew_parser_tokenS *mem_token = is_call ? &tokens[1] : &tokens[2];
+
   A_PROLOG(2);
-  A_CHECK(6);
+  A_CHECK(is_call ? 5 : 6);
 
   is_pc_target = tokens[0].parser_token == T_PC;
-  gas_assert(tokens[0].parser_token == T_REG || is_pc_target);
-  gas_assert(tokens[2].parser_token == T_MEM);
-  gas_assert(tokens[4].parser_token == T_REG);
-  if (is_pc_target)
+  gas_assert(tokens[0].parser_token == T_REG || is_pc_target || is_call);
+  gas_assert(mem_token[0].parser_token == T_MEM);
+  gas_assert(mem_token[2].parser_token == T_REG);
+  if (is_pc_target || is_call)
     {
+      if (mem_token[0].first_lexer_token->sub_type != ST_MEM_32)
+        {
+          as_bad(_("Branches and calls only support 32-bit memory accesses"));
+          return A_ERR;
+        }
       insn_code =
-        FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+        FIELD_D(is_call ? 0x4 : tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
         FIELD_C(0xe) |
         FIELD_B(0xe) |
-        FIELD_A(tokens[4].first_lexer_token->sub_type);
+        FIELD_A(mem_token[2].first_lexer_token->sub_type);
     }
   else
     {
       int op_code;
-      if (!mem_subtype_to_opcode_ld(tokens[2].first_lexer_token->sub_type, &op_code))
+      if (!mem_subtype_to_opcode_ld(mem_token[0].first_lexer_token->sub_type, &op_code))
         {
           as_bad(_("Invalid memory reference type for load"));
           return A_ERR;
@@ -455,7 +464,7 @@ static int action_load_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
         FIELD_D(tokens[0].first_lexer_token->sub_type) |
         FIELD_C(0xe) |
         FIELD_B(op_code) |
-        FIELD_A(tokens[4].first_lexer_token->sub_type);
+        FIELD_A(mem_token[2].first_lexer_token->sub_type);
     }
   A_RETURN();
 }
@@ -463,38 +472,63 @@ static int action_load_reg(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
 static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_pc_target;
+  bool is_call;
   bool is_tiny;
   bool is_tiny_prefix;
-  const brew_parser_tokenS *offs;
+  const brew_parser_tokenS *first_token = tokens;
+  const brew_parser_tokenS *mem_token;
+  const brew_parser_tokenS *mem_offset;
   const brew_parser_tokenS *base;
 
+  is_call = tokens[0].parser_token == T_CALL;
+  is_pc_target = first_token->parser_token == T_PC;
   is_tiny_prefix = (tokens[4].parser_token == T_TINY);
   is_tiny = (tokens[6].parser_token == T_TINY) || is_tiny_prefix;
 
   A_PROLOG(is_tiny ? 2 : 4);
-  A_CHECK(is_tiny ? 9 : 8);
+  A_CHECK(is_call ? 7 : is_tiny ? 9 : 8);
 
-  offs = is_tiny ? &tokens[7] : &tokens[6];
-  base = is_tiny_prefix ? &tokens[5] : &tokens[4];
-
-  is_pc_target = tokens[0].parser_token == T_PC;
-  gas_assert(tokens[0].parser_token == T_REG || is_pc_target);
-  gas_assert(tokens[2].parser_token == T_MEM);
-  gas_assert(base->parser_token == T_REG);
-  gas_assert(offs->parser_token == ~T_RBRACKET);
-  if (is_tiny && (offs-1)->first_lexer_token->sub_type == ST_MINUS)
+  if(is_tiny && (is_call || is_pc_target))
     {
-      as_bad(_("Tiny offsets only support '+'. Encode negation after the 'tiny' marker"));
+      as_bad(_("Tiny offsets are not supported for calls and branches"));
+      return A_ERR;
     }
-  if (!parse_expression(is_tiny ? offs->first_lexer_token : (offs-1)->first_lexer_token, offs->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
+
+  mem_token = is_call ? &tokens[1] : &tokens[2];
+  mem_offset = is_tiny ? &mem_token[5] : &mem_token[4];
+  base = is_tiny_prefix ? &mem_token[3] : &mem_token[2];
+
+  gas_assert(first_token->parser_token == T_REG || is_pc_target || is_call);
+  gas_assert(mem_token->parser_token == T_MEM);
+  gas_assert(base->parser_token == T_REG);
+  gas_assert(mem_offset->parser_token == ~T_RBRACKET);
+  if (is_tiny)
+    {
+      if ((mem_offset-1)->first_lexer_token->sub_type == ST_MINUS)
+        {
+          as_bad(_("Tiny offsets only support '+'. Encode negation after the 'tiny' marker"));
+          return A_ERR;
+        }
+      if (mem_token->first_lexer_token->sub_type != ST_MEM_32)
+        {
+          as_bad(_("Tiny offsets only support 32-bit memory accesses"));
+          return A_ERR;
+        }
+    }
+  if (!parse_expression(is_tiny ? mem_offset->first_lexer_token : (mem_offset-1)->first_lexer_token, mem_offset->last_lexer_token, frag, is_tiny ? 0 : 2, insn_len, false, is_tiny ? BFD_RELOC_BREW_7 : BFD_RELOC_16))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
     }
-  if (is_pc_target)
+  if (is_pc_target || is_call)
     {
+      if (mem_token->first_lexer_token->sub_type != ST_MEM_32)
+        {
+          as_bad(_("Branches and calls only support 32-bit memory accesses"));
+          return A_ERR;
+        }
       insn_code =
-        FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+        FIELD_D(is_call ? 0x4 : first_token->first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
         FIELD_C(0xf) |
         FIELD_B(0xe) |
         FIELD_A(base->first_lexer_token->sub_type);
@@ -511,7 +545,7 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
             return A_ERR;
         }
       insn_code =
-        FIELD_D(tokens[0].first_lexer_token->sub_type) |
+        FIELD_D(first_token->first_lexer_token->sub_type) |
         FIELD_C(0xd) |
         FIELD_B(0x0) |
         FIELD_A(base->first_lexer_token->sub_type & 1);
@@ -519,7 +553,7 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
   else
     {
       int op_code;
-      if (!mem_subtype_to_opcode_ld(tokens[2].first_lexer_token->sub_type, &op_code))
+      if (!mem_subtype_to_opcode_ld(mem_token->first_lexer_token->sub_type, &op_code))
         {
           as_bad(_("Invalid memory reference type for load"));
           return A_ERR;
@@ -536,23 +570,30 @@ static int action_load_reg_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser
 static int action_load_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   bool is_pc_target;
+  bool is_call = tokens[0].parser_token == T_CALL;
+  const brew_parser_tokenS *mem_token = is_call ? &tokens[1] : &tokens[2];
   A_PROLOG(6);
-  A_CHECK(6);
+  A_CHECK(is_call ? 5 : 6);
 
   is_pc_target = tokens[0].parser_token == T_PC;
-  gas_assert(tokens[0].parser_token == T_REG || is_pc_target);
-  gas_assert(tokens[2].parser_token == T_MEM);
-  gas_assert(tokens[4].parser_token == ~T_RBRACKET);
-  if (!parse_expression(tokens[4].first_lexer_token, tokens[4].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_32))
+  gas_assert(tokens[0].parser_token == T_REG || is_pc_target || is_call);
+  gas_assert(mem_token[0].parser_token == T_MEM);
+  gas_assert(mem_token[2].parser_token == ~T_RBRACKET);
+  if (!parse_expression(mem_token[2].first_lexer_token, mem_token[2].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_32))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
     }
 
-  if (is_pc_target)
+  if (is_pc_target || is_call)
     {
+      if (mem_token[0].first_lexer_token->sub_type != ST_MEM_32)
+        {
+          as_bad(_("PC loads only support 32-bit memory accesses"));
+          return A_ERR;
+        }
       insn_code =
-        FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+        FIELD_D(is_call ? 0x4 : tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
         FIELD_C(0xf) |
         FIELD_B(0xe) |
         FIELD_A(0xf);
@@ -560,7 +601,7 @@ static int action_load_ofs(void *context ATTRIBUTE_UNUSED, const brew_parser_tok
   else
     {
       int op_code;
-      if (!mem_subtype_to_opcode_ld(tokens[2].first_lexer_token->sub_type, &op_code))
+      if (!mem_subtype_to_opcode_ld(mem_token[0].first_lexer_token->sub_type, &op_code))
         {
           as_bad(_("Invalid memory reference type for load"));
           return A_ERR;
@@ -751,18 +792,20 @@ static int action_store_csr(void *context ATTRIBUTE_UNUSED, const brew_parser_to
 
 static int action_move_imm_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
+  bool is_call = tokens[0].parser_token == T_CALL;
+  const brew_parser_tokenS *imm_token = is_call ? &tokens[1] : &tokens[2];
   A_PROLOG(6);
-  A_CHECK(3);
+  A_CHECK(is_call ? 2 : 3);
 
-  gas_assert(tokens[0].parser_token == T_PC);
-  gas_assert(tokens[2].parser_token == ~T_NULL);
-  if (!parse_expression(tokens[2].first_lexer_token, tokens[2].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_32))
+  gas_assert(tokens[0].parser_token == T_PC || is_call);
+  gas_assert(imm_token[0].parser_token == ~T_NULL);
+  if (!parse_expression(imm_token[0].first_lexer_token, imm_token[0].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_32))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
     }
   insn_code =
-    FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+    FIELD_D(is_call ? 0x4 : tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
     FIELD_C(0x0) |
     FIELD_B(0xe) |
     FIELD_A(0xf);
@@ -771,18 +814,20 @@ static int action_move_imm_to_pc(void *context ATTRIBUTE_UNUSED, const brew_pars
 
 static int action_move_short_imm_to_pc(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
+  bool is_call = tokens[0].parser_token == T_CALL;
+  const brew_parser_tokenS *imm_token = is_call ? &tokens[2] : &tokens[3];
   A_PROLOG(4);
-  A_CHECK(4);
+  A_CHECK(is_call ? 3 : 4);
 
-  gas_assert(tokens[0].parser_token == T_PC);
-  gas_assert(tokens[3].parser_token == ~T_NULL);
-  if (!parse_expression(tokens[3].first_lexer_token, tokens[3].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_16))
+  gas_assert(tokens[0].parser_token == T_PC || is_call);
+  gas_assert(imm_token[0].parser_token == ~T_NULL);
+  if (!parse_expression(imm_token[0].first_lexer_token, imm_token[0].last_lexer_token, frag, 2, insn_len, false, BFD_RELOC_16))
     {
       as_bad(_("Can't parse expression"));
       return A_ERR;
     }
   insn_code =
-    FIELD_D(tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
+    FIELD_D(is_call ? 0x4 : tokens[0].first_lexer_token->sub_type == ST_PC_PC ? 0x2 : 0x3) |
     FIELD_C(0x0) |
     FIELD_B(0xf) |
     FIELD_A(0xe);
@@ -1815,6 +1860,11 @@ static const brew_parser_tok_type_t raw_insn[] = {
   PATTERN(T_PC, T_ASSIGN, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                                  ACTION(action_load_ofs),
   PATTERN(T_PC, T_ASSIGN, ~T_NULL),                                                                                                     ACTION(action_move_imm_to_pc),
   PATTERN(T_PC, T_ASSIGN, T_SHORT, ~T_NULL),                                                                                            ACTION(action_move_short_imm_to_pc),
+  PATTERN(T_CALL, T_MEM, T_LBRACKET, T_REG, T_RBRACKET),                                                                                ACTION(action_load_reg),
+  PATTERN(T_CALL, T_MEM, T_LBRACKET, T_REG, T_PLUS_MINUS, ~T_RBRACKET, T_RBRACKET),                                                     ACTION(action_load_reg_ofs),
+  PATTERN(T_CALL, T_MEM, T_LBRACKET, ~T_RBRACKET, T_RBRACKET),                                                                          ACTION(action_load_ofs),
+  PATTERN(T_CALL, ~T_NULL),                                                                                                             ACTION(action_move_imm_to_pc),
+  PATTERN(T_CALL, T_SHORT, ~T_NULL),                                                                                                    ACTION(action_move_short_imm_to_pc),
 
   PATTERN(T_TYPE, T_REG, T_ASSIGN, T_REG),                                                                                              ACTION(action_set_type_reg),
   PATTERN(T_TYPE, T_REG, T_ASSIGN, T_TYPENAME),                                                                                         ACTION(action_set_type_imm),

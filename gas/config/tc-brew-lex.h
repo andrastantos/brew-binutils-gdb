@@ -60,6 +60,7 @@ enum TOK_TYPES
   T_TYPENAME,
   T_SIGNED,
   T_ELLIPSIS,
+  T_CALL,
   T_UNKNOWN
 };
 

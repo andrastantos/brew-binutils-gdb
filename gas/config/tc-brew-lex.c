@@ -40,8 +40,6 @@ static const char *tok_names[] = {
   "T_ASSIGN",
   "T_PREFIX_OP",
   "T_TILDE",
-  "T_SWIZZLE",
-  "T_INTERPOLATE",
   "T_HAT",
   "T_BAR",
   "T_LSHIFT",
@@ -54,6 +52,7 @@ static const char *tok_names[] = {
   "T_TINY",
   "T_FULL",
   "T_MEM",
+  "T_CSR",
   "T_COMMA",
   "T_LBRACKET",
   "T_RBRACKET",
@@ -68,6 +67,7 @@ static const char *tok_names[] = {
   "T_TYPENAME",
   "T_SIGNED",
   "T_ELLIPSIS",
+  "T_CALL",
   "T_UNKNOWN"
 };
 
@@ -227,6 +227,7 @@ static const token_declS token_library[] = {
   { "0",            T_ZERO,          0 },
   { "1",            T_ONE,           0 },
   { "type",         T_TYPE,          0 },
+  { "call",         T_CALL,          0 },
   // NOTE: these type names are repeated in brew-decode.c Keep them in sync!
   { "int32",        T_TYPENAME,      BREW_REG_TYPE_INT32 },
   //{ "int16x2",      T_TYPENAME,      BREW_REG_TYPE_INT16x2 },
