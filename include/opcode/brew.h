@@ -33,20 +33,25 @@ typedef enum {
 } brew_reg_types;
 
 typedef enum {
-  BREW_EXCEPTION_FILL,
-  BREW_EXCEPTION_BREAK,
-  BREW_EXCEPTION_SYSCALL,
-  BREW_EXCEPTION_SWI3,
-  BREW_EXCEPTION_SWI4,
-  BREW_EXCEPTION_SWI5,
-  BREW_EXCEPTION_SII,
-  BREW_EXCEPTION_HWI,
-  BREW_EXCEPTION_UNALIGNED,
-  BREW_EXCEPTION_ACCESS_VIOLATION,
-  BREW_EXCEPTION_F_DIV_BY_ZERO,
-  BREW_EXCEPTION_F_NEG_RSQRT,
-  // We have some unused exception vector indices here.
-  BREW_EXCEPTION_NONE = 0xf
+  BREW_EXCEPTION_NONE =                  0x0000,
+  BREW_EXCEPTION_RESET =                 0x0000, // Hardware reset
+  BREW_EXCEPTION_HWI =                   0x0010, // Hardware interrupt (only in TASK mode)
+  BREW_EXCEPTION_FILL =                  0x0020, // SWI 0 instruction executed (FILL)
+  BREW_EXCEPTION_SWI_0 =                 0x0020, // SWI 0 instruction executed (FILL)
+  BREW_EXCEPTION_BREAK =                 0x0021, // SWI 1 instruction executed (BREAK)
+  BREW_EXCEPTION_SWI_1 =                 0x0021, // SWI 1 instruction executed (BREAK)
+  BREW_EXCEPTION_SYSCALL =               0x0022, // SWI 2 instruction executed (SYSCALL)
+  BREW_EXCEPTION_SWI_2 =                 0x0022, // SWI 2 instruction executed (SYSCALL)
+  BREW_EXCEPTION_SWI_3 =                 0x0023, // SWI 3 instruction executed
+  BREW_EXCEPTION_SWI_4 =                 0x0024, // SWI 4 instruction executed
+  BREW_EXCEPTION_SWI_5 =                 0x0025, // SWI 5 instruction executed
+  BREW_EXCEPTION_SWI_6 =                 0x0026, // SWI 6 instruction executed
+  BREW_EXCEPTION_SWI_7 =                 0x0027, // SWI 7 instruction executed
+  BREW_EXCEPTION_UNKNOWN_INST =          0x0030, // Undefined instruction
+  BREW_EXCEPTION_TYPE =                  0x0031, // Type error in instruction operands
+  BREW_EXCEPTION_UNALIGNED =             0x0032, // Unaligned memory access
+  ESPRESSO_EXCEPTION_INST_AV =           0x0040, // Instruction fetch AV
+  ESPRESSO_EXCEPTION_MEM_AV =            0x0041, // Memory access AV
 } brew_exception_type;
 
 typedef enum
@@ -76,15 +81,22 @@ typedef enum
   BREW_INSN_CLS_MAX
 } brew_insn_classes;
 
-typedef brew_exception_type (*brew_read_mem_ftype)(void *context, uint32_t vma, int length, uint32_t *value);
-typedef brew_exception_type (*brew_write_mem_ftype)(void *context, uint32_t vma, int length, uint32_t value);
-typedef void (*brew_handle_stu_ftype)(void *context, uint32_t pc, bool is_task_mode);
+// forward-declare our struct. This is going to be only valid for simulation contexts, but this header is used everywhere.
+struct _sim_cpu;
+
+typedef void (*brew_read_mem_ftype)(struct _sim_cpu *scpu, uint32_t vma, int length, uint32_t *value);
+typedef void (*brew_write_mem_ftype)(struct _sim_cpu *scpu, uint32_t vma, int length, uint32_t value);
+typedef uint32_t (*brew_read_csr_ftype)(struct _sim_cpu *scpu, uint16_t csr_addr);
+typedef void (*brew_write_csr_ftype)(struct _sim_cpu *scpu, uint16_t csr_addr, uint32_t value);
+typedef void (*brew_handle_exception_ftype)(struct _sim_cpu *scpu);
+typedef void (*brew_reset_cpu_ftype)(struct _sim_cpu *scpu, bool is_user_mode_sim);
 #if __HAVE_FLOAT16 == 0
 #define _Float16 uint16_t
 #else
 #endif
 typedef _Float16 (*brew_rsqrt_fp16_ftype)(_Float16);
 typedef float (*brew_rsqrt_ftype)(float);
+typedef uint32_t (*virtual2physical_ftype)(uint32_t);
 
 typedef struct {
   uint32_t val;
@@ -99,19 +111,27 @@ typedef struct {
   uint32_t ntpc;
   uint32_t dirty_map;
   brew_insn_classes insn_class;
-  brew_exception_type insn_exception;
+  brew_exception_type ecause; // ecause for the current instruction. Gets reset for every instruction
+  brew_exception_type csr_ecause; // csr holding ecause. This is cleared on read
+  uint32_t csr_eaddr;
   bool is_task_mode;
   bool nis_task_mode;
 
   brew_read_mem_ftype read_mem;
   brew_write_mem_ftype write_mem;
-  brew_handle_stu_ftype handle_stu;
+  brew_read_csr_ftype read_csr;
+  brew_write_csr_ftype write_csr;
+  brew_handle_exception_ftype handle_exception;
+  brew_reset_cpu_ftype reset_cpu;
   fprintf_ftype tracer;
   void *tracer_strm;
 
   // helpers for floating point operations: this avoids linking all binutils utilities against a math library
   brew_rsqrt_fp16_ftype rsqrt_fp16;
   brew_rsqrt_ftype rsqrt;
+
+  // Function to convert from virtual to physical addresses. This can be different, depending on the simulated model
+  virtual2physical_ftype virtual2physical;
 } brew_sim_state;
 
 extern int brew_insn_len(uint16_t insn_code);

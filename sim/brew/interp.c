@@ -22,21 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 /* This must come before any other includes.  */
 #include "defs.h"
 
-#include <fcntl.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/time.h>
-#include <unistd.h>
-#include <utime.h>
-#include <time.h>
-#if ! defined __MINGW32__
-#include <sys/times.h>
-#endif // __MINGW32__
-#include <errno.h>
 #include <math.h>
 #include "bfd.h"
 #include "libiberty.h"
@@ -49,15 +39,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "sim-signal.h"
 #include "target-newlib-syscall.h"
 
-#include "newlib_syscalls.h"
-#include "newlib_stat.h"
-#include "brew-calls.h"
-#include "opcode/brew.h"
 #include "opcode/brew-abi.h"
+#include "opcode/brew.h"
 #include "gdb-if.h"
 #include "models.h"
 
-#define MAKE_INT(l0, type) (brew_typed_reg) { l0, type }
 
 #ifndef MIN
 #define MIN(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })
@@ -107,91 +93,90 @@ static void mem_trace_to_str(mem_trace_s *mem_trace, char *buffer)
     }
 }
 
-static brew_exception_type
-read_mem(void *context, uint32_t vma, int length, uint32_t *value)
+static void check_alignment(sim_cpu *scpu, uint32_t addr, int length)
 {
-  sim_cpu *scpu = (sim_cpu*)context;
+  brew_sim_state *sim_state = &scpu->sim_state;
   SIM_DESC sd = CPU_STATE(scpu);
 
-  switch (length)
-    {
+  switch (length) {
     case 8:
-      *value = sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, vma);
-      break;
+    return;
     case 16:
-      if ((vma & 1) != 0)
-        return BREW_EXCEPTION_UNALIGNED;
-      *value = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, vma);
-      break;
+      if ((addr & 1) != 0)
+        {
+          sim_state->ecause = BREW_EXCEPTION_UNALIGNED;
+          sim_state->csr_eaddr = addr;
+        }
+    return;
     case 32:
-      if ((vma & 3) != 0)
-        return BREW_EXCEPTION_UNALIGNED;
-      *value = sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, vma);
-      break;
-    default:
-      SIM_ASSERT(false);
-    }
+      if ((addr & 3) != 0)
+        {
+          sim_state->ecause = BREW_EXCEPTION_UNALIGNED;
+          sim_state->csr_eaddr = addr;
+        }
+    return;
+  }
+  SIM_ASSERT(false);
+}
+
+static void read_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t *value)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+  brew_sim_state *sim_state = &scpu->sim_state;
+  uint32_t pma;
+
+  check_alignment(scpu, vma, length);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return;
+
+  brew_model_v2p_addr(scpu, vma, acc_write, &pma);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return;
+
   record_mem_trace(scpu, vma, length,  false, *value);
-  return BREW_EXCEPTION_NONE;
+  switch (length) {
+    case 8:  *value = sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, pma); return;
+    case 16: *value = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, pma); return;
+    case 32: *value = sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, pma); return;
+    default: SIM_ASSERT(false);
+  }
 }
 
-static brew_exception_type
-write_mem(void *context, uint32_t vma, int length, uint32_t value)
+static void write_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t value)
 {
-  sim_cpu *scpu = (sim_cpu*)context;
   SIM_DESC sd = CPU_STATE(scpu);
+  brew_sim_state *sim_state = &scpu->sim_state;
+  uint32_t pma;
 
-  switch (length)
-    {
-    case 8:
-      sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, vma, value);
-      break;
-    case 16:
-      if ((vma & 1) != 0)
-        return BREW_EXCEPTION_UNALIGNED;
-      sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, vma, value);
-      break;
-    case 32:
-      if ((vma & 3) != 0)
-        return BREW_EXCEPTION_UNALIGNED;
-      sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, vma, value);
-      break;
-    default:
-      SIM_ASSERT(false);
-    }
+  check_alignment(scpu, vma, length);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return;
+
+  brew_model_v2p_addr(scpu, vma, acc_write, &pma);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return;
+
   record_mem_trace(scpu, vma, length, true, value);
-  return BREW_EXCEPTION_NONE;
+  switch (length) {
+    case 8:  sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, pma, value); return;
+    case 16: sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, pma, value); return;
+    case 32: sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, pma, value); return;
+    default: SIM_ASSERT(false);
+  }
 }
 
-static void
-handle_stu(void *context, uint32_t pc, bool is_task_mode ATTRIBUTE_UNUSED)
-{
-  sim_cpu *scpu = (sim_cpu*)context;
-  scpu->sim_state.is_task_mode = true;
-}
 
-static void
-reset_cpu(brew_sim_state *sim_state, bool is_user_mode_sim)
-{
-  sim_state->dirty_map = 0;
-  sim_state->spc = 0;
-  sim_state->tpc = 0;
-  sim_state->reg[BREW_REG_SP] = MAKE_INT(0x01000000, BREW_REG_TYPE_INT32); // Setting $sp to something meaningful
-  sim_state->is_task_mode = is_user_mode_sim;
-  /* FIXME: do we want to get some other state in the registers? */
-  /* Such as:
-     - explicit randomization
-     - results of POST
-     - version/revision info
-  */
-}
+
 
 static void
 setup_sim_state(sim_cpu *scpu, bool is_user_mode_sim)
 {
   scpu->sim_state.read_mem = read_mem;
   scpu->sim_state.write_mem = write_mem;
-  scpu->sim_state.handle_stu = handle_stu;
+  scpu->sim_state.write_csr = brew_model_write_csr;
+  scpu->sim_state.read_csr = brew_model_read_csr;
+  scpu->sim_state.handle_exception = brew_model_handle_exception;
+  scpu->sim_state.reset_cpu = brew_model_reset_cpu;
   scpu->sim_state.rsqrt_fp16 = rsqrt_fp16;
   scpu->sim_state.rsqrt = rsqrt;
   if (TRACE_P(scpu, TRACE_INSN_IDX))
@@ -199,7 +184,6 @@ setup_sim_state(sim_cpu *scpu, bool is_user_mode_sim)
   else
     scpu->sim_state.tracer = NULL;
   scpu->sim_state.tracer_strm = scpu->decode_buf;
-  //reset_cpu(&scpu->sim_state, is_user_mode_sim);
 }
 
 #if 0
@@ -227,311 +211,8 @@ convert_target_flags (unsigned int tflags)
 }
 #endif
 
-// Copies a string from SIM memory to host memory.
-// Returns a pointer to the string, WHICH NEEDS TO BE FREE-d
-static char *sim_core_read_str(sim_cpu *scpu, uint32_t vma)
-{
-  size_t alloc_size = 1024;
-  char *str = (char *)malloc(alloc_size);
-  size_t str_len = 0;
-  char *c = str;
-  SIM_DESC sd = CPU_STATE(scpu);
 
-  SIM_ASSERT(str != NULL);
-  do
-    {
-      *c = sim_core_read_1(scpu, CPU_PC_GET(scpu), read_map, vma);
-      if (*c == 0)
-        break;
-      ++c;
-      ++str_len;
-      ++vma;
-      if (str_len >= alloc_size)
-        {
-          alloc_size *= 2;
-          str = (char *)realloc(str, alloc_size);
-          SIM_ASSERT(str != NULL);
-          c = str+str_len;
-        }
-    } while (true);
-  return str;
-}
 
-#define SET_ERRNO(value) { SIM_REG_T(BREW_REG_SYSCALL_ERRNO) = MAKE_INT(value, BREW_REG_TYPE_INT32); }
-
-static int marshal_o_flags_from_sim(int oflags)
-{
-  #define  NEWLIB_O_RDONLY    0x000000
-  #define  NEWLIB_O_WRONLY    0x000001
-  #define  NEWLIB_O_RDWR      0x000002
-  #define  NEWLIB_O_APPEND    0x000008
-  #define  NEWLIB_O_CREAT     0x000200
-  #define  NEWLIB_O_TRUNC     0x000400
-  #define  NEWLIB_O_EXCL      0x000800
-  #define  NEWLIB_O_SYNC      0x002000
-  #define  NEWLIB_O_NONBLOCK  0x004000
-  #define  NEWLIB_O_NOCTTY    0x008000
-  #define  NEWLIB_O_CLOEXEC   0x040000
-  #define  NEWLIB_O_NOFOLLOW  0x100000
-  #define  NEWLIB_O_DIRECTORY 0x200000
-  //#define  NEWLIB_O_EXEC      0x400000 - no direct equivalent on host?
-  int ret_val = 0;
-  if ((oflags & NEWLIB_O_RDONLY) != 0)    ret_val |= O_RDONLY;
-  if ((oflags & NEWLIB_O_WRONLY) != 0)    ret_val |= O_WRONLY;
-  if ((oflags & NEWLIB_O_RDWR) != 0)      ret_val |= O_RDWR;
-  if ((oflags & NEWLIB_O_APPEND) != 0)    ret_val |= O_APPEND;
-  if ((oflags & NEWLIB_O_CREAT) != 0)     ret_val |= O_CREAT;
-  if ((oflags & NEWLIB_O_TRUNC) != 0)     ret_val |= O_TRUNC;
-  if ((oflags & NEWLIB_O_EXCL) != 0)      ret_val |= O_EXCL;
-  if ((oflags & NEWLIB_O_SYNC) != 0)      ret_val |= O_SYNC;
-  if ((oflags & NEWLIB_O_NONBLOCK) != 0)  ret_val |= O_NONBLOCK;
-  if ((oflags & NEWLIB_O_NOCTTY) != 0)    ret_val |= O_NOCTTY;
-  if ((oflags & NEWLIB_O_CLOEXEC) != 0)   ret_val |= O_CLOEXEC;
-  if ((oflags & NEWLIB_O_NOFOLLOW) != 0)  ret_val |= O_NOFOLLOW;
-  if ((oflags & NEWLIB_O_DIRECTORY) != 0) ret_val |= O_DIRECTORY;
-  return ret_val;
-}
-
-#define SIM_REG_T(idx) scpu->sim_state.dirty_map |= (1<<idx); scpu->sim_state.reg[idx]
-
-static void handle_syscall(SIM_DESC sd, sim_cpu *scpu, uint32_t pc)
-{
-  // Syscalls follow normal function-call ABI with the addition that
-  // $r3 points to 'errno' on entry.
-  // The ABI declares that $r8...$r14 needs to maintain it's value
-  // accross calls. This applies to SYSCALLs too. $sp and $fp need
-  // to be preserved as well. $r3...$r7 can change, though it's quite
-  // possible that a true executive implementaton would preserve those
-  // as well. In the simulator, we'll only override the return value
-  // register(s) and preserve all other.
-  //
-  // The syscall number is held at the 16-bit address after the SYSCALL
-  // instruction. This is the address where the PC points to in real HW,
-  // but NOT where it points in the simulator.
-  // $pc needs to be advanced by 4 prior returning from the SYSCALL
-  // into task mode. Again, the simulator - being task-mode only for now -
-  // only needs to worry about setting the PC up appropriately.
-  //
-  // NOTE: there's actually a generic syscall interface in the simulator framework.
-  //       This is how it's called:
-  //  /* XXX: We don't pass back the actual errno value.  */
-  //  gr[RET1] = sim_syscall (cpu, gr[TRAPCODE], gr[PARM1], gr[PARM2], gr[PARM3], gr[PARM4]);
-  //
-  // I'm not sure how it handles mapping of structures and constant between host
-  // and sim. It probably assumes they're the same, which is incorrect with newlib.
-  // So, for now, I'll leave this code here.
-
-  uint16_t syscall_no;
-  uint32_t arg1 = scpu->sim_state.reg[BREW_REG_ARG0].val;
-  uint32_t arg2 = scpu->sim_state.reg[BREW_REG_ARG1].val;
-  uint32_t arg3 = scpu->sim_state.reg[BREW_REG_ARG2].val;
-  uint32_t arg4 = scpu->sim_state.reg[BREW_REG_ARG3].val;
-  char *str1;
-  char *str2;
-  int ret_val;
-  int flags;
-
-  syscall_no = sim_core_read_aligned_2(scpu, pc, exec_map, pc+2);
-  scpu->sim_state.ntpc = scpu->sim_state.tpc + 4; // skip over syscall insn as well as the syscal number before returning.
-  switch (syscall_no) {
-    case SYS_exit:
-      // simulated process terminating: let's terminate too!
-      sim_engine_halt(sd, scpu, NULL, sim_pc_get(scpu), sim_exited, arg1);
-      //exit(arg1);
-      break;
-    case SYS_open:
-    {
-      uint32_t mode;
-      str1 = sim_core_read_str(scpu, arg1);
-      // We need to map some flags
-      flags = marshal_o_flags_from_sim(arg2);
-      // mode is a VAARG argument. Even so, those come through registers as well, just as regular arguments.
-      mode = arg3;
-
-      fflush(stdout);
-
-      //printf("SIM OPEN: %s with flags: %x, local flags are: %x and mode 0%o\n", str1, arg2, flags, mode);
-      ret_val = open(str1, flags, mode);
-      //printf("SIM OPEN returned: %d, errno: %d\n", ret_val, errno);
-      free(str1);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == -1)
-        SET_ERRNO(errno);
-      break;
-    }
-    case SYS_close:
-      if (arg1 > 2)
-        ret_val = close(arg1);
-      else
-        ret_val = 0;
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == -1)
-        SET_ERRNO(errno);
-      break;
-    case SYS_read: {
-      void *buffer = malloc(arg3);
-      ret_val = read(arg1, buffer, arg3);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val >= 0)
-        sim_core_write_buffer(sd, scpu, write_map, buffer, arg2, arg3);
-      else
-        SET_ERRNO(errno);
-      free(buffer);
-      break;
-    }
-    case SYS_write: {
-      void *buffer = malloc(arg3);
-      sim_core_read_buffer(sd, scpu, write_map, buffer, arg2, arg3);
-      ret_val = write(arg1, buffer, arg3);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == -1)
-        SET_ERRNO(errno);
-      free(buffer);
-      break;
-    }
-    case SYS_lseek:
-      ret_val = lseek(arg1, arg2, arg3);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == -1)
-        SET_ERRNO(errno);
-      break;
-    case SYS_unlink:
-      str1 = sim_core_read_str(scpu, arg1);
-      ret_val = unlink(str1);
-      free(str1);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == -1)
-        SET_ERRNO(errno);
-      break;
-    case SYS_getpid:
-      // Since we don't simulate multiple processes, we simply return the PID of the simulator.
-      ret_val = getpid();
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      break;
-#if ! defined __MINGW32__
-    case SYS_kill:
-      ret_val = kill(arg1, arg2);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == -1)
-        SET_ERRNO(errno);
-      break;
-#endif // __MINGW32__
-    case SYS_fstat: {
-      struct stat statbuf;
-      ret_val = fstat(arg1, &statbuf);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      // for now, simply return an error...
-      ret_val = -1;
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      SET_ERRNO(EOVERFLOW);
-      //SIM_ASSERT(false);
-      break;
-    }
-
-    // These are not implemented
-    case SYS_argvlen:
-    case SYS_argv:
-      TRACE_EVENTS (scpu, "Unknown SYSCALL: %d", syscall_no);
-      sim_engine_halt(sd, scpu, NULL, sim_pc_get(scpu), sim_stopped, SIM_SIGTRAP);
-      break;
-    case SYS_chdir:
-      str1 = sim_core_read_str(scpu, arg1);
-      ret_val = chdir(str1);
-      free(str1);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == -1)
-        SET_ERRNO(errno);
-      break;
-    case SYS_stat: {
-      struct stat statbuf;
-      ret_val = fstat(arg1, &statbuf);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      SIM_ASSERT(false);
-      break;
-    }
-    case SYS_chmod:
-      str1 = sim_core_read_str(scpu, arg1);
-      ret_val = chmod(str1, arg2);
-      free(str1);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == -1)
-        SET_ERRNO(errno);
-      break;
-    case SYS_utime: {
-      struct utimbuf times;
-      str1 = sim_core_read_str(scpu, arg1);
-      ret_val = utime(str1, &times);
-      free(str1);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      SIM_ASSERT(false);
-      break;
-    }
-    case SYS_time: {
-      time_t now = time(NULL);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(now, BREW_REG_TYPE_INT32);
-      if (arg1 != 0)
-        {
-          sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, arg1, now);
-        }
-      break;
-    }
-    case SYS_gettimeofday: {
-      struct timeval time_val;
-      struct timezone time_zone;
-      ret_val = gettimeofday(&time_val, &time_zone);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      SIM_ASSERT(false);
-      break;
-    }
-#if ! defined __MINGW32__
-    case SYS_times: {
-      struct tms time_buf;
-      ret_val = times(&time_buf);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      SIM_ASSERT(false);
-      break;
-    }
-#endif // __MINGW32__
-#if ! defined __MINGW32__
-    case SYS_link:
-      str1 = sim_core_read_str(scpu, arg1);
-      str2 = sim_core_read_str(scpu, arg2);
-      ret_val = link(str1, str2);
-      free(str1);
-      free(str2);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == -1)
-        SET_ERRNO(errno);
-      break;
-#endif // __MINGW32__
-
-    // These are not implemented
-    case SYS_argc:
-    case SYS_argnlen:
-    case SYS_argn:
-    case SYS_reconfig:
-      TRACE_EVENTS (scpu, "Unknown SYSCALL: %d", syscall_no);
-      sim_engine_halt(sd, scpu, NULL, sim_pc_get(scpu), sim_stopped, SIM_SIGTRAP);
-      break;
-    // Brew-specific calls:
-    case BREW_isatty:
-      ret_val = isatty(arg1);
-      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == 0)
-        SET_ERRNO(errno);
-      break;
-
-    default:
-      TRACE_EVENTS (scpu, "Unknown SYSCALL: %d", syscall_no);
-      sim_engine_halt(sd, scpu, NULL, sim_pc_get(scpu), sim_stopped, SIM_SIGTRAP);
-      break;
-  }
-}
 
 static INLINE void
 str_append(char *dst, int dst_size, const char *src)
@@ -572,7 +253,9 @@ static INLINE void pre_exec(sim_cpu *scpu, uint16_t insn_code ATTRIBUTE_UNUSED)
   scpu->sim_state.nspc = scpu->sim_state.spc + (scpu->sim_state.is_task_mode ? 0 : insn_length);
   scpu->sim_state.nis_task_mode = scpu->sim_state.is_task_mode;
   scpu->sim_state.insn_class = BREW_INSN_CLS_UNKNOWN;
-  scpu->sim_state.insn_exception = BREW_EXCEPTION_NONE;
+  if (scpu->sim_state.ecause != BREW_EXCEPTION_NONE)
+    scpu->sim_state.csr_ecause = scpu->sim_state.ecause;
+  scpu->sim_state.ecause = BREW_EXCEPTION_NONE;
   scpu->decode_buf[0] = 0;
 }
 
@@ -580,21 +263,23 @@ static INLINE void trace_exception(sim_cpu *scpu, char *message, size_t message_
 {
   SIM_DESC sd = CPU_STATE(scpu);
 
-  switch(scpu->sim_state.insn_exception)
+  switch(scpu->sim_state.ecause)
     {
       case BREW_EXCEPTION_NONE: break;
+      case BREW_EXCEPTION_HWI:               str_append(message, message_size, "exception: hwi"); break;
       case BREW_EXCEPTION_FILL:              str_append(message, message_size, "exception: fill"); break;
       case BREW_EXCEPTION_BREAK:             str_append(message, message_size, "exception: break"); break;
       case BREW_EXCEPTION_SYSCALL:           str_append(message, message_size, "exception: syscall"); break;
-      case BREW_EXCEPTION_SWI3:              str_append(message, message_size, "exception: swi 3"); break;
-      case BREW_EXCEPTION_SWI4:              str_append(message, message_size, "exception: swi 4"); break;
-      case BREW_EXCEPTION_SWI5:              str_append(message, message_size, "exception: swi 5"); break;
-      case BREW_EXCEPTION_SII:               str_append(message, message_size, "exception: sii"); break;
-      case BREW_EXCEPTION_HWI:               str_append(message, message_size, "exception: hwi"); break;
+      case BREW_EXCEPTION_SWI_3:             str_append(message, message_size, "exception: swi 3"); break;
+      case BREW_EXCEPTION_SWI_4:             str_append(message, message_size, "exception: swi 4"); break;
+      case BREW_EXCEPTION_SWI_5:             str_append(message, message_size, "exception: swi 5"); break;
+      case BREW_EXCEPTION_SWI_6:             str_append(message, message_size, "exception: swi 6"); break;
+      case BREW_EXCEPTION_SWI_7:             str_append(message, message_size, "exception: swi 7"); break;
+      case BREW_EXCEPTION_UNKNOWN_INST:      str_append(message, message_size, "exception: unknown instruction"); break;
+      case BREW_EXCEPTION_TYPE:              str_append(message, message_size, "exception: type error"); break;
       case BREW_EXCEPTION_UNALIGNED:         str_append(message, message_size, "exception: unaligned access"); break;
-      case BREW_EXCEPTION_ACCESS_VIOLATION:  str_append(message, message_size, "exception: access violation"); break;
-      case BREW_EXCEPTION_F_DIV_BY_ZERO:     str_append(message, message_size, "exception: divide by zero"); break;
-      case BREW_EXCEPTION_F_NEG_RSQRT:       str_append(message, message_size, "exception: megative rsqrt"); break;
+      case ESPRESSO_EXCEPTION_INST_AV:       str_append(message, message_size, "exception: instruction fetch access violation"); break;
+      case ESPRESSO_EXCEPTION_MEM_AV:        str_append(message, message_size, "exception: memory access violation"); break;
       default:                               SIM_ASSERT(false); break;
     }
 }
@@ -648,7 +333,7 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
           STR_APPEND(message, " | ");
           STR_APPEND(message, fragment);
         }
-      if (scpu->sim_state.insn_exception != BREW_EXCEPTION_NONE)
+      if (scpu->sim_state.ecause != BREW_EXCEPTION_NONE)
         {
           SIDE_EFFECT_INDENT;
           trace_exception(scpu, message, sizeof(message));
@@ -673,42 +358,10 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
     ++PROFILE_TOTAL_INSN_COUNT(profile_data);
   }
   // Handle exceptions
-  if (scpu->sim_state.insn_exception != BREW_EXCEPTION_NONE)
+  if (scpu->sim_state.ecause != BREW_EXCEPTION_NONE)
     {
       scpu->sim_state.ntpc = scpu->sim_state.tpc; // Undo any pending changes to $tpc
-      // TODO: don't forget to set ntpc, nspc, nis_task_mode as appropriate
-      if (!scpu->sim_state.is_task_mode)
-        {
-          sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGTRAP);
-        }
-      switch (STATE_ENVIRONMENT(sd))
-        {
-        case USER_ENVIRONMENT:
-        case VIRTUAL_ENVIRONMENT:
-          // All but the SYSCALL exception are fatal in user-mode sim
-          switch(scpu->sim_state.insn_exception)
-            {
-            case BREW_EXCEPTION_FILL:              sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); break;
-            case BREW_EXCEPTION_BREAK:             sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGTRAP); break;
-            case BREW_EXCEPTION_SYSCALL:           handle_syscall(sd, scpu, pc); break;
-            case BREW_EXCEPTION_SWI3:              sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); break;
-            case BREW_EXCEPTION_SWI4:              sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); break;
-            case BREW_EXCEPTION_SWI5:              sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); break;
-            case BREW_EXCEPTION_SII:               sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); break;
-            case BREW_EXCEPTION_HWI:               sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGILL); break;
-            case BREW_EXCEPTION_UNALIGNED:         sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGSEGV); break;
-            case BREW_EXCEPTION_ACCESS_VIOLATION:  sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGSEGV); break;
-            case BREW_EXCEPTION_F_DIV_BY_ZERO:     sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGFPE); break;
-            case BREW_EXCEPTION_F_NEG_RSQRT:       sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGFPE); break;
-            default:                               sim_engine_halt(sd, scpu, NULL, pc, sim_stopped, SIM_SIGNONE); break;
-            }
-          break;
-        case OPERATING_ENVIRONMENT:
-          // In system mode simulations, we simply switch to scheduler mode
-          scpu->sim_state.nis_task_mode = false;
-        default:
-          SIM_ASSERT(false);
-        }
+      scpu->sim_state.handle_exception(scpu);
     }
   // Update PC
   scpu->sim_state.tpc = scpu->sim_state.ntpc;
@@ -879,7 +532,7 @@ free_state (SIM_DESC sd)
 
 /* Given the instruction class code, return a descriptive string */
 static const char *
-full_insn_class_name(SIM_CPU *scpu, int insn_class_code)
+full_insn_class_name(sim_cpu *scpu, int insn_class_code)
 {
   static const char *insn_length_names[] = {
     "",
@@ -897,7 +550,7 @@ full_insn_class_name(SIM_CPU *scpu, int insn_class_code)
 static const SIM_MODEL brew_models[];
 
 static void
-brew_init_cpu(SIM_CPU *scpu)
+brew_init_cpu(sim_cpu *scpu)
 {
   CPU_REG_FETCH(scpu) = brew_reg_fetch;
   CPU_REG_STORE(scpu) = brew_reg_store;
@@ -909,13 +562,13 @@ brew_init_cpu(SIM_CPU *scpu)
 }
 
 static void
-brew_prepare_run(SIM_CPU *cpu)
+brew_prepare_run(sim_cpu *cpu)
 {
 }
 
 static const SIM_MACH_IMP_PROPERTIES brew_imp_properties =
 {
-  sizeof(SIM_CPU),
+  sizeof(sim_cpu),
   0,
 };
 
@@ -982,10 +635,6 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
       return 0;
     }
 
-  /* FIXME: not sure what these do. Probably create and allocate some memory */
-  sim_do_command(sd," memory region 0x00000000,0x80000000"); /* main memory for program storage */
-  //sim_do_command(sd," memory region 0xE0000000,0x10000"); /* this is where the DTB goes, if loaded */
-
   /* Check for/establish the a reference program image.  */
   if(sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
     {
@@ -1030,7 +679,8 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
     {
       sim_cpu *scpu = STATE_CPU (sd, i);
 
-      reset_cpu(&scpu->sim_state, is_user_mode);
+      scpu->sim_state.reset_cpu(scpu, is_user_mode);
+      brew_model_setup_sim(scpu, sd);
     }
 
   return sd;

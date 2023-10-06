@@ -27,6 +27,7 @@ SIM_OBJS = \
 	$(SIM_NEW_COMMON_OBJS) \
 	interp.o \
 	models.o \
+	dv-con.o \
 	sim-resume.o
 
 SIM_CSRC = $(SIM_NEW_COMMON_OBJS:.o=.c) \
@@ -35,6 +36,7 @@ SIM_CSRC = $(SIM_NEW_COMMON_OBJS:.o=.c) \
 
 SIM_CPPSRC = \
 	models.cpp \
+	dv-con.cpp
 
 SIM_EXTRA_LIBS = -lm -lz -lstdc++
 SIM_EXTRA_INSTALL = install-dtb
