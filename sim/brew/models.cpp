@@ -12,6 +12,7 @@ extern "C" {
 #include <sys/times.h>
 #endif // __MINGW32__
 #include <errno.h>
+#include <math.h>
 
 extern "C" {
 #include "defs.h"
@@ -416,7 +417,9 @@ public:
   brew_model_info() {
     printf("Setting model to BREW\n");
   }
-  virtual ~brew_model_info() {}
+  virtual ~brew_model_info() {
+    printf("Done with model BREW\n");
+  }
 
   virtual void setup_sim(SIM_DESC sd) {
     // FIXME: not sure what these do. Probably create and allocate some memory
@@ -554,9 +557,123 @@ public:
   }
 };
 
+
+
+
+
+
+
+static void check_alignment(sim_cpu *scpu, uint32_t addr, int length)
+{
+  brew_sim_state *sim_state = &scpu->sim_state;
+  SIM_DESC sd = CPU_STATE(scpu);
+
+  switch (length) {
+    case 8:
+    return;
+    case 16:
+      if ((addr & 1) != 0)
+        {
+          sim_state->ecause = BREW_EXCEPTION_UNALIGNED;
+          sim_state->csr_eaddr = addr;
+        }
+    return;
+    case 32:
+      if ((addr & 3) != 0)
+        {
+          sim_state->ecause = BREW_EXCEPTION_UNALIGNED;
+          sim_state->csr_eaddr = addr;
+        }
+    return;
+  }
+  SIM_ASSERT(false);
+}
+
+
+static INLINE void record_mem_trace(sim_cpu *scpu, uint32_t addr, int access_size, bool is_write, uint32_t value)
+{
+  scpu->mem_trace.addr = addr;
+  scpu->mem_trace.is_write = is_write;
+  scpu->mem_trace.access_size = access_size;
+  scpu->mem_trace.value = value;
+  scpu->mem_trace.is_valid = true;
+}
+
+static void brew_model_v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t *p_addr) {
+  SIM_DESC sd = CPU_STATE(scpu);
+  SIM_ASSERT(p_addr != NULL);
+  brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
+  model_info->v2p_addr(scpu, v_addr, access_mode, *p_addr);
+}
+
+
+static void read_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t *value)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+  brew_sim_state *sim_state = &scpu->sim_state;
+  uint32_t pma;
+
+  check_alignment(scpu, vma, length);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return;
+
+  brew_model_v2p_addr(scpu, vma, acc_write, &pma);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return;
+
+  record_mem_trace(scpu, vma, length,  false, *value);
+  switch (length) {
+    case 8:  *value = sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, pma); return;
+    case 16: *value = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, pma); return;
+    case 32: *value = sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, pma); return;
+    default: SIM_ASSERT(false);
+  }
+}
+
+static void write_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t value)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+  brew_sim_state *sim_state = &scpu->sim_state;
+  uint32_t pma;
+
+  check_alignment(scpu, vma, length);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return;
+
+  brew_model_v2p_addr(scpu, vma, acc_write, &pma);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return;
+
+  record_mem_trace(scpu, vma, length, true, value);
+  switch (length) {
+    case 8:  sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, pma, value); return;
+    case 16: sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, pma, value); return;
+    case 32: sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, pma, value); return;
+    default: SIM_ASSERT(false);
+  }
+}
+
+
+
+
+static _Float16 rsqrt_fp16(_Float16 num)
+{
+  return 1.0f / sqrtf(num);
+}
+
+static float rsqrt(float num)
+{
+  return 1.0f / sqrtf(num);
+}
+
+
 static brew_model_info *get_model_info(sim_cpu *scpu)
 {
   return (brew_model_info *)(scpu->model_info);
+}
+
+void brew_free_model_info(SIM_CPU *scpu, SIM_DESC sd) {
+  scpu->sim_state.model_functions.free_model_info(scpu);
 }
 
 static void free_model_info(sim_cpu *scpu)
@@ -565,22 +682,17 @@ static void free_model_info(sim_cpu *scpu)
   scpu->model_info = nullptr;
 }
 
-void brew_model_init(sim_cpu *scpu)
-{
-  scpu->model_info = new brew_model_info();
-  scpu->free_model_info = free_model_info;
-}
+
+
 
 void espresso_model_init(sim_cpu *scpu)
 {
   scpu->model_info = new espresso_model_info();
-  scpu->free_model_info = free_model_info;
 }
 
 void anachron_model_init(sim_cpu *scpu)
 {
   scpu->model_info = new anachron_model_info();
-  scpu->free_model_info = free_model_info;
 }
 
 void brew_model_setup_sim(sim_cpu *scpu, SIM_DESC sd) {
@@ -588,35 +700,28 @@ void brew_model_setup_sim(sim_cpu *scpu, SIM_DESC sd) {
   return model_info->setup_sim(sd);
 }
 
-void brew_model_v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t *p_addr) {
-  SIM_DESC sd = CPU_STATE(scpu);
-  SIM_ASSERT(p_addr != NULL);
-  brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
-  model_info->v2p_addr(scpu, v_addr, access_mode, *p_addr);
-}
-
-uint32_t brew_model_read_csr(sim_cpu *scpu, uint16_t addr) {
+static uint32_t read_csr(sim_cpu *scpu, uint16_t addr) {
   brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
   return model_info->read_csr(scpu, addr);
 }
 
-void brew_model_write_csr(sim_cpu *scpu, uint16_t addr, uint32_t data) {
+static void write_csr(sim_cpu *scpu, uint16_t addr, uint32_t data) {
   brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
   return model_info->write_csr(scpu, addr, data);
 }
 
-void brew_model_handle_exception(sim_cpu *scpu) {
+static void handle_exception(sim_cpu *scpu) {
   brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
   return model_info->handle_exception(scpu);
 }
 
-void brew_model_handle_interrupt(sim_cpu *scpu) {
+static void brew_model_handle_interrupt(sim_cpu *scpu) {
   brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
   return model_info->handle_interrupt(scpu);
 }
 
 
-void brew_model_reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
+static void reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
 {
   brew_sim_state *sim_state = &scpu->sim_state;
 
@@ -631,4 +736,23 @@ void brew_model_reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
      - results of POST
      - version/revision info
   */
+}
+
+
+
+void brew_model_init(sim_cpu *scpu)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+
+  scpu->model_info = new brew_model_info();
+  brew_model_functions *model_functions = &scpu->sim_state.model_functions;
+  model_functions->free_model_info = free_model_info;
+  model_functions->read_mem = read_mem;
+  model_functions->write_mem = write_mem;
+  model_functions->write_csr = write_csr;
+  model_functions->read_csr = read_csr;
+  model_functions->handle_exception = handle_exception;
+  model_functions->reset_cpu = reset_cpu;
+  model_functions->rsqrt_fp16 = rsqrt_fp16;
+  model_functions->rsqrt = rsqrt;
 }

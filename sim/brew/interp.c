@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <math.h>
 #include "bfd.h"
 #include "libiberty.h"
 #include "sim/sim.h"
@@ -49,26 +48,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #define MIN(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })
 #endif // MIN
 
-static _Float16
-rsqrt_fp16(_Float16 num)
-{
-  return 1.0f / sqrtf(num);
-}
-
-static float
-rsqrt(float num)
-{
-  return 1.0f / sqrtf(num);
-}
-
-static INLINE void record_mem_trace(sim_cpu *scpu, uint32_t addr, int access_size, bool is_write, uint32_t value)
-{
-  scpu->mem_trace.addr = addr;
-  scpu->mem_trace.is_write = is_write;
-  scpu->mem_trace.access_size = access_size;
-  scpu->mem_trace.value = value;
-  scpu->mem_trace.is_valid = true;
-}
 
 static void mem_trace_to_str(mem_trace_s *mem_trace, char *buffer)
 {
@@ -93,92 +72,11 @@ static void mem_trace_to_str(mem_trace_s *mem_trace, char *buffer)
     }
 }
 
-static void check_alignment(sim_cpu *scpu, uint32_t addr, int length)
-{
-  brew_sim_state *sim_state = &scpu->sim_state;
-  SIM_DESC sd = CPU_STATE(scpu);
-
-  switch (length) {
-    case 8:
-    return;
-    case 16:
-      if ((addr & 1) != 0)
-        {
-          sim_state->ecause = BREW_EXCEPTION_UNALIGNED;
-          sim_state->csr_eaddr = addr;
-        }
-    return;
-    case 32:
-      if ((addr & 3) != 0)
-        {
-          sim_state->ecause = BREW_EXCEPTION_UNALIGNED;
-          sim_state->csr_eaddr = addr;
-        }
-    return;
-  }
-  SIM_ASSERT(false);
-}
-
-static void read_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t *value)
-{
-  SIM_DESC sd = CPU_STATE(scpu);
-  brew_sim_state *sim_state = &scpu->sim_state;
-  uint32_t pma;
-
-  check_alignment(scpu, vma, length);
-  if (sim_state->ecause != BREW_EXCEPTION_NONE)
-    return;
-
-  brew_model_v2p_addr(scpu, vma, acc_write, &pma);
-  if (sim_state->ecause != BREW_EXCEPTION_NONE)
-    return;
-
-  record_mem_trace(scpu, vma, length,  false, *value);
-  switch (length) {
-    case 8:  *value = sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, pma); return;
-    case 16: *value = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, pma); return;
-    case 32: *value = sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, pma); return;
-    default: SIM_ASSERT(false);
-  }
-}
-
-static void write_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t value)
-{
-  SIM_DESC sd = CPU_STATE(scpu);
-  brew_sim_state *sim_state = &scpu->sim_state;
-  uint32_t pma;
-
-  check_alignment(scpu, vma, length);
-  if (sim_state->ecause != BREW_EXCEPTION_NONE)
-    return;
-
-  brew_model_v2p_addr(scpu, vma, acc_write, &pma);
-  if (sim_state->ecause != BREW_EXCEPTION_NONE)
-    return;
-
-  record_mem_trace(scpu, vma, length, true, value);
-  switch (length) {
-    case 8:  sim_core_write_aligned_1(scpu, CPU_PC_GET(scpu), write_map, pma, value); return;
-    case 16: sim_core_write_aligned_2(scpu, CPU_PC_GET(scpu), write_map, pma, value); return;
-    case 32: sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, pma, value); return;
-    default: SIM_ASSERT(false);
-  }
-}
-
-
 
 
 static void
 setup_sim_state(sim_cpu *scpu, bool is_user_mode_sim)
 {
-  scpu->sim_state.read_mem = read_mem;
-  scpu->sim_state.write_mem = write_mem;
-  scpu->sim_state.write_csr = brew_model_write_csr;
-  scpu->sim_state.read_csr = brew_model_read_csr;
-  scpu->sim_state.handle_exception = brew_model_handle_exception;
-  scpu->sim_state.reset_cpu = brew_model_reset_cpu;
-  scpu->sim_state.rsqrt_fp16 = rsqrt_fp16;
-  scpu->sim_state.rsqrt = rsqrt;
   if (TRACE_P(scpu, TRACE_INSN_IDX))
     scpu->sim_state.tracer = (fprintf_ftype)sprintf;
   else
@@ -361,7 +259,7 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
   if (scpu->sim_state.ecause != BREW_EXCEPTION_NONE)
     {
       scpu->sim_state.ntpc = scpu->sim_state.tpc; // Undo any pending changes to $tpc
-      scpu->sim_state.handle_exception(scpu);
+      scpu->sim_state.model_functions.handle_exception(scpu);
     }
   // Update PC
   scpu->sim_state.tpc = scpu->sim_state.ntpc;
@@ -520,14 +418,30 @@ brew_pc_set (sim_cpu *scpu, sim_cia pc)
   //  scpu->sim_state.nspc = pc;
 }
 
-/* De-allocates any resources, allocated in sim_open */
+static void brew_sim_uninstall(SIM_DESC sd)
+{
+  int c;
+  for (c = 0; c < MAX_NR_PROCESSORS; ++c) {
+    SIM_CPU *scpu = STATE_CPU(sd, c);
+    if (scpu->model_info != NULL)
+      brew_free_model_info(scpu, sd);
+    scpu->model_info = NULL;
+  }
+}
+
+/* De-allocates any resources, allocated in sim_open, if there's an error during its execution */
 static void
 free_state (SIM_DESC sd)
 {
-  if (STATE_MODULES (sd) != NULL)
-    sim_module_uninstall (sd);
-  sim_cpu_free_all (sd);
-  sim_state_free (sd);
+  int c;
+
+  if (STATE_MODULES(sd) != NULL)
+    sim_module_uninstall(sd);
+
+  brew_sim_uninstall(sd);
+
+  sim_cpu_free_all(sd);
+  sim_state_free(sd);
 }
 
 /* Given the instruction class code, return a descriptive string */
@@ -679,9 +593,12 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
     {
       sim_cpu *scpu = STATE_CPU (sd, i);
 
-      scpu->sim_state.reset_cpu(scpu, is_user_mode);
+      scpu->sim_state.model_functions.reset_cpu(scpu, is_user_mode);
       brew_model_setup_sim(scpu, sd);
     }
+
+  sim_module_add_uninstall_fn(sd, brew_sim_uninstall);
+  //sim_module_add_init_fn (sd, sim_core_init);
 
   return sd;
 }

@@ -19,6 +19,9 @@
 #ifndef __OPCODE_BREW_H__
 #define __OPCODE_BREW_H__
 
+// forward-declare our struct. This is going to be only valid for simulation contexts, but this header is used everywhere.
+struct _sim_cpu;
+
 typedef enum {
   BREW_REG_TYPE_INT32        =  0,
   BREW_REG_TYPE_FP32         =  1,
@@ -81,27 +84,42 @@ typedef enum
   BREW_INSN_CLS_MAX
 } brew_insn_classes;
 
-// forward-declare our struct. This is going to be only valid for simulation contexts, but this header is used everywhere.
-struct _sim_cpu;
 
+typedef struct {
+  uint32_t val;
+  brew_reg_types type;
+} brew_typed_reg;
+
+
+#if __HAVE_FLOAT16 == 0
+#define _Float16 uint16_t
+#endif
+
+typedef void (*brew_free_model_info_ftype)(struct _sim_cpu *);
 typedef void (*brew_read_mem_ftype)(struct _sim_cpu *scpu, uint32_t vma, int length, uint32_t *value);
 typedef void (*brew_write_mem_ftype)(struct _sim_cpu *scpu, uint32_t vma, int length, uint32_t value);
 typedef uint32_t (*brew_read_csr_ftype)(struct _sim_cpu *scpu, uint16_t csr_addr);
 typedef void (*brew_write_csr_ftype)(struct _sim_cpu *scpu, uint16_t csr_addr, uint32_t value);
 typedef void (*brew_handle_exception_ftype)(struct _sim_cpu *scpu);
 typedef void (*brew_reset_cpu_ftype)(struct _sim_cpu *scpu, bool is_user_mode_sim);
-#if __HAVE_FLOAT16 == 0
-#define _Float16 uint16_t
-#else
-#endif
+
 typedef _Float16 (*brew_rsqrt_fp16_ftype)(_Float16);
 typedef float (*brew_rsqrt_ftype)(float);
-typedef uint32_t (*virtual2physical_ftype)(uint32_t);
 
-typedef struct {
-  uint32_t val;
-  brew_reg_types type;
-} brew_typed_reg;
+struct brew_model_functions {
+  // Function pointers to virtualized (model-specific) implementations
+  brew_read_mem_ftype read_mem;
+  brew_write_mem_ftype write_mem;
+  brew_read_csr_ftype read_csr;
+  brew_write_csr_ftype write_csr;
+  brew_handle_exception_ftype handle_exception;
+  brew_reset_cpu_ftype reset_cpu;
+  brew_free_model_info_ftype free_model_info; // pointer to function to free model-specific data
+
+  // helpers for floating point operations: this avoids linking all binutils utilities against a math library
+  brew_rsqrt_fp16_ftype rsqrt_fp16;
+  brew_rsqrt_ftype rsqrt;
+};
 
 typedef struct {
   brew_typed_reg reg[15];
@@ -117,28 +135,18 @@ typedef struct {
   bool is_task_mode;
   bool nis_task_mode;
 
-  brew_read_mem_ftype read_mem;
-  brew_write_mem_ftype write_mem;
-  brew_read_csr_ftype read_csr;
-  brew_write_csr_ftype write_csr;
-  brew_handle_exception_ftype handle_exception;
-  brew_reset_cpu_ftype reset_cpu;
   fprintf_ftype tracer;
   void *tracer_strm;
 
-  // helpers for floating point operations: this avoids linking all binutils utilities against a math library
-  brew_rsqrt_fp16_ftype rsqrt_fp16;
-  brew_rsqrt_ftype rsqrt;
-
-  // Function to convert from virtual to physical addresses. This can be different, depending on the simulated model
-  virtual2physical_ftype virtual2physical;
+  struct brew_model_functions model_functions;
 } brew_sim_state;
+
 
 extern int brew_insn_len(uint16_t insn_code);
 extern int32_t brew_unmunge_address(uint16_t field_e);
 extern uint16_t brew_munge_address(int32_t offset);
 extern void brew_print_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t insn_code, uint32_t field_e);
-extern void brew_sim_insn(void *context, brew_sim_state *sim_state, uint16_t insn_code, uint32_t field_e);
+extern void brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_code, uint32_t field_e);
 extern const char *brew_insn_class_name(brew_insn_classes cls);
 extern const char *brew_reg_type_name(brew_reg_types reg_type);
 

@@ -118,7 +118,7 @@ const char * brew_reg_names[16] =
 #define SIM_PC_T *(sim_state->is_task_mode ? &sim_state->ntpc : &sim_state->nspc)
 #define SIM_TPC_T sim_state->ntpc
 
-#define SIM(...) { if(sim_state->read_mem != NULL) { __VA_ARGS__; } }
+#define SIM(...) { if(scpu != NULL) { __VA_ARGS__; } }
 
 #define MAKE_INT(l0, type) (brew_typed_reg) { l0, type }
 
@@ -239,7 +239,7 @@ format_mem_ref(const char *mem_ref, int base_reg_idx, uint32_t offset, bool has_
 }
 
 static INLINE uint32_t
-sim_mem_calc_ref(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, int base_reg_idx, uint32_t offset, bool has_offset)
+sim_mem_calc_ref(brew_sim_state *sim_state, int base_reg_idx, uint32_t offset, bool has_offset)
 {
   bool has_base = base_reg_idx != 0xf;
   if (has_base && has_offset)
@@ -253,11 +253,11 @@ sim_mem_calc_ref(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, int 
 }
 
 static uint32_t
-sim_mem_load(void *context, brew_sim_state *sim_state, int ref_size, bool is_signed, int base_reg_idx, uint32_t offset, bool has_offset, uint32_t old_val)
+sim_mem_load(struct _sim_cpu *scpu, brew_sim_state *sim_state, int ref_size, bool is_signed, int base_reg_idx, uint32_t offset, bool has_offset, uint32_t old_val)
 {
-  uint32_t vma = sim_mem_calc_ref(context, sim_state, base_reg_idx, offset, has_offset);
+  uint32_t vma = sim_mem_calc_ref(sim_state, base_reg_idx, offset, has_offset);
   uint32_t val = old_val;
-  sim_state->read_mem(context, vma, ref_size, &val);
+  sim_state->model_functions.read_mem(scpu, vma, ref_size, &val);
   if (sim_state->ecause != BREW_EXCEPTION_NONE)
     return old_val;
   OPCODES_ASSERT((ref_size & 7) == 0);
@@ -270,23 +270,23 @@ sim_mem_load(void *context, brew_sim_state *sim_state, int ref_size, bool is_sig
 }
 
 static void
-sim_mem_store(void *context, brew_sim_state *sim_state, int ref_size, int base_reg_idx, uint32_t offset, bool has_offset, uint32_t val)
+sim_mem_store(void *scpu, brew_sim_state *sim_state, int ref_size, int base_reg_idx, uint32_t offset, bool has_offset, uint32_t val)
 {
-  uint32_t vma = sim_mem_calc_ref(context, sim_state, base_reg_idx, offset, has_offset);
-  sim_state->write_mem(context, vma, ref_size, val);
+  uint32_t vma = sim_mem_calc_ref(sim_state, base_reg_idx, offset, has_offset);
+  sim_state->model_functions.write_mem(scpu, vma, ref_size, val);
   OPCODES_ASSERT((ref_size & 7) == 0);
 }
 
 static uint32_t
-sim_csr_load(void *context, brew_sim_state *sim_state, uint16_t csr_addr)
+sim_csr_load(void *scpu, brew_sim_state *sim_state, uint16_t csr_addr)
 {
-  return sim_state->read_csr(context, csr_addr);
+  return sim_state->model_functions.read_csr(scpu, csr_addr);
 }
 
 static void
-sim_csr_store(void *context, brew_sim_state *sim_state, uint16_t csr_addr, uint32_t val)
+sim_csr_store(void *scpu, brew_sim_state *sim_state, uint16_t csr_addr, uint32_t val)
 {
-  sim_state->write_csr(context, csr_addr, val);
+  sim_state->model_functions.write_csr(scpu, csr_addr, val);
 }
 
 #define INST(...) { if(fpr) fpr(strm_or_buffer, __VA_ARGS__ ); return; }
@@ -296,6 +296,7 @@ sim_csr_store(void *context, brew_sim_state *sim_state, uint16_t csr_addr, uint3
 
 static bool
 binary_op(
+  struct _sim_cpu *scpu,
   brew_sim_state *sim_state,
   fprintf_ftype fpr,
   void *strm_or_buffer,
@@ -352,7 +353,7 @@ binary_op(
 }
 
 #define REGULAR_ALU_PATTERN(base, op, sim_op, prefix, insn_class)                                                                                                               \
-  case 0x##base: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, prefix, CLASS_NAME(insn_class), false)) break; return;     \
+  case 0x##base: if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, #op, sim_op, prefix, CLASS_NAME(insn_class), false)) break; return;     \
 /*
 static INLINE brew_typed_reg lane_swizzle_op(brew_typed_reg val, uint8_t swizzle_code)
 {
@@ -672,12 +673,12 @@ static INLINE brew_typed_reg rsqrt_op(brew_typed_reg a, const brew_sim_state *si
     {
       case BREW_REG_TYPE_INT32:
       case BREW_REG_TYPE_FP32:
-        return MAKE_FP32(sim_state->rsqrt(FP32_0(a)), a.type);
+        return MAKE_FP32(sim_state->model_functions.rsqrt(FP32_0(a)), a.type);
       case BREW_REG_TYPE_INT16x2:
       case BREW_REG_TYPE_UINT16x2S:
       case BREW_REG_TYPE_SINT16x2S:
       case BREW_REG_TYPE_FP16x2:
-        return MAKE_FP16X2(sim_state->rsqrt_fp16(FP16_0(a)), sim_state->rsqrt_fp16(FP16_1(a)), a.type);
+        return MAKE_FP16X2(sim_state->model_functions.rsqrt_fp16(FP16_0(a)), sim_state->model_functions.rsqrt_fp16(FP16_1(a)), a.type);
       case BREW_REG_TYPE_INT8x4:
       case BREW_REG_TYPE_UINT8x4S:
       case BREW_REG_TYPE_SINT8x4S:
@@ -903,7 +904,7 @@ static INLINE int decode_ones_complement(uint32_t data, size_t bit_length)
 }
 
 void
-brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_t insn_code, uint32_t field_e)
+brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_code, uint32_t field_e)
 {
   int length;
   bool skip_print = false;
@@ -1017,8 +1018,8 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           if (pattern_match(insn_code, "40fe")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e; SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC_T + length, BREW_REG_TYPE_INT32)); INST("call short %u (0x%x)", field_e, field_e); }
 
           // CSR loads and stores
-          if (pattern_match(insn_code, ".0f8")) { SIM(CLASS(LD); SIM_REGD_T = MAKE_INT(sim_csr_load(context, sim_state, field_e), SIM_REGD_TYPE)); INST("%s <- CSR[%u (0x%x)]", REG_D, field_e, field_e); }
-          if (pattern_match(insn_code, ".0f9")) { SIM(CLASS(ST); sim_csr_store(context, sim_state, field_e, SIM_REG(FIELD_D).val)); INST("CSR[%u (0x%x)] <- %s", field_e, field_e, REG_D); }
+          if (pattern_match(insn_code, ".0f8")) { SIM(CLASS(LD); SIM_REGD_T = MAKE_INT(sim_csr_load(scpu, sim_state, field_e), SIM_REGD_TYPE)); INST("%s <- CSR[%u (0x%x)]", REG_D, field_e, field_e); }
+          if (pattern_match(insn_code, ".0f9")) { SIM(CLASS(ST); sim_csr_store(scpu, sim_state, field_e, SIM_REG(FIELD_D).val)); INST("CSR[%u (0x%x)] <- %s", field_e, field_e, REG_D); }
 
           // bulk type load immediate
           if (pattern_match(insn_code, "80ef") || pattern_match(insn_code, "90ef")) {
@@ -1055,9 +1056,9 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
         REGULAR_ALU_PATTERN(3, &, and_op, "", LOGIC);
         REGULAR_ALU_PATTERN(4, +, add_op, "", ARITH);
         REGULAR_ALU_PATTERN(5, -, sub_op, "", ARITH);
-        case 0x6: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, "<<", lsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
-        case 0x7: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>", rsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
-        case 0x8: if (!binary_op(sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>>", srsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
+        case 0x6: if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, "<<", lsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
+        case 0x7: if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>", rsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
+        case 0x8: if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>>", srsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
         REGULAR_ALU_PATTERN(9, *, mul_op, "", MUL);
         case 0xa:
           if (pattern_match(insn_code, ".a..")) { CLASS(TYPE); SIM(SIM_REGD_T = type_conv_op(FIELD_A, SIM_REG(FIELD_B))); INST("%s <- %s %s", REG_D, brew_reg_type_name(FIELD_A), REG_B); }
@@ -1082,7 +1083,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
       SIM(
         CLASS(ST);
         sim_mem_store(
-          context,
+          scpu,
           sim_state,
           32,
           base_reg,
@@ -1101,7 +1102,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
       SIM(
         CLASS(LD);
         SIM_REGD_T = MAKE_INT(sim_mem_load(
-          context,
+          scpu,
           sim_state,
           32,
           false,
@@ -1129,7 +1130,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
               uint32_t types = 0;
               SIM(
                 CLASS(TYPE);
-                types = sim_mem_load(context, sim_state, 32, false, FIELD_D, offset, true, 0);
+                types = sim_mem_load(scpu, sim_state, 32, false, FIELD_D, offset, true, 0);
               );
               if (sim_state->ecause == BREW_EXCEPTION_NONE)
                 {
@@ -1165,7 +1166,7 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
                   {
                       types |= (SIM_REG(i+reg_ofs).type & 0xf) << (i*4);
                   }
-                sim_mem_store(context, sim_state, 32, FIELD_B, offset, true, types);
+                sim_mem_store(scpu, sim_state, 32, FIELD_B, offset, true, types);
               );
               INST("%s <- type $r%d...$r%d", format_mem_ref("mem32", FIELD_D, offset, true, false, str_buffer), reg_ofs, reg_ofs+reg_cnt-1);
             }
@@ -1175,24 +1176,24 @@ brew_sim_insn(void *context ATTRIBUTE_UNUSED, brew_sim_state *sim_state, uint16_
           // load-store group
           switch (FIELD_B)
             {
-              case 0x4: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(context, sim_state,  8, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("mem8",   FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
-              case 0x5: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(context, sim_state, 16, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("mem16",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
-              case 0x6: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(context, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
-              case 0x7: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(context, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("memll32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+              case 0x4: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state,  8, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("mem8",   FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+              case 0x5: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state, 16, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("mem16",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+              case 0x6: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+              case 0x7: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("memll32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
 
-              case 0x8: SIM( CLASS(ST); sim_mem_store(context, sim_state,  8, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("mem8",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
-              case 0x9: SIM( CLASS(ST); sim_mem_store(context, sim_state, 16, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("mem16", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
-              case 0xa: SIM( CLASS(ST); sim_mem_store(context, sim_state, 32, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("mem32", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
-              case 0xb: SIM( CLASS(ST); sim_mem_store(context, sim_state, 32, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("memsr32", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
+              case 0x8: SIM( CLASS(ST); sim_mem_store(scpu, sim_state,  8, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("mem8",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
+              case 0x9: SIM( CLASS(ST); sim_mem_store(scpu, sim_state, 16, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("mem16", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
+              case 0xa: SIM( CLASS(ST); sim_mem_store(scpu, sim_state, 32, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("mem32", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
+              case 0xb: SIM( CLASS(ST); sim_mem_store(scpu, sim_state, 32, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("memsr32", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
 
-              case 0xc: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(context, sim_state,  8, true,  FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("smem8",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
-              case 0xd: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(context, sim_state, 16, true,  FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("smem16", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+              case 0xc: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state,  8, true,  FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("smem8",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+              case 0xd: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state, 16, true,  FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("smem16", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
               case 0xe: switch (FIELD_D)
                 {
                   case 0x1: SIM(CLASS(ATOMIC)); INST("%s", format_mem_ref("inv32", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
-                  case 0x2: SIM(CLASS(BRANCH); SIM_PC_T = sim_mem_load(context, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_PC)); INST("$pc <- %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
-                  case 0x3: SIM(CLASS(BRANCH); SIM_TPC_T = sim_mem_load(context, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_TPC)); INST("$tpc <- %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
-                  case 0x4: SIM(CLASS(BRANCH); SIM_PC_T = sim_mem_load(context, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_PC); if (sim_state->ecause == BREW_EXCEPTION_NONE) { SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC_T + length, BREW_REG_TYPE_INT32); }); INST("call %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+                  case 0x2: SIM(CLASS(BRANCH); SIM_PC_T = sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_PC)); INST("$pc <- %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+                  case 0x3: SIM(CLASS(BRANCH); SIM_TPC_T = sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_TPC)); INST("$tpc <- %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+                  case 0x4: SIM(CLASS(BRANCH); SIM_PC_T = sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_PC); if (sim_state->ecause == BREW_EXCEPTION_NONE) { SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC_T + length, BREW_REG_TYPE_INT32); }); INST("call %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
                   default: UNKNOWN;
                 }
             }

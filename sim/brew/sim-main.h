@@ -29,6 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <stdint.h>
 #include "opcode/brew.h"
 
+#if __HAVE_FLOAT16 == 0
+#define _Float16 uint16_t
+#endif
+
 typedef struct {
   uint32_t addr;
   int access_size;
@@ -37,7 +41,10 @@ typedef struct {
   bool is_valid;
 } mem_trace_s;
 
-typedef void (*free_model_info_ftype)(sim_cpu *);
+
+// forward-declare our struct. This is going to be only valid for simulation contexts, but this header is used everywhere.
+struct _sim_cpu;
+struct brew_model_functions;
 
 struct _sim_cpu {
   sim_cpu_base base;
@@ -45,7 +52,6 @@ struct _sim_cpu {
   char decode_buf[255];
   mem_trace_s mem_trace;
   void *model_info; // pointer to model-specific data
-  free_model_info_ftype free_model_info; // pointer to function to free model-specific data
 };
 
 // sim_engine_halt normally tries to set the PC to whatever
