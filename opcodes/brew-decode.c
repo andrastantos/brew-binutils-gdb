@@ -1007,7 +1007,7 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
           // immediate branch
           if (pattern_match(insn_code, "20ef")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e); INST("$pc <- %u (0x%x)", field_e, field_e); }
           if (pattern_match(insn_code, "30ef")) { SIM(CLASS(BRANCH); SIM_TPC_T = field_e); INST("$tpc <- %u (0x%x)", field_e, field_e); }
-          if (pattern_match(insn_code, "40ef")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e; SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC_T + length, BREW_REG_TYPE_INT32)); INST("call %u (0x%x)", field_e, field_e); }
+          if (pattern_match(insn_code, "40ef")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e; SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC + length, BREW_REG_TYPE_INT32)); INST("call %u (0x%x)", field_e, field_e); }
 
           // load short immediate
           if (pattern_match(insn_code, ".0f0")) {SIM( CLASS(IMM); SIM_REGD_T = MAKE_INT(field_e, SIM_REGD_TYPE)); INST("%s <- short %u (0x%x)", REG_D, field_e, field_e); }
@@ -1015,7 +1015,7 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
           // short immediate branch
           if (pattern_match(insn_code, "20fe")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e); INST("$pc <- short %u (0x%x)", field_e, field_e); }
           if (pattern_match(insn_code, "30fe")) { SIM(CLASS(BRANCH); SIM_TPC_T = field_e); INST("$tpc <- short %u (0x%x)", field_e, field_e); }
-          if (pattern_match(insn_code, "40fe")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e; SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC_T + length, BREW_REG_TYPE_INT32)); INST("call short %u (0x%x)", field_e, field_e); }
+          if (pattern_match(insn_code, "40fe")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e; SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC + length, BREW_REG_TYPE_INT32)); INST("call short %u (0x%x)", field_e, field_e); }
 
           // CSR loads and stores
           if (pattern_match(insn_code, ".0f8")) { SIM(CLASS(LD); SIM_REGD_T = MAKE_INT(sim_csr_load(scpu, sim_state, field_e), SIM_REGD_TYPE)); INST("%s <- CSR[%u (0x%x)]", REG_D, field_e, field_e); }
@@ -1193,7 +1193,7 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
                   case 0x1: SIM(CLASS(ATOMIC)); INST("%s", format_mem_ref("inv32", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
                   case 0x2: SIM(CLASS(BRANCH); SIM_PC_T = sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_PC)); INST("$pc <- %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
                   case 0x3: SIM(CLASS(BRANCH); SIM_TPC_T = sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_TPC)); INST("$tpc <- %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
-                  case 0x4: SIM(CLASS(BRANCH); SIM_PC_T = sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_PC); if (sim_state->ecause == BREW_EXCEPTION_NONE) { SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC_T + length, BREW_REG_TYPE_INT32); }); INST("call %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+                  case 0x4: SIM(CLASS(BRANCH); SIM_PC_T = sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_PC); if (sim_state->ecause == BREW_EXCEPTION_NONE) { SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC + length, BREW_REG_TYPE_INT32); }); INST("call %s", format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
                   default: UNKNOWN;
                 }
             }
