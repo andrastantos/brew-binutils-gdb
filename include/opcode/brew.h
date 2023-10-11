@@ -95,26 +95,36 @@ typedef struct {
 #define _Float16 uint16_t
 #endif
 
-typedef void (*brew_free_model_info_ftype)(struct _sim_cpu *);
+// forward-declare a struct, that only makes sense in sim...
+struct sim_state;
+
+typedef void (*brew_free_model_info_ftype)(struct _sim_cpu *scpu);
 typedef void (*brew_read_mem_ftype)(struct _sim_cpu *scpu, uint32_t vma, int length, uint32_t *value);
+typedef uint32_t (*brew_read_inst_ftype)(struct _sim_cpu *scpu, uint32_t vma, int length);
 typedef void (*brew_write_mem_ftype)(struct _sim_cpu *scpu, uint32_t vma, int length, uint32_t value);
 typedef uint32_t (*brew_read_csr_ftype)(struct _sim_cpu *scpu, uint16_t csr_addr);
 typedef void (*brew_write_csr_ftype)(struct _sim_cpu *scpu, uint16_t csr_addr, uint32_t value);
 typedef void (*brew_handle_exception_ftype)(struct _sim_cpu *scpu);
 typedef void (*brew_reset_cpu_ftype)(struct _sim_cpu *scpu, bool is_user_mode_sim);
+typedef void (*brew_setup_sim_ftype)(struct sim_state *sd, struct _sim_cpu *scpu);
+typedef void (*brew_handle_interrupt_ftype)(struct _sim_cpu *scpu);
+
 
 typedef _Float16 (*brew_rsqrt_fp16_ftype)(_Float16);
 typedef float (*brew_rsqrt_ftype)(float);
 
 struct brew_model_functions {
   // Function pointers to virtualized (model-specific) implementations
+  brew_setup_sim_ftype setup_sim;
   brew_read_mem_ftype read_mem;
+  brew_read_inst_ftype read_inst;
   brew_write_mem_ftype write_mem;
   brew_read_csr_ftype read_csr;
   brew_write_csr_ftype write_csr;
   brew_handle_exception_ftype handle_exception;
   brew_reset_cpu_ftype reset_cpu;
   brew_free_model_info_ftype free_model_info; // pointer to function to free model-specific data
+  brew_handle_interrupt_ftype handle_interrupt;
 
   // helpers for floating point operations: this avoids linking all binutils utilities against a math library
   brew_rsqrt_fp16_ftype rsqrt_fp16;

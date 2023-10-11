@@ -143,20 +143,6 @@ side_effect_indent(char *message, int message_size)
     first = false;                                \
   }
 
-static INLINE void pre_exec(sim_cpu *scpu, uint16_t insn_code ATTRIBUTE_UNUSED)
-{
-  int insn_length = brew_insn_len(insn_code);
-  scpu->sim_state.dirty_map = 0;
-  scpu->sim_state.ntpc = scpu->sim_state.tpc + (scpu->sim_state.is_task_mode ? insn_length : 0);
-  scpu->sim_state.nspc = scpu->sim_state.spc + (scpu->sim_state.is_task_mode ? 0 : insn_length);
-  scpu->sim_state.nis_task_mode = scpu->sim_state.is_task_mode;
-  scpu->sim_state.insn_class = BREW_INSN_CLS_UNKNOWN;
-  if (scpu->sim_state.ecause != BREW_EXCEPTION_NONE)
-    scpu->sim_state.csr_ecause = scpu->sim_state.ecause;
-  scpu->sim_state.ecause = BREW_EXCEPTION_NONE;
-  scpu->decode_buf[0] = 0;
-}
-
 static INLINE void trace_exception(sim_cpu *scpu, char *message, size_t message_size)
 {
   SIM_DESC sd = CPU_STATE(scpu);
@@ -276,40 +262,53 @@ sim_engine_run(
 ) {
   uint16_t insn_code;
   uint32_t field_e = 0xdeadbeef;
-  int length;
+  int insn_length;
   sim_cpu *scpu = STATE_CPU(sd, next_cpu_nr);
 
   uint32_t non_branch_tpc;
   uint32_t non_branch_spc;
   do
     {
+      scpu->sim_state.ecause = BREW_EXCEPTION_NONE;
       {
         // scoping pc to make sure we don't even accidentally use that for anything
         uint32_t pc = CPU_PC_GET(scpu) & ~1; // PC is always 16-bit aligned, the LSB is ignored
 
-        insn_code = sim_core_read_aligned_2(scpu, pc, exec_map, pc);
-        length = brew_insn_len(insn_code);
-        switch (length)
+        insn_code = scpu->sim_state.model_functions.read_inst(scpu, pc, 16);
+        insn_length = brew_insn_len(insn_code);
+        switch (insn_length)
           {
             case 2:
             break;
             case 4:
-              field_e = sim_core_read_aligned_2(scpu, pc, exec_map, pc+2);
+              field_e = scpu->sim_state.model_functions.read_inst(scpu, pc+2, 16);
             break;
             case 6:
-              field_e = sim_core_read_unaligned_4(scpu, pc, exec_map, pc+2);
+              field_e = scpu->sim_state.model_functions.read_inst(scpu, pc+2, 32);
             break;
             default:
               SIM_ASSERT(false);
             break;
           }
       }
-      pre_exec(scpu, insn_code);
+      // Make sure we don't actually change the state if there was an exception fetching the instruction
+      if (scpu->sim_state.ecause == BREW_EXCEPTION_NONE)
+        {
+          scpu->sim_state.dirty_map = 0;
+          scpu->sim_state.ntpc = scpu->sim_state.tpc + (scpu->sim_state.is_task_mode ? insn_length : 0);
+          scpu->sim_state.nspc = scpu->sim_state.spc + (scpu->sim_state.is_task_mode ? 0 : insn_length);
+          scpu->sim_state.nis_task_mode = scpu->sim_state.is_task_mode;
+          scpu->sim_state.insn_class = BREW_INSN_CLS_UNKNOWN;
+          if (scpu->sim_state.ecause != BREW_EXCEPTION_NONE)
+            scpu->sim_state.csr_ecause = scpu->sim_state.ecause;
+          scpu->decode_buf[0] = 0;
 
-      non_branch_spc = scpu->sim_state.nspc;
-      non_branch_tpc = scpu->sim_state.ntpc;
+          non_branch_spc = scpu->sim_state.nspc;
+          non_branch_tpc = scpu->sim_state.ntpc;
 
-      brew_sim_insn(scpu, &scpu->sim_state, insn_code, field_e);
+          brew_sim_insn(scpu, &scpu->sim_state, insn_code, field_e);
+        }
+
       post_exec(scpu, insn_code, non_branch_tpc, non_branch_spc);
       if (sim_events_tick (sd))
         sim_events_process (sd);
@@ -424,7 +423,7 @@ static void brew_sim_uninstall(SIM_DESC sd)
   for (c = 0; c < MAX_NR_PROCESSORS; ++c) {
     SIM_CPU *scpu = STATE_CPU(sd, c);
     if (scpu->model_info != NULL)
-      brew_free_model_info(scpu, sd);
+      scpu->sim_state.model_functions.free_model_info(scpu);
     scpu->model_info = NULL;
   }
 }
@@ -502,7 +501,7 @@ static const SIM_MODEL brew_models[] =
   // MODEL_NAME   MODEL_MACH        MODEL_NUM   MODEL_TIMING    MODEL_INIT
   { "brew",       &brew_mach,       0,          NULL,           brew_model_init},
   { "espresso",   &brew_mach,       1,          NULL,           espresso_model_init},
-  { "anachron",   &brew_mach,       2,          NULL,           anachron_model_init},
+  //{ "anachron",   &brew_mach,       2,          NULL,           anachron_model_init},
   { 0, NULL, 0, NULL, NULL, }
 };
 
@@ -564,6 +563,16 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
       return 0;
     }
 
+  // If model was specified on the command line, we'll have to setup the simulation here.
+  // If not, the model functions would not be set up, so we'll have to defer the call
+  // to the point where the model call-backs are initialized (in brew_model_init or espresso_model_init).
+  for (i = 0; i < MAX_NR_PROCESSORS; ++i)
+    {
+      sim_cpu *scpu = STATE_CPU (sd, i);
+      if (scpu->sim_state.model_functions.setup_sim != NULL)
+        scpu->sim_state.model_functions.setup_sim(sd, scpu);
+    }
+
   if(sim_post_argv_init (sd) != SIM_RC_OK)
     {
       /* Uninstall the modules to avoid memory leaks,
@@ -594,7 +603,6 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
       sim_cpu *scpu = STATE_CPU (sd, i);
 
       scpu->sim_state.model_functions.reset_cpu(scpu, is_user_mode);
-      brew_model_setup_sim(scpu, sd);
     }
 
   sim_module_add_uninstall_fn(sd, brew_sim_uninstall);
@@ -698,5 +706,57 @@ sim_create_inferior (SIM_DESC sd, struct bfd *prog_bfd,
   //load_dtb(sd, DTB);
 #endif
 
+  return SIM_RC_OK;
+}
+
+
+// I think I'll need to override these two functions to get aliasing working properly.
+// The reason is that a lot of internal functions, such as program load depend on these.
+
+int
+sim_read (SIM_DESC sd, SIM_ADDR mem, unsigned char *buf, int length)
+{
+  SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
+  return sim_core_read_buffer (sd, NULL, read_map, buf, mem, length);
+}
+
+int
+sim_write (SIM_DESC sd, SIM_ADDR mem, const unsigned char *buf, int length)
+{
+  SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
+  return sim_core_write_buffer (sd, NULL, write_map,
+				buf, mem, length);
+}
+
+// An alternative is to override this:
+
+SIM_RC
+sim_load (SIM_DESC sd, const char *prog_name, struct bfd *prog_bfd, int from_tty)
+{
+  bfd *result_bfd;
+
+  SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
+  if (sim_analyze_program (sd, prog_name, prog_bfd) != SIM_RC_OK)
+    return SIM_RC_FAIL;
+  SIM_ASSERT (STATE_PROG_BFD (sd) != NULL);
+
+  /* NOTE: For historical reasons, older hardware simulators
+     incorrectly write the program sections at LMA interpreted as a
+     virtual address.  This is still accommodated for backward
+     compatibility reasons. */
+
+  result_bfd = sim_load_file (sd, STATE_MY_NAME (sd),
+			      STATE_CALLBACK (sd),
+			      prog_name,
+			      STATE_PROG_BFD (sd),
+			      STATE_OPEN_KIND (sd) == SIM_OPEN_DEBUG,
+			      STATE_LOAD_AT_LMA_P (sd),
+			      sim_write);
+  if (result_bfd == NULL)
+    {
+      bfd_close (STATE_PROG_BFD (sd));
+      STATE_PROG_BFD (sd) = NULL;
+      return SIM_RC_FAIL;
+    }
   return SIM_RC_OK;
 }

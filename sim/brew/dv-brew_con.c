@@ -18,12 +18,11 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-extern "C" {
 #include "defs.h"
 
-#define basename basename
+//#define basename basename
 #include "bfd.h"
-#undef basename
+//#undef basename
 
 //#include "libiberty.h"
 //#include "sim/sim.h"
@@ -31,24 +30,10 @@ extern "C" {
 #include "hw-main.h"
 
 #include "dv-sockser.h"
-#include "dv-con.h"
-}
+#include "dv-brew_con.h"
 
-struct dv_console
+typedef struct dv_brew_con
 {
-  dv_console() {
-    this->ctrl_reg1 = 0;
-    this->ctrl_reg2 = 0;
-    this->divider_reg = 0;
-    this->status_reg = 0;
-  }
-  void set_base_addr(uint32_t base_addr) {
-    this->base_addr = base_addr;
-  }
-  static unsigned io_read_buffer(struct hw *me, void *dest, int space, address_word addr, unsigned nr_bytes);
-  static unsigned io_write_buffer(struct hw *me, const void *source, int space, address_word addr, unsigned nr_bytes);
-  static bool handle_input(struct hw *me);
-
   uint32_t base_addr;
   // Allow reading and writing of registers that we don't actually simulate
   uint8_t ctrl_reg1;
@@ -56,16 +41,28 @@ struct dv_console
   uint8_t divider_reg;
   char con_input;
   uint8_t status_reg;
-};
+} dv_brew_con;
 
-unsigned dv_console::io_write_buffer(struct hw *me, const void *source, int space, address_word addr, unsigned nr_bytes)
+static void dv_brew_con_init(dv_brew_con *console)
+{
+  console->ctrl_reg1 = 0;
+  console->ctrl_reg2 = 0;
+  console->divider_reg = 0;
+  console->status_reg = CON_STAT_TX_EMPTY;
+}
+
+static void dv_brew_con_set_base_addr(dv_brew_con *console, uint32_t base_addr) {
+  console->base_addr = base_addr;
+}
+
+static unsigned dv_brew_con_io_write_buffer(struct hw *me, const void *source, int space, address_word addr, unsigned nr_bytes)
 {
   SIM_DESC sd = hw_system(me);
-  dv_console *console = (dv_console *)hw_data(me);
+  dv_brew_con *console = (dv_brew_con *)hw_data(me);
   int status = dv_sockser_status(sd);
+  uint32_t ofs = addr - console->base_addr;
 
   SIM_ASSERT(nr_bytes == 1);
-  uint32_t ofs = addr - console->base_addr;
   switch (ofs) {
     case CON_DATA_REG_OFS:
       if (status & DV_SOCKSER_DISCONNECTED) {
@@ -93,10 +90,10 @@ unsigned dv_console::io_write_buffer(struct hw *me, const void *source, int spac
   return nr_bytes;
 }
 
-bool dv_console::handle_input(struct hw *me)
+static bool dv_brew_con_handle_input(struct hw *me)
 {
   SIM_DESC sd = hw_system(me);
-  dv_console *console = (dv_console *)hw_data(me);
+  dv_brew_con *console = (dv_brew_con *)hw_data(me);
   int status = dv_sockser_status(sd);
 
   // If we have a pending character already, simply return
@@ -117,17 +114,17 @@ bool dv_console::handle_input(struct hw *me)
   }
 }
 
-unsigned dv_console::io_read_buffer(struct hw *me, void *dest, int space, address_word addr, unsigned nr_bytes)
+static unsigned dv_brew_con_io_read_buffer(struct hw *me, void *dest, int space, address_word addr, unsigned nr_bytes)
 {
   SIM_DESC sd = hw_system(me);
-  dv_console *console = (dv_console *)hw_data(me);
+  dv_brew_con *console = (dv_brew_con *)hw_data(me);
   int status = dv_sockser_status(sd);
+  uint32_t ofs = addr - console->base_addr;
 
   SIM_ASSERT(nr_bytes == 1);
-  uint32_t ofs = addr - console->base_addr;
   switch (ofs) {
     case CON_DATA_REG_OFS:
-      if (dv_console::handle_input(me)) {
+      if (dv_brew_con_handle_input(me)) {
         // We have a character in the buffer -> send it and clear the status
         *(char*)(dest) = console->con_input;
         console->status_reg &= ~CON_STAT_RX_FULL;
@@ -136,7 +133,7 @@ unsigned dv_console::io_read_buffer(struct hw *me, void *dest, int space, addres
     break;
     case CON_STATUS_REG_OFS:
       // check for new input (it sets the requisite status bits too if not already set)
-      dv_console::handle_input(me);
+      dv_brew_con_handle_input(me);
       *(uint8_t*)(dest) = console->status_reg;
       return 1;
     case CON_CONFIG1_REG_OFS:
@@ -158,15 +155,17 @@ unsigned dv_console::io_read_buffer(struct hw *me, void *dest, int space, addres
   hw_abort(me, "Should never get here");
 }
 
-static dv_console *attach_console_regs(struct hw *me)
+static dv_brew_con *attach_console_regs(struct hw *me)
 {
-  // TODO: this should be a unique-pointer!
-  dv_console *console = new dv_console();
-
-  address_word attach_address;
   int attach_space;
   unsigned attach_size;
   reg_property_spec reg;
+  address_word attach_address;
+
+  dv_brew_con *console = HW_ZALLOC(me, dv_brew_con);
+
+  dv_brew_con_init(console);
+
 
   if (hw_find_property(me, "reg") == NULL)
     hw_abort(me, "Missing \"reg\" property");
@@ -201,7 +200,7 @@ static dv_console *attach_console_regs(struct hw *me)
     me
   );
 
-  console->set_base_addr(attach_address);
+  dv_brew_con_set_base_addr(console, attach_address);
   set_hw_data(me, console);
   return console;
 }
@@ -211,8 +210,8 @@ static void brew_con_finish(struct hw *me)
   // todo: should we use HW_ZALLOC and placement new?
   //uart = HW_ZALLOC (me, struct m32r_uart);
 
-  set_hw_io_read_buffer(me, dv_console::io_read_buffer);
-  set_hw_io_write_buffer(me, dv_console::io_write_buffer);
+  set_hw_io_read_buffer(me, dv_brew_con_io_read_buffer);
+  set_hw_io_write_buffer(me, dv_brew_con_io_write_buffer);
 
   attach_console_regs(me);
 }

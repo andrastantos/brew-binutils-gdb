@@ -37,7 +37,13 @@ extern "C" {
 #include "brew-calls.h"
 }
 
-#include "dv-con.h"
+typedef enum {
+  acc_read,
+  acc_write,
+  acc_exec,
+} brew_access_modes;
+
+typedef void (*v2p_addr_ftype)(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t *p_addr);
 
 static const uint16_t BREW_CSR_MARCH                   = 0x8000;
 static const uint16_t BREW_CSR_CAPABILITY              = 0x8001;
@@ -93,10 +99,20 @@ static const uint16_t ESPRESSO_CSR_EVENT_SELECT_REG_7  = 0x810f;
 static const uint16_t ESPRESSO_CSR_EVENT_CNT_REG_7     = 0x8110;
 
 
+static const uint32_t ANACHRON_IO_GPIO_BASE     = 0x00010000;
 static const uint32_t ANACHRON_IO_APB_BASE      = 0x00020000;
 
 static const uint32_t ANACHRON_UART_BASE        = ANACHRON_IO_APB_BASE + 0x0000;
 static const uint32_t ANACHRON_UART_SIZE        = 5;
+
+static const uint32_t ANACHRON_GPIO_3_BASE      = ANACHRON_IO_APB_BASE + 0x0100;
+static const uint32_t ANACHRON_GPIO_3_SIZE      = 1;
+
+static const uint32_t ANACHRON_GPIO_4_BASE      = ANACHRON_IO_APB_BASE + 0x0200;
+static const uint32_t ANACHRON_GPIO_4_SIZE      = 1;
+
+static const uint32_t ANACHRON_GPIO_INT_BASE    = ANACHRON_IO_GPIO_BASE + 0x2000;
+static const uint32_t ANACHRON_GPIO_INT_SIZE    = 1;
 
 
 static int marshal_o_flags_from_sim(int oflags)
@@ -412,155 +428,6 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
 }
 
 
-struct brew_model_info {
-public:
-  brew_model_info() {
-    printf("Setting model to BREW\n");
-  }
-  virtual ~brew_model_info() {
-    printf("Done with model BREW\n");
-  }
-
-  virtual void setup_sim(SIM_DESC sd) {
-    // FIXME: not sure what these do. Probably create and allocate some memory
-    sim_do_command(sd," memory region 0x00000000,0x80000000"); // main memory for program storage
-  }
-  virtual void v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t &p_addr) { p_addr = v_addr; }
-  virtual void write_csr(sim_cpu *scpu, uint16_t addr, uint32_t data) {
-    SIM_DESC sd = CPU_STATE(scpu);
-    sim_engine_abort(sd, scpu, NULL_CIA, "FIXME: brew model doesn't support CSR writes");
-  }
-  virtual uint32_t read_csr(sim_cpu *scpu, uint16_t addr) {
-    brew_sim_state *sim_state = &scpu->sim_state;
-    SIM_DESC sd = CPU_STATE(scpu);
-    if (sim_state->is_task_mode) addr |= 0x8000;
-    switch (addr) {
-      case BREW_CSR_MARCH:
-        return 0;
-      break;
-      case BREW_CSR_CAPABILITY:
-        return 0;
-      break;
-      case BREW_CSR_FPSTAT:
-        sim_engine_abort(sd, scpu, NULL_CIA, "FIXME: brew model doesn't support CSR read of FPSTAT");
-      break;
-      case BREW_CSR_ECAUSE: {
-        uint32_t ret_val = sim_state->csr_ecause;
-        sim_state->csr_ecause = BREW_EXCEPTION_NONE;
-        return ret_val;
-      } break;
-      case BREW_CSR_EADDR:
-        return sim_state->csr_eaddr;
-      break;
-      default:
-        sim_engine_abort(sd, scpu, NULL_CIA, "Unknown read at CSR address 0x%04x", addr);
-      break;
-    }
-  }
-  virtual void handle_exception(sim_cpu *scpu) {
-    brew_sim_state *sim_state = &scpu->sim_state;
-    SIM_DESC sd = CPU_STATE(scpu);
-
-    // TODO: don't forget to set ntpc, nspc, nis_task_mode as appropriate
-    if (!sim_state->is_task_mode)
-      {
-        sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGTRAP);
-      }
-    switch (STATE_ENVIRONMENT(sd))
-      {
-      case USER_ENVIRONMENT:
-      case VIRTUAL_ENVIRONMENT:
-        // All but the SYSCALL exception are fatal in user-mode sim
-        switch(sim_state->ecause)
-          {
-          case BREW_EXCEPTION_HWI:               sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
-          case BREW_EXCEPTION_FILL:              sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
-          case BREW_EXCEPTION_BREAK:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGTRAP); break;
-          case BREW_EXCEPTION_SYSCALL:           user_mode_handle_syscall(sd, scpu); break;
-          case BREW_EXCEPTION_SWI_3:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
-          case BREW_EXCEPTION_SWI_4:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
-          case BREW_EXCEPTION_SWI_5:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
-          case BREW_EXCEPTION_SWI_6:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
-          case BREW_EXCEPTION_SWI_7:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
-          case BREW_EXCEPTION_UNKNOWN_INST:      sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
-          case BREW_EXCEPTION_TYPE:              sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
-          case BREW_EXCEPTION_UNALIGNED:         sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGSEGV); break;
-          default:                               sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGNONE); break;
-          }
-        break;
-      case OPERATING_ENVIRONMENT:
-        // In system mode simulations, we simply switch to scheduler mode
-        sim_state->nis_task_mode = false;
-      default:
-        SIM_ASSERT(false);
-      }
-  }
-  virtual void handle_interrupt(sim_cpu *scpu) {}
-};
-
-struct espresso_model_info: public brew_model_info {
-public:
-  static const uint32_t ROM_BASE = 0x00000000;
-  static const uint32_t ROM_SIZE = 64*1024;
-  static const uint32_t RAM_BASE = 0x80000000;
-  static const uint32_t RAM_SIZE = 1*1024*1024;
-
-  uint32_t pmem_base;
-  uint32_t pmem_limit;
-  uint32_t dmem_base;
-  uint32_t dmem_limit;
-
-  espresso_model_info() {
-    printf("Setting model to ESPRESSO\n");
-    pmem_base = 0;
-    pmem_limit = 0;
-    dmem_base = 0;
-    dmem_limit = 0;
-  }
-  virtual void setup_sim(SIM_DESC sd) {
-    char buf[256];
-    snprintf(buf, sizeof(buf), " memory region 0x%08x, 0x%08x", ROM_BASE, ROM_SIZE);
-    sim_do_command(sd, buf);
-    snprintf(buf, sizeof(buf), " memory region 0x%08x, 0x%08x", RAM_BASE, RAM_SIZE);
-    sim_do_command(sd, buf);
-
-    sim_hw_parse(sd, "/core/%s/reg %#x %i", "brew_con", ANACHRON_UART_BASE, ANACHRON_UART_SIZE);
-  }
-  virtual void v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t &p_addr) {
-    brew_sim_state *sim_state = &scpu->sim_state;
-    // mask out wait-state (we don't care during simulation)
-    const uint32_t ADDR_MASK = 0x0fffffff;
-    if (!sim_state->is_task_mode) {
-      p_addr = v_addr & ADDR_MASK;
-      return;
-    }
-    uint32_t base = dmem_base;
-    uint32_t limit = dmem_limit;
-    brew_exception_type exc = ESPRESSO_EXCEPTION_MEM_AV;
-    if (access_mode == acc_exec) {
-      base = pmem_base;
-      limit = pmem_limit;
-      exc = ESPRESSO_EXCEPTION_INST_AV;
-    }
-    if ((v_addr & ADDR_MASK & ~1023) > (limit & ADDR_MASK & ~1023)) {
-      sim_state->ecause = exc;
-      return;
-    }
-    p_addr = ((v_addr & ADDR_MASK) + (base & ADDR_MASK & ~1023)) & ADDR_MASK;
-  }
-};
-
-struct anachron_model_info: public espresso_model_info {
-public:
-  anachron_model_info() {
-    printf("Setting model to ANACHRON\n");
-  }
-};
-
-
-
-
-
 
 
 static void check_alignment(sim_cpu *scpu, uint32_t addr, int length)
@@ -599,15 +466,7 @@ static INLINE void record_mem_trace(sim_cpu *scpu, uint32_t addr, int access_siz
   scpu->mem_trace.is_valid = true;
 }
 
-static void brew_model_v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t *p_addr) {
-  SIM_DESC sd = CPU_STATE(scpu);
-  SIM_ASSERT(p_addr != NULL);
-  brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
-  model_info->v2p_addr(scpu, v_addr, access_mode, *p_addr);
-}
-
-
-static void read_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t *value)
+static INLINE void read_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t *value, v2p_addr_ftype v2p_addr)
 {
   SIM_DESC sd = CPU_STATE(scpu);
   brew_sim_state *sim_state = &scpu->sim_state;
@@ -617,20 +476,45 @@ static void read_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t *value)
   if (sim_state->ecause != BREW_EXCEPTION_NONE)
     return;
 
-  brew_model_v2p_addr(scpu, vma, acc_write, &pma);
+  v2p_addr(scpu, vma, acc_read, &pma);
   if (sim_state->ecause != BREW_EXCEPTION_NONE)
     return;
 
-  record_mem_trace(scpu, vma, length,  false, *value);
   switch (length) {
-    case 8:  *value = sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, pma); return;
-    case 16: *value = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, pma); return;
-    case 32: *value = sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, pma); return;
+    case 8:  *value = sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), read_map, pma); break;
+    case 16: *value = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), read_map, pma); break;
+    case 32: *value = sim_core_read_aligned_4(scpu, CPU_PC_GET(scpu), read_map, pma); break;
     default: SIM_ASSERT(false);
   }
+  record_mem_trace(scpu, vma, length,  false, *value);
 }
 
-static void write_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t value)
+static INLINE uint32_t read_inst(sim_cpu *scpu, uint32_t vma, int length, v2p_addr_ftype v2p_addr)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+  brew_sim_state *sim_state = &scpu->sim_state;
+  uint32_t pma;
+  uint32_t ret_val;
+
+  // For instructions, we ignore the LSB --> this also means that there's no possibility for an unaligned exception
+  vma &= ~1;
+
+  v2p_addr(scpu, vma, acc_exec, &pma);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return 0;
+
+
+  switch (length) {
+    case 8:  ret_val = sim_core_read_aligned_1(scpu, CPU_PC_GET(scpu), exec_map, pma); break;
+    case 16: ret_val = sim_core_read_aligned_2(scpu, CPU_PC_GET(scpu), exec_map, pma); break;
+    case 32: ret_val = sim_core_read_unaligned_4(scpu, CPU_PC_GET(scpu), exec_map, pma); break;
+    default: SIM_ASSERT(false);
+  }
+  record_mem_trace(scpu, vma, length,  false, ret_val);
+  return ret_val;
+}
+
+static INLINE void write_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t value, v2p_addr_ftype v2p_addr)
 {
   SIM_DESC sd = CPU_STATE(scpu);
   brew_sim_state *sim_state = &scpu->sim_state;
@@ -640,7 +524,7 @@ static void write_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t value)
   if (sim_state->ecause != BREW_EXCEPTION_NONE)
     return;
 
-  brew_model_v2p_addr(scpu, vma, acc_write, &pma);
+  v2p_addr(scpu, vma, acc_write, &pma);
   if (sim_state->ecause != BREW_EXCEPTION_NONE)
     return;
 
@@ -667,61 +551,130 @@ static float rsqrt(float num)
 }
 
 
-static brew_model_info *get_model_info(sim_cpu *scpu)
+
+/////////////////////////////////////////////////////////////////////////
+// BREW MODEL
+/////////////////////////////////////////////////////////////////////////
+
+struct brew_model_info
 {
-  return (brew_model_info *)(scpu->model_info);
-}
+};
 
-void brew_free_model_info(SIM_CPU *scpu, SIM_DESC sd) {
-  scpu->sim_state.model_functions.free_model_info(scpu);
-}
-
-static void free_model_info(sim_cpu *scpu)
+static void brew_model_done(sim_cpu *scpu)
 {
-  delete get_model_info(scpu);
-  scpu->model_info = nullptr;
+  free(scpu->model_info);
+  printf("Done with model BREW\n");
 }
 
-
-
-
-void espresso_model_init(sim_cpu *scpu)
+static void brew_model_setup_sim(SIM_DESC sd, sim_cpu *scpu)
 {
-  scpu->model_info = new espresso_model_info();
+  // FIXME: not sure what these do. Probably create and allocate some memory
+  sim_do_command(sd," memory region 0x00000000,0x80000000"); // main memory for program storage
 }
 
-void anachron_model_init(sim_cpu *scpu)
+static void brew_model_v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t *p_addr)
 {
-  scpu->model_info = new anachron_model_info();
+  SIM_DESC sd = CPU_STATE(scpu);
+
+  SIM_ASSERT(p_addr != NULL);
+  *p_addr = v_addr;
 }
 
-void brew_model_setup_sim(sim_cpu *scpu, SIM_DESC sd) {
-  brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
-  return model_info->setup_sim(sd);
+static void brew_model_read_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t *value)
+{
+  read_mem(scpu, vma, length, value, brew_model_v2p_addr);
 }
 
-static uint32_t read_csr(sim_cpu *scpu, uint16_t addr) {
-  brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
-  return model_info->read_csr(scpu, addr);
+static uint32_t brew_model_read_inst(sim_cpu *scpu, uint32_t vma, int length)
+{
+  return read_inst(scpu, vma, length, brew_model_v2p_addr);
 }
 
-static void write_csr(sim_cpu *scpu, uint16_t addr, uint32_t data) {
-  brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
-  return model_info->write_csr(scpu, addr, data);
+static void brew_model_write_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t value)
+{
+  write_mem(scpu, vma, length, value, brew_model_v2p_addr);
 }
 
-static void handle_exception(sim_cpu *scpu) {
-  brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
-  return model_info->handle_exception(scpu);
+static void brew_model_write_csr(sim_cpu *scpu, uint16_t addr, uint32_t data)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+  sim_engine_abort(sd, scpu, NULL_CIA, "Unknown write at CSR address 0x%04x", addr);
 }
 
-static void brew_model_handle_interrupt(sim_cpu *scpu) {
-  brew_model_info *model_info = (brew_model_info*)(scpu->model_info);
-  return model_info->handle_interrupt(scpu);
+static uint32_t brew_model_read_csr(sim_cpu *scpu, uint16_t addr)
+{
+  brew_sim_state *sim_state = &scpu->sim_state;
+  SIM_DESC sd = CPU_STATE(scpu);
+  if (sim_state->is_task_mode) addr |= 0x8000;
+  switch (addr) {
+    case BREW_CSR_MARCH:
+      return 0;
+    break;
+    case BREW_CSR_CAPABILITY:
+      return 0;
+    break;
+    case BREW_CSR_FPSTAT:
+      sim_engine_abort(sd, scpu, NULL_CIA, "FIXME: brew model doesn't support CSR read of FPSTAT");
+    break;
+    case BREW_CSR_ECAUSE: {
+      uint32_t ret_val = sim_state->csr_ecause;
+      sim_state->csr_ecause = BREW_EXCEPTION_NONE;
+      return ret_val;
+    } break;
+    case BREW_CSR_EADDR:
+      return sim_state->csr_eaddr;
+    break;
+    default:
+      sim_engine_abort(sd, scpu, NULL_CIA, "Unknown read at CSR address 0x%04x", addr);
+    break;
+  }
 }
 
+static void brew_model_handle_exception(sim_cpu *scpu)
+{
+  brew_sim_state *sim_state = &scpu->sim_state;
+  SIM_DESC sd = CPU_STATE(scpu);
+  // TODO: don't forget to set ntpc, nspc, nis_task_mode as appropriate
+  if (!sim_state->is_task_mode)
+    {
+      sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGTRAP);
+    }
+  switch (STATE_ENVIRONMENT(sd))
+    {
+    case USER_ENVIRONMENT:
+    case VIRTUAL_ENVIRONMENT:
+      // All but the SYSCALL exception are fatal in user-mode sim
+      switch(sim_state->ecause)
+        {
+        case BREW_EXCEPTION_HWI:               sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+        case BREW_EXCEPTION_FILL:              sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+        case BREW_EXCEPTION_BREAK:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGTRAP); break;
+        case BREW_EXCEPTION_SYSCALL:           user_mode_handle_syscall(sd, scpu); break;
+        case BREW_EXCEPTION_SWI_3:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+        case BREW_EXCEPTION_SWI_4:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+        case BREW_EXCEPTION_SWI_5:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+        case BREW_EXCEPTION_SWI_6:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+        case BREW_EXCEPTION_SWI_7:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+        case BREW_EXCEPTION_UNKNOWN_INST:      sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+        case BREW_EXCEPTION_TYPE:              sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+        case BREW_EXCEPTION_UNALIGNED:         sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGSEGV); break;
+        default:                               sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGNONE); break;
+        }
+      break;
+    case OPERATING_ENVIRONMENT:
+      // In system mode simulations, we simply switch to scheduler mode
+      sim_state->nis_task_mode = false;
+      break;
+    default:
+      SIM_ASSERT(false);
+    }
+}
 
-static void reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
+static void brew_model_handle_interrupt(sim_cpu *scpu)
+{
+}
+
+static void brew_model_reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
 {
   brew_sim_state *sim_state = &scpu->sim_state;
 
@@ -738,21 +691,381 @@ static void reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
   */
 }
 
-
-
 void brew_model_init(sim_cpu *scpu)
 {
   SIM_DESC sd = CPU_STATE(scpu);
+  int i;
 
-  scpu->model_info = new brew_model_info();
+  printf("Setting model to BREW\n");
+
+  scpu->model_info = ZALLOC(brew_model_info);
   brew_model_functions *model_functions = &scpu->sim_state.model_functions;
-  model_functions->free_model_info = free_model_info;
-  model_functions->read_mem = read_mem;
-  model_functions->write_mem = write_mem;
-  model_functions->write_csr = write_csr;
-  model_functions->read_csr = read_csr;
-  model_functions->handle_exception = handle_exception;
-  model_functions->reset_cpu = reset_cpu;
+  model_functions->setup_sim = brew_model_setup_sim;
+  model_functions->free_model_info = brew_model_done;
+  model_functions->read_mem = brew_model_read_mem;
+  model_functions->read_inst = brew_model_read_inst;
+  model_functions->write_mem = brew_model_write_mem;
+  model_functions->write_csr = brew_model_write_csr;
+  model_functions->read_csr = brew_model_read_csr;
+  model_functions->handle_exception = brew_model_handle_exception;
+  model_functions->reset_cpu = brew_model_reset_cpu;
+  model_functions->handle_interrupt = brew_model_handle_interrupt;
   model_functions->rsqrt_fp16 = rsqrt_fp16;
   model_functions->rsqrt = rsqrt;
+
+  // Let's try to set up the simulator. We can only do that, if the 'sd' member is populated
+  // already, which only happens if the model is set as the default, not on the command line.
+  // If the model is specified on the command line, we'll have to defer the call to setup_sim
+  // to sim_open in interp.c
+  for (i = 0; i < MAX_NR_PROCESSORS; ++i)
+    {
+      sim_cpu *scpu = STATE_CPU (sd, i);
+
+      scpu->sim_state.model_functions.setup_sim(sd, scpu);
+    }
+}
+
+
+
+/////////////////////////////////////////////////////////////////////////
+// ESPRESSO MODEL
+/////////////////////////////////////////////////////////////////////////
+
+static const uint32_t ESPRESSO_ROM_BASE        = 0x00000000;
+static const uint32_t ESPRESSO_ROM_SIZE        = 64*1024;
+static const uint32_t ESPRESSO_ROM_DECODE_SIZE = 0x00010000;
+static const uint32_t ESPRESSO_RAM_BASE        = 0x08000000;
+static const uint32_t ESPRESSO_RAM_SIZE        = 1*1024*1024;
+static const uint32_t ESPRESSO_RAM_DECODE_SIZE = 0x04000000;
+
+struct espresso_model_info: public brew_model_info {
+  uint32_t pmem_base;
+  uint32_t pmem_limit;
+  uint32_t dmem_base;
+  uint32_t dmem_limit;
+  char *rom_buffer;
+  char *ram_buffer;
+};
+
+static void espresso_model_done(sim_cpu *scpu)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+  uint32_t wait_state;
+
+  printf("Done with model ESPRESSO\n");
+  SIM_ASSERT(scpu->model_info != NULL);
+  espresso_model_info *model_info = (espresso_model_info*)scpu->model_info;
+
+  // detach the ROM and RAM memories to all aliased locations.
+  if (model_info->rom_buffer != NULL) {
+    for (wait_state=0;wait_state<=15;++wait_state) {
+      uint32_t rom_base = ESPRESSO_ROM_BASE + (wait_state << 28);
+      sim_core_detach(
+        sd,
+        NULL,
+        0,
+        0, // address_space: not sure what this is
+        rom_base
+      );
+    }
+    free(model_info->rom_buffer);
+    model_info->rom_buffer = NULL;
+  }
+
+  if (model_info->ram_buffer != NULL) {
+    for (wait_state=0;wait_state<=15;++wait_state) {
+      uint32_t ram_base = ESPRESSO_RAM_BASE + (wait_state << 28);
+      sim_core_detach(
+        sd,
+        NULL,
+        0,
+        0, // address_space: not sure what this is
+        ram_base
+      );
+    }
+    free(model_info->ram_buffer);
+    model_info->ram_buffer = NULL;
+  }
+
+  free(scpu->model_info);
+  scpu->model_info = NULL;
+}
+
+// Returns a 64-bit aligned buffer.
+static char* align_alloc(size_t size)
+{
+  size_t alloc_size = ((size + 7) / 8) * 8;
+  return (char*)zalloc(alloc_size);
+}
+
+static void espresso_model_setup_sim(SIM_DESC sd, sim_cpu *scpu)
+{
+  int32_t wait_state;
+  espresso_model_info *model_info = (espresso_model_info*)scpu->model_info;
+
+  //char buf[256];
+  //snprintf(buf, sizeof(buf), " memory region 0x%08x,0x%08x", ESPRESSO_ROM_BASE, ESPRESSO_ROM_SIZE);
+  //sim_do_command(sd, buf);
+  //snprintf(buf, sizeof(buf), " memory region 0x%08x,0x%08x", ESPRESSO_RAM_BASE, ESPRESSO_RAM_SIZE);
+  //sim_do_command(sd, buf);
+
+  // Attach the ROM and RAM memories to all aliased locations.
+  model_info->rom_buffer = align_alloc(ESPRESSO_ROM_SIZE);
+  for (wait_state=0;wait_state<=15;++wait_state) {
+    uint32_t rom_base = ESPRESSO_ROM_BASE + (wait_state << 28);
+    sim_core_attach(
+      sd,
+      NULL,
+      0,
+      access_read_write_exec, // For now, allow writes into ROM as well. Maybe later change to read-only???
+      0, // address_space: not sure what this is
+      rom_base,
+      ESPRESSO_ROM_DECODE_SIZE,
+      ESPRESSO_ROM_SIZE,
+      NULL, // client HW (struct hw *)
+      model_info->rom_buffer // buffer
+    );
+  }
+
+  model_info->ram_buffer = align_alloc(ESPRESSO_RAM_SIZE);
+  for (wait_state=0;wait_state<=15;++wait_state) {
+    uint32_t ram_base = ESPRESSO_RAM_BASE + (wait_state << 28);
+    sim_core_attach(
+      sd,
+      NULL,
+      0,
+      access_read_write_exec,
+      0, // address_space: not sure what this is
+      ram_base,
+      ESPRESSO_ROM_DECODE_SIZE,
+      ESPRESSO_ROM_SIZE,
+      NULL, // client HW (struct hw *)
+      model_info->ram_buffer // buffer
+    );
+  }
+
+  /*
+  This is very poorly documented, but here's what I gathered so far:
+
+  Devices participate in a hierarchy, normally starting from 'core'. The last entry in the path is usually a 'reg' entry, which
+  lists the base/length pairs of the register entries that are assigned to the device.
+
+  The device creation actually happens as the core walks the path, so really what's going on is that the device gets created because
+  there is a 'reg' entry for it.
+
+  At any rate, the reg entry gets stored in the 'hw' structure for the device. The number of base/size pairs is only implicitly stored,
+  the device needs to know how many to expect (although the corresponding query function `hw_find_reg_array_property` errs out with
+  return code 0 if an incorrect index is used, so in theory the detection of the number of entries could be made dynamic).
+
+  The actual registration of these addresses is the responsibility of the device; it is not done automatically.
+
+  Register addresses are also going through address translation in the hierarchy, something I don't use (thus understand) completely
+  at the moment.
+
+  Since device creation happens during the walk of the path, multiple instances of devices is not trivial to create.
+
+  One mechanism is to provide a different name then the family. The family is provided in parenthesis. So,
+     /core/foo/reg
+  creates a foo sub-device with name='foo' and family='foo' as well.
+     /core/(foo)bar/reg
+  creates a foo sub-device with name='bar' and family='foo'.
+
+  It is the 'family' that determines what device model gets used, and this needs to be one of the recognized names (dv-...).
+  The name can be whatever. Also, if family is provided explicitly, it must precede the name. So `(foo)bar` is valid,
+  while `bar(foo)` is not.
+
+  There are other options that can be specified in the path to a device:
+
+  /core/foo@unit/reg: would create a 'unit'. This will simply get passed to a callback on the 'bus' device's to_unit_decode.
+    This is normally set to 'generic_hw_unit_decode'. The normal use is to create different instances of the same device
+    at different base-addresses, which is what I'm using it for as well.
+
+  /core/foo:args/reg: would create 'arguments': Whatever follows gets copied into hw->args_of_hw as a string, which then can
+    be accessed through the 'hw_args' macro. I'm using it to pass an argument to the GPIO model, such that when it is written,
+    it terminates the simulation. This is in accordance with the RTL simulator.
+
+  Apart from register space definitions, one could also make 'port connections'. These (I think) are useful for interrupt
+  or DMA routing. It takes the form: "/core/source_dev > rx   src_rx   /core/target_dev"
+
+  */
+  sim_hw_parse(sd, "/core/brew_con@%#x/reg %#x %i",                     ANACHRON_UART_BASE,     ANACHRON_UART_BASE,     ANACHRON_UART_SIZE);
+  sim_hw_parse(sd, "/core/brew_gpio@%#x/reg %#x %i",                    ANACHRON_GPIO_INT_BASE, ANACHRON_GPIO_INT_BASE, ANACHRON_GPIO_INT_SIZE);
+  sim_hw_parse(sd, "/core/brew_gpio@%#x/reg %#x %i",                    ANACHRON_GPIO_3_BASE,   ANACHRON_GPIO_3_BASE,   ANACHRON_GPIO_3_SIZE);
+  sim_hw_parse(sd, "/core/brew_gpio@%#x:terminate_on_write/reg %#x %i", ANACHRON_GPIO_4_BASE,   ANACHRON_GPIO_4_BASE,   ANACHRON_GPIO_4_SIZE);
+}
+
+static void espresso_model_v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t *p_addr)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+
+  SIM_ASSERT(p_addr != NULL);
+
+  espresso_model_info *model_info = (espresso_model_info *)(scpu->model_info);
+
+  brew_sim_state *sim_state = &scpu->sim_state;
+  // mask out wait-state (we don't care during simulation)
+  const uint32_t ADDR_MASK = 0x0fffffff;
+  if (!sim_state->is_task_mode) {
+    *p_addr = v_addr & ADDR_MASK;
+    return;
+  }
+  uint32_t base = model_info->dmem_base;
+  uint32_t limit = model_info->dmem_limit;
+  brew_exception_type exc = ESPRESSO_EXCEPTION_MEM_AV;
+  if (access_mode == acc_exec) {
+    base = model_info->pmem_base;
+    limit = model_info->pmem_limit;
+    exc = ESPRESSO_EXCEPTION_INST_AV;
+  }
+  if ((v_addr & ADDR_MASK & ~1023) > (limit & ADDR_MASK & ~1023)) {
+    sim_state->ecause = exc;
+    return;
+  }
+  *p_addr = ((v_addr & ADDR_MASK) + (base & ADDR_MASK & ~1023)) & ADDR_MASK;
+}
+
+static void espresso_model_read_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t *value)
+{
+  read_mem(scpu, vma, length, value, espresso_model_v2p_addr);
+}
+
+static uint32_t espresso_model_read_inst(sim_cpu *scpu, uint32_t vma, int length)
+{
+  return read_inst(scpu, vma, length, espresso_model_v2p_addr);
+}
+
+static void espresso_model_write_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t value)
+{
+  write_mem(scpu, vma, length, value, espresso_model_v2p_addr);
+}
+
+
+static void espresso_model_write_csr(sim_cpu *scpu, uint16_t addr, uint32_t data)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+  espresso_model_info *model_info = (espresso_model_info *)(scpu->model_info);
+  switch (addr) {
+    case ESPRESSO_CSR_PMEM_BASE_REG:  model_info->pmem_base  = data & (0x0fffffff) & ~1023; break;
+    case ESPRESSO_CSR_PMEM_LIMIT_REG: model_info->pmem_limit = data & (0x0fffffff) & ~1023; break;
+    case ESPRESSO_CSR_DMEM_BASE_REG:  model_info->dmem_base  = data & (0x0fffffff) & ~1023; break;
+    case ESPRESSO_CSR_DMEM_LIMIT_REG: model_info->dmem_limit = data & (0x0fffffff) & ~1023; break;
+    default:
+      brew_model_write_csr(scpu, addr, data);
+    break;
+  }
+}
+
+static uint32_t espresso_model_read_csr(sim_cpu *scpu, uint16_t addr)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+  espresso_model_info *model_info = (espresso_model_info *)(scpu->model_info);
+  switch (addr) {
+    case ESPRESSO_CSR_PMEM_BASE_REG:  return model_info->pmem_base  & (0x0fffffff) & ~1023;
+    case ESPRESSO_CSR_PMEM_LIMIT_REG: return model_info->pmem_limit & (0x0fffffff) & ~1023;
+    case ESPRESSO_CSR_DMEM_BASE_REG:  return model_info->dmem_base  & (0x0fffffff) & ~1023;
+    case ESPRESSO_CSR_DMEM_LIMIT_REG: return model_info->dmem_limit & (0x0fffffff) & ~1023;
+    default: return brew_model_read_csr(scpu, addr);
+  }
+  SIM_ASSERT(false);
+  return 0;
+}
+
+static void espresso_model_reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
+{
+  espresso_model_info *model_info = (espresso_model_info *)(scpu->model_info);
+
+  brew_model_reset_cpu(scpu, is_user_mode_sim);
+
+  model_info->pmem_base = 0;
+  model_info->pmem_limit = 0;
+  model_info->dmem_base = 0;
+  model_info->dmem_limit = 0;
+}
+
+static void espresso_model_handle_exception(sim_cpu *scpu)
+{
+  brew_model_handle_exception(scpu);
+//  brew_sim_state *sim_state = &scpu->sim_state;
+//  SIM_DESC sd = CPU_STATE(scpu);
+//  // TODO: don't forget to set ntpc, nspc, nis_task_mode as appropriate
+//  if (!sim_state->is_task_mode)
+//    {
+//      sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGTRAP);
+//    }
+//  switch (STATE_ENVIRONMENT(sd))
+//    {
+//    case USER_ENVIRONMENT:
+//    case VIRTUAL_ENVIRONMENT:
+//      // All but the SYSCALL exception are fatal in user-mode sim
+//      switch(sim_state->ecause)
+//        {
+//        case BREW_EXCEPTION_HWI:               sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+//        case BREW_EXCEPTION_FILL:              sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+//        case BREW_EXCEPTION_BREAK:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGTRAP); break;
+//        case BREW_EXCEPTION_SYSCALL:           user_mode_handle_syscall(sd, scpu); break;
+//        case BREW_EXCEPTION_SWI_3:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+//        case BREW_EXCEPTION_SWI_4:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+//        case BREW_EXCEPTION_SWI_5:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+//        case BREW_EXCEPTION_SWI_6:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+//        case BREW_EXCEPTION_SWI_7:             sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+//        case BREW_EXCEPTION_UNKNOWN_INST:      sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+//        case BREW_EXCEPTION_TYPE:              sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGILL); break;
+//        case BREW_EXCEPTION_UNALIGNED:         sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGSEGV); break;
+//        default:                               sim_engine_halt(sd, scpu, NULL, sim_state->tpc, sim_stopped, SIM_SIGNONE); break;
+//        }
+//      break;
+//    case OPERATING_ENVIRONMENT:
+//      // In system mode simulations, we simply switch to scheduler mode
+//      sim_state->nis_task_mode = false;
+//    default:
+//      SIM_ASSERT(false);
+//    }
+}
+
+static void espresso_model_handle_interrupt(sim_cpu *scpu)
+{
+}
+
+void espresso_model_init(sim_cpu *scpu)
+{
+  SIM_DESC sd = CPU_STATE(scpu);
+  int i;
+
+  printf("Setting model to ESPRESSO\n");
+
+  espresso_model_info *model_info = ZALLOC(espresso_model_info);
+  scpu->model_info = model_info;
+  model_info->pmem_base = 0;
+  model_info->pmem_limit = 0;
+  model_info->dmem_base = 0;
+  model_info->dmem_limit = 0;
+  model_info->rom_buffer = NULL;
+  model_info->ram_buffer = NULL;
+
+  brew_model_functions *model_functions = &scpu->sim_state.model_functions;
+  model_functions->setup_sim = espresso_model_setup_sim;
+  model_functions->free_model_info = espresso_model_done;
+  model_functions->read_mem = espresso_model_read_mem;
+  model_functions->read_inst = espresso_model_read_inst;
+  model_functions->write_mem = espresso_model_write_mem;
+  model_functions->write_csr = espresso_model_write_csr;
+  model_functions->read_csr = espresso_model_read_csr;
+  model_functions->handle_exception = espresso_model_handle_exception;
+  model_functions->reset_cpu = espresso_model_reset_cpu;
+  model_functions->handle_interrupt = espresso_model_handle_interrupt;
+  model_functions->rsqrt_fp16 = rsqrt_fp16;
+  model_functions->rsqrt = rsqrt;
+
+  // Let's try to set up the simulator. We can only do that, if the 'sd' member is populated
+  // already, which only happens if the model is set as the default, not on the command line.
+  // If the model is specified on the command line, we'll have to defer the call to setup_sim
+  // to sim_open in interp.c
+  if (sd != NULL)
+    {
+      for (i = 0; i < MAX_NR_PROCESSORS; ++i)
+        {
+          sim_cpu *scpu = STATE_CPU (sd, i);
+          scpu->sim_state.model_functions.setup_sim(sd, scpu);
+        }
+    }
 }

@@ -25,10 +25,5 @@
 // It is a heavily based on the m32r UART virtual peripheral.
 
 // All registers are 8-bit wide and can only be accessed using 8-bit transactions.
-const uint32_t CON_DATA_REG_OFS     = 0x0;
-const uint32_t CON_STATUS_REG_OFS   = 0x1;
-const uint32_t CON_CONFIG1_REG_OFS  = 0x2;
-const uint32_t CON_CONFIG2_REG_OFS  = 0x3;
-const uint32_t CON_DIVIDER_REG_OFS  = 0x4;
+#define GPIO_DATA_REG_OFS     0x0
 
-const uint8_t CON_STAT_RX_FULL  = 0x01;
