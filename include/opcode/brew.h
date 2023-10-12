@@ -107,6 +107,7 @@ typedef void (*brew_write_csr_ftype)(struct _sim_cpu *scpu, uint16_t csr_addr, u
 typedef void (*brew_handle_exception_ftype)(struct _sim_cpu *scpu);
 typedef void (*brew_reset_cpu_ftype)(struct _sim_cpu *scpu, bool is_user_mode_sim);
 typedef void (*brew_setup_sim_ftype)(struct sim_state *sd, struct _sim_cpu *scpu);
+typedef void (*brew_setup_sd_ftype)(struct sim_state *sd);
 typedef void (*brew_handle_interrupt_ftype)(struct _sim_cpu *scpu);
 
 
@@ -116,6 +117,7 @@ typedef float (*brew_rsqrt_ftype)(float);
 struct brew_model_functions {
   // Function pointers to virtualized (model-specific) implementations
   brew_setup_sim_ftype setup_sim;
+  brew_setup_sd_ftype setup_sd;
   brew_read_mem_ftype read_mem;
   brew_read_inst_ftype read_inst;
   brew_write_mem_ftype write_mem;

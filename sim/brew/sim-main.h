@@ -52,6 +52,9 @@ struct _sim_cpu {
   char decode_buf[255];
   mem_trace_s mem_trace;
   void *model_info; // pointer to model-specific data
+  // This is a giant hack, but I can't solve this: we need to squirrel away all the command-line options before we know what the model is
+  // going to be, so neither sim_state.model_functions.XXX nor model_info is filled in.
+  const char *rom_file_name;
 };
 
 // sim_engine_halt normally tries to set the PC to whatever

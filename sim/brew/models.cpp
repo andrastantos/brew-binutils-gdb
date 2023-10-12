@@ -114,6 +114,11 @@ static const uint32_t ANACHRON_GPIO_4_SIZE      = 1;
 static const uint32_t ANACHRON_GPIO_INT_BASE    = ANACHRON_IO_GPIO_BASE + 0x2000;
 static const uint32_t ANACHRON_GPIO_INT_SIZE    = 1;
 
+enum {
+  OPTION_ESPRESSO_ROM_FILE = OPTION_START,
+};
+
+
 
 static int marshal_o_flags_from_sim(int oflags)
 {
@@ -572,6 +577,17 @@ static void brew_model_setup_sim(SIM_DESC sd, sim_cpu *scpu)
   sim_do_command(sd," memory region 0x00000000,0x80000000"); // main memory for program storage
 }
 
+static void brew_model_setup_sd(SIM_DESC sd ATTRIBUTE_UNUSED)
+{
+  sim_cpu *scpu = STATE_CPU(sd, 0); // It's a hack, but the ROM FW is always stored on the model_info structure of the first CPU
+
+  const char *rom_fw = scpu->rom_file_name;
+  if (rom_fw != NULL)
+    {
+      sim_io_eprintf(sd, "WARNING: rom-file %s ignored for brew models\n", rom_fw);
+    }
+}
+
 static void brew_model_v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t *p_addr)
 {
   SIM_DESC sd = CPU_STATE(scpu);
@@ -701,6 +717,7 @@ void brew_model_init(sim_cpu *scpu)
   scpu->model_info = ZALLOC(brew_model_info);
   brew_model_functions *model_functions = &scpu->sim_state.model_functions;
   model_functions->setup_sim = brew_model_setup_sim;
+  model_functions->setup_sd = brew_model_setup_sd;
   model_functions->free_model_info = brew_model_done;
   model_functions->read_mem = brew_model_read_mem;
   model_functions->read_inst = brew_model_read_inst;
@@ -745,6 +762,7 @@ struct espresso_model_info: public brew_model_info {
   uint32_t dmem_limit;
   char *rom_buffer;
   char *ram_buffer;
+  char *rom_fw_name;
 };
 
 static void espresso_model_done(sim_cpu *scpu)
@@ -785,6 +803,11 @@ static void espresso_model_done(sim_cpu *scpu)
     }
     free(model_info->ram_buffer);
     model_info->ram_buffer = NULL;
+  }
+
+  if (model_info->rom_fw_name != NULL) {
+    free(model_info->rom_fw_name);
+    model_info->rom_fw_name = NULL;
   }
 
   free(scpu->model_info);
@@ -837,8 +860,8 @@ static void espresso_model_setup_sim(SIM_DESC sd, sim_cpu *scpu)
       access_read_write_exec,
       0, // address_space: not sure what this is
       ram_base,
-      ESPRESSO_ROM_DECODE_SIZE,
-      ESPRESSO_ROM_SIZE,
+      ESPRESSO_RAM_DECODE_SIZE,
+      ESPRESSO_RAM_SIZE,
       NULL, // client HW (struct hw *)
       model_info->ram_buffer // buffer
     );
@@ -893,6 +916,48 @@ static void espresso_model_setup_sim(SIM_DESC sd, sim_cpu *scpu)
   sim_hw_parse(sd, "/core/brew_gpio@%#x/reg %#x %i",                    ANACHRON_GPIO_3_BASE,   ANACHRON_GPIO_3_BASE,   ANACHRON_GPIO_3_SIZE);
   sim_hw_parse(sd, "/core/brew_gpio@%#x:terminate_on_write/reg %#x %i", ANACHRON_GPIO_4_BASE,   ANACHRON_GPIO_4_BASE,   ANACHRON_GPIO_4_SIZE);
 }
+
+// This is a routine that loads an binary into memory without modifying the bfd-related structures in 'sd'
+// It is based on sim_load and sim_analyze_program, but gutted to keep state local
+static SIM_RC load_binary(SIM_DESC sd, const char *prog_name)
+{
+  bfd *prog_bfd;
+
+  SIM_ASSERT(STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
+
+  prog_bfd = sim_load_file(
+    sd,
+    STATE_MY_NAME(sd),                       // Name to print in error messages
+    STATE_CALLBACK(sd),                      // stream writer for error messages
+    prog_name,                               // name of the program to load
+    NULL,                                    // existing BFD if already opened
+    STATE_OPEN_KIND(sd) == SIM_OPEN_DEBUG,   // whether to do verbose tracing
+    STATE_LOAD_AT_LMA_P(sd),                 // whether to load to LMA or VMA address
+    sim_write                                // callback to actually write sections to memory
+  );
+  if (prog_bfd == NULL)
+    return SIM_RC_FAIL;
+  bfd_close(prog_bfd);
+
+  return SIM_RC_OK;
+}
+
+static void espresso_model_setup_sd(SIM_DESC sd)
+{
+  sim_cpu *scpu = STATE_CPU(sd, 0); // It's a hack, but the ROM FW is always stored on the model_info structure of the first CPU
+
+  // Try to load ROM firmware
+  const char *rom_fw = scpu->rom_file_name;
+  if (rom_fw != NULL)
+    {
+      if (load_binary(sd, rom_fw) != SIM_RC_OK)
+        {
+          sim_io_eprintf(sd, "WARNING: can't load ROM firmware from file %s\n", rom_fw);
+        }
+    }
+}
+
+
 
 static void espresso_model_v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_modes access_mode, uint32_t *p_addr)
 {
@@ -977,9 +1042,19 @@ static void espresso_model_reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
   brew_model_reset_cpu(scpu, is_user_mode_sim);
 
   model_info->pmem_base = 0;
-  model_info->pmem_limit = 0;
   model_info->dmem_base = 0;
-  model_info->dmem_limit = 0;
+  if (is_user_mode_sim)
+    {
+      // Setting $sp and limit registers to a minimally useful environment
+      model_info->pmem_limit = 0x0ffffc00;
+      model_info->dmem_limit = 0x0ffffc00;
+      scpu->sim_state.reg[BREW_REG_SP] = MAKE_INT(ESPRESSO_RAM_BASE + ESPRESSO_RAM_SIZE, BREW_REG_TYPE_INT32);
+    }
+  else
+    {
+      model_info->pmem_limit = 0;
+      model_info->dmem_limit = 0;
+    }
 }
 
 static void espresso_model_handle_exception(sim_cpu *scpu)
@@ -1044,6 +1119,7 @@ void espresso_model_init(sim_cpu *scpu)
 
   brew_model_functions *model_functions = &scpu->sim_state.model_functions;
   model_functions->setup_sim = espresso_model_setup_sim;
+  model_functions->setup_sd = espresso_model_setup_sd;
   model_functions->free_model_info = espresso_model_done;
   model_functions->read_mem = espresso_model_read_mem;
   model_functions->read_inst = espresso_model_read_inst;
@@ -1068,4 +1144,52 @@ void espresso_model_init(sim_cpu *scpu)
           scpu->sim_state.model_functions.setup_sim(sd, scpu);
         }
     }
+}
+
+
+
+
+
+// Create command-line options to define various aspects of the simulation
+
+static SIM_RC brew_option_handler(SIM_DESC sd, sim_cpu *scpu, int opt, char *arg, int is_command)
+{
+  switch (opt)
+    {
+    case OPTION_ESPRESSO_ROM_FILE:
+      if (arg == NULL) {
+        sim_io_eprintf(sd, "FIXME: default ROM file is not implemented yet for --rom-file option\n");
+        return SIM_RC_FAIL;
+      }
+      STATE_CPU(sd, 0)->rom_file_name = strdup(arg);
+      return SIM_RC_OK;
+
+    default:
+      sim_io_eprintf(sd, "Unknown option %d\n", opt);
+      return SIM_RC_FAIL;
+    }
+}
+
+static const OPTION brew_options[] =
+{
+  {
+    {"rom-file", optional_argument, NULL, OPTION_ESPRESSO_ROM_FILE },
+    '\0',
+    "FILE NAME",
+    "Specify ROM firmware to load before executable. If not specified, no firmware is loaded.",
+    brew_option_handler,
+    NULL
+  },
+
+  { {NULL, no_argument, NULL, 0}, '\0', NULL, NULL, NULL, NULL }
+};
+
+SIM_RC brew_options_init(SIM_DESC sd)
+{
+  SIM_ASSERT(STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
+  if (sim_add_option_table (sd, NULL, brew_options) != SIM_RC_OK)
+    return SIM_RC_FAIL;
+  //sim_module_add_init_fn (sd, dv_sockser_init);
+  //sim_module_add_uninstall_fn (sd, dv_sockser_uninstall);
+  return SIM_RC_OK;
 }

@@ -25,16 +25,13 @@ SIM_EXTRA_HW_DEVICES = brew_con brew_gpio
 	$(COMPILE.CXX) $<
 	$(POSTCOMPILE)
 
-SIM_BREW_COMMON_OBJS = $(filter-out sim-hload.o sim-hrw.o, $(SIM_NEW_COMMON_OBJS))
-#SIM_BREW_COMMON_OBJS = $(SIM_NEW_COMMON_OBJS)
-
 SIM_OBJS = \
-	$(SIM_BREW_COMMON_OBJS) \
+	$(SIM_NEW_COMMON_OBJS) \
 	interp.o \
 	models.o \
 	sim-resume.o
 
-SIM_CSRC = $(SIM_BREW_COMMON_OBJS:.o=.c) \
+SIM_CSRC = $(SIM_NEW_COMMON_OBJS:.o=.c) \
 	interp.o \
 	sim-resume.o
 

@@ -75,7 +75,7 @@ static void mem_trace_to_str(mem_trace_s *mem_trace, char *buffer)
 
 
 static void
-setup_sim_state(sim_cpu *scpu, bool is_user_mode_sim)
+setup_sim_state(sim_cpu *scpu)
 {
   if (TRACE_P(scpu, TRACE_INSN_IDX))
     scpu->sim_state.tracer = (fprintf_ftype)sprintf;
@@ -471,7 +471,6 @@ brew_init_cpu(sim_cpu *scpu)
   CPU_PC_STORE(scpu) = brew_pc_set;
   CPU_MAX_INSNS(scpu) = 0x10000; // To make is simple, every instruction code is counted separately (for now)
   CPU_INSN_NAME(scpu) = full_insn_class_name;
-  setup_sim_state(scpu, true);
 }
 
 static void
@@ -541,6 +540,13 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
       return 0;
     }
 
+  /* Install our command-line options */
+  if (brew_options_init(sd) != SIM_RC_OK)
+    {
+      free_state (sd);
+      return 0;
+    }
+
   /* The parser will print an error message for us, so we silently return.  */
   if (sim_parse_args (sd, argv) != SIM_RC_OK)
     {
@@ -602,11 +608,15 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
     {
       sim_cpu *scpu = STATE_CPU (sd, i);
 
+      setup_sim_state(scpu);
       scpu->sim_state.model_functions.reset_cpu(scpu, is_user_mode);
     }
 
   sim_module_add_uninstall_fn(sd, brew_sim_uninstall);
   //sim_module_add_init_fn (sd, sim_core_init);
+
+  /* Do any simulator-wide setup, such as loading of firmware */
+  STATE_CPU(sd, 0)->sim_state.model_functions.setup_sd(sd);
 
   return sd;
 }
@@ -652,18 +662,18 @@ sim_create_inferior (SIM_DESC sd, struct bfd *prog_bfd,
 
   if (prog_bfd != NULL)
     {
-      uint32_t start_addr = bfd_get_start_address(prog_bfd);
       switch (STATE_ENVIRONMENT(CPU_STATE(scpu)))
         {
         case USER_ENVIRONMENT:
         case VIRTUAL_ENVIRONMENT:
-          scpu->sim_state.tpc = start_addr;
-          scpu->sim_state.ntpc = start_addr;
+          scpu->sim_state.tpc = STATE_START_ADDR(sd);
+          scpu->sim_state.ntpc = STATE_START_ADDR(sd);
           scpu->sim_state.is_task_mode = true;
           break;
         case OPERATING_ENVIRONMENT:
-          scpu->sim_state.spc = start_addr;
-          scpu->sim_state.nspc = start_addr;
+          // We're starting the processor from the reset vector, no matter what the BFD was linked to.
+          scpu->sim_state.spc = 0;
+          scpu->sim_state.nspc = 0;
           scpu->sim_state.is_task_mode = false;
           break;
         default:
@@ -709,54 +719,3 @@ sim_create_inferior (SIM_DESC sd, struct bfd *prog_bfd,
   return SIM_RC_OK;
 }
 
-
-// I think I'll need to override these two functions to get aliasing working properly.
-// The reason is that a lot of internal functions, such as program load depend on these.
-
-int
-sim_read (SIM_DESC sd, SIM_ADDR mem, unsigned char *buf, int length)
-{
-  SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
-  return sim_core_read_buffer (sd, NULL, read_map, buf, mem, length);
-}
-
-int
-sim_write (SIM_DESC sd, SIM_ADDR mem, const unsigned char *buf, int length)
-{
-  SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
-  return sim_core_write_buffer (sd, NULL, write_map,
-				buf, mem, length);
-}
-
-// An alternative is to override this:
-
-SIM_RC
-sim_load (SIM_DESC sd, const char *prog_name, struct bfd *prog_bfd, int from_tty)
-{
-  bfd *result_bfd;
-
-  SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
-  if (sim_analyze_program (sd, prog_name, prog_bfd) != SIM_RC_OK)
-    return SIM_RC_FAIL;
-  SIM_ASSERT (STATE_PROG_BFD (sd) != NULL);
-
-  /* NOTE: For historical reasons, older hardware simulators
-     incorrectly write the program sections at LMA interpreted as a
-     virtual address.  This is still accommodated for backward
-     compatibility reasons. */
-
-  result_bfd = sim_load_file (sd, STATE_MY_NAME (sd),
-			      STATE_CALLBACK (sd),
-			      prog_name,
-			      STATE_PROG_BFD (sd),
-			      STATE_OPEN_KIND (sd) == SIM_OPEN_DEBUG,
-			      STATE_LOAD_AT_LMA_P (sd),
-			      sim_write);
-  if (result_bfd == NULL)
-    {
-      bfd_close (STATE_PROG_BFD (sd));
-      STATE_PROG_BFD (sd) = NULL;
-      return SIM_RC_FAIL;
-    }
-  return SIM_RC_OK;
-}
