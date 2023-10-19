@@ -72,7 +72,7 @@ static int hexdigit(char digit)
   OPCODES_ASSERT(false);
 }
 
-static bool pattern_match(uint16_t insn_code, const char *pattern)
+bool brew_pattern_match(uint16_t insn_code, const char *pattern)
 {
   const char *p;
   int nibble;
@@ -950,18 +950,18 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
           if ((insn_code & 0x0fff) == 0x000)
             {
               // Exception group
-              if (pattern_match(insn_code, "0000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_FILL); INST("fill"); }
-              if (pattern_match(insn_code, "1000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_BREAK); INST("break"); }
-              if (pattern_match(insn_code, "2000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SYSCALL); INST("syscall"); }
-              if (pattern_match(insn_code, "3000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_3); INST("swi 3"); }
-              if (pattern_match(insn_code, "4000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_4); INST("swi 4"); }
-              if (pattern_match(insn_code, "5000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_5); INST("swi 5"); }
-              if (pattern_match(insn_code, "6000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_6); INST("swi 6"); }
-              if (pattern_match(insn_code, "7000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_7); INST("swi 7"); }
+              if (brew_pattern_match(insn_code, "0000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_FILL); INST("fill"); }
+              if (brew_pattern_match(insn_code, "1000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_BREAK); INST("break"); }
+              if (brew_pattern_match(insn_code, "2000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SYSCALL); INST("syscall"); }
+              if (brew_pattern_match(insn_code, "3000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_3); INST("swi 3"); }
+              if (brew_pattern_match(insn_code, "4000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_4); INST("swi 4"); }
+              if (brew_pattern_match(insn_code, "5000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_5); INST("swi 5"); }
+              if (brew_pattern_match(insn_code, "6000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_6); INST("swi 6"); }
+              if (brew_pattern_match(insn_code, "7000")) { CLASS(EXCEPTION); SIM(sim_state->ecause =  BREW_EXCEPTION_SWI_7); INST("swi 7"); }
 
-              if (pattern_match(insn_code, "8000")) { CLASS(BRANCH); SIM(sim_state->nis_task_mode = true); INST("stm"); }
-              if (pattern_match(insn_code, "9000")) { CLASS(POWER); INST("woi"); }
-              if (pattern_match(insn_code, "a000")) { CLASS(POWER); INST("pflush"); }
+              if (brew_pattern_match(insn_code, "8000")) { CLASS(BRANCH); SIM(sim_state->nis_task_mode = true); INST("stm"); }
+              if (brew_pattern_match(insn_code, "9000")) { CLASS(POWER); INST("woi"); }
+              if (brew_pattern_match(insn_code, "a000")) { CLASS(POWER); INST("pflush"); }
               UNKNOWN;
             }
           if ((insn_code & 0x0fff) == 0x001)
@@ -981,48 +981,48 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
           if ((insn_code & 0x0ff0) == 0x000)
             {
               // Branch group
-              if (pattern_match(insn_code, ".002")) { CLASS(BRANCH); SIM(SIM_PC_T = SIM_REG(FIELD_D).val); INST("$pc <- %s", REG_D); }
-              if (pattern_match(insn_code, ".003")) { CLASS(MOV); SIM(SIM_TPC_T = SIM_REG(FIELD_D).val); INST("$tpc <- %s", REG_D); }
-              if (pattern_match(insn_code, ".004")) { CLASS(MOV); SIM(SIM_REGD_T = MAKE_INT(SIM_PC, BREW_REG_TYPE_INT32)); INST("%s <- $pc", REG_D); }
-              if (pattern_match(insn_code, ".005")) { CLASS(MOV); SIM(SIM_REGD_T = MAKE_INT(SIM_TPC, BREW_REG_TYPE_INT32)); INST("%s <- $tpc", REG_D); }
+              if (brew_pattern_match(insn_code, ".002")) { CLASS(BRANCH); SIM(SIM_PC_T = SIM_REG(FIELD_D).val); INST("$pc <- %s", REG_D); }
+              if (brew_pattern_match(insn_code, ".003")) { CLASS(MOV); SIM(SIM_TPC_T = SIM_REG(FIELD_D).val); INST("$tpc <- %s", REG_D); }
+              if (brew_pattern_match(insn_code, ".004")) { CLASS(MOV); SIM(SIM_REGD_T = MAKE_INT(SIM_PC, BREW_REG_TYPE_INT32)); INST("%s <- $pc", REG_D); }
+              if (brew_pattern_match(insn_code, ".005")) { CLASS(MOV); SIM(SIM_REGD_T = MAKE_INT(SIM_TPC, BREW_REG_TYPE_INT32)); INST("%s <- $tpc", REG_D); }
               // Load immediate
-              if (pattern_match(insn_code, ".00f")) { CLASS(IMM); SIM(SIM_REGD_T = MAKE_INT(field_e, SIM_REGD_TYPE)); INST("%s <- %u (0x%x)", REG_D, field_e, field_e); }
+              if (brew_pattern_match(insn_code, ".00f")) { CLASS(IMM); SIM(SIM_REGD_T = MAKE_INT(field_e, SIM_REGD_TYPE)); INST("%s <- %u (0x%x)", REG_D, field_e, field_e); }
               UNKNOWN;
             }
 
           // Unary group
-          if (pattern_match(insn_code, ".01.")) { SIM(CLASS(ARITH); SIM_REGD_T = MAKE_INT(decode_ones_complement(FIELD_A, 4), SIM_REGD_TYPE)); INST("%s <- tiny %d", REG_D, decode_ones_complement(FIELD_A, 4)); }
-          if (pattern_match(insn_code, ".02.")) { SIM(CLASS(LINK); SIM_REGD_T = MAKE_INT(SIM_PC + sim_link_offset(FIELD_A), BREW_REG_TYPE_INT32)); INST("%s <- $pc + %s", REG_D, format_link_offset(FIELD_A, str_buffer)); }
-          if (pattern_match(insn_code, ".03.")) { SIM(CLASS(ARITH); SIM_REGD_T = neg_op(SIM_REG(FIELD_A))); INST("%s <- -%s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".04.")) { SIM(CLASS(BIT); SIM_REGD_T = not_op(SIM_REG(FIELD_A))); INST("%s <- ~%s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".05.")) { SIM(CLASS(BIT); SIM_REGD_T = bse_op(SIM_REG(FIELD_A))); INST("%s <- bse %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".06.")) { SIM(CLASS(BIT); SIM_REGD_T = wse_op(SIM_REG(FIELD_A))); INST("%s <- wse %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".07.")) { SIM(CLASS(ARITH); SIM_REGD_T = popcnt_op(SIM_REG(FIELD_A))); INST("%s <- popcnt %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".08.")) { SIM(CLASS(FP); SIM_REGD_T = reciprocal_op(SIM_REG(FIELD_A))); INST("%s <- 1 / %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".09.")) { SIM(CLASS(FP); SIM_REGD_T = rsqrt_op(SIM_REG(FIELD_A), sim_state)); INST("%s <- rsqrt %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".0c.")) { SIM(CLASS(TYPE); if ((SIM_REG(FIELD_A).val & 0xf) != BREW_REG_TYPE_MASK) SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), SIM_REG(FIELD_A).val & 0xf)); INST("type %s <- %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".0d.")) { SIM(CLASS(TYPE); SIM_REGD_T = MAKE_INT(SIM_REG(FIELD_A).type, BREW_REG_TYPE_INT32)); INST("%s <- type %s", REG_D, REG_A); }
-          if (pattern_match(insn_code, ".0e.")) { SIM(CLASS(TYPE); if (FIELD_A != BREW_REG_TYPE_MASK) SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), FIELD_A)); INST("type %s <- %s", REG_D, brew_reg_type_name(FIELD_A)); }
+          if (brew_pattern_match(insn_code, ".01.")) { SIM(CLASS(ARITH); SIM_REGD_T = MAKE_INT(decode_ones_complement(FIELD_A, 4), SIM_REGD_TYPE)); INST("%s <- tiny %d", REG_D, decode_ones_complement(FIELD_A, 4)); }
+          if (brew_pattern_match(insn_code, ".02.")) { SIM(CLASS(LINK); SIM_REGD_T = MAKE_INT(SIM_PC + sim_link_offset(FIELD_A), BREW_REG_TYPE_INT32)); INST("%s <- $pc + %s", REG_D, format_link_offset(FIELD_A, str_buffer)); }
+          if (brew_pattern_match(insn_code, ".03.")) { SIM(CLASS(ARITH); SIM_REGD_T = neg_op(SIM_REG(FIELD_A))); INST("%s <- -%s", REG_D, REG_A); }
+          if (brew_pattern_match(insn_code, ".04.")) { SIM(CLASS(BIT); SIM_REGD_T = not_op(SIM_REG(FIELD_A))); INST("%s <- ~%s", REG_D, REG_A); }
+          if (brew_pattern_match(insn_code, ".05.")) { SIM(CLASS(BIT); SIM_REGD_T = bse_op(SIM_REG(FIELD_A))); INST("%s <- bse %s", REG_D, REG_A); }
+          if (brew_pattern_match(insn_code, ".06.")) { SIM(CLASS(BIT); SIM_REGD_T = wse_op(SIM_REG(FIELD_A))); INST("%s <- wse %s", REG_D, REG_A); }
+          if (brew_pattern_match(insn_code, ".07.")) { SIM(CLASS(ARITH); SIM_REGD_T = popcnt_op(SIM_REG(FIELD_A))); INST("%s <- popcnt %s", REG_D, REG_A); }
+          if (brew_pattern_match(insn_code, ".08.")) { SIM(CLASS(FP); SIM_REGD_T = reciprocal_op(SIM_REG(FIELD_A))); INST("%s <- 1 / %s", REG_D, REG_A); }
+          if (brew_pattern_match(insn_code, ".09.")) { SIM(CLASS(FP); SIM_REGD_T = rsqrt_op(SIM_REG(FIELD_A), sim_state)); INST("%s <- rsqrt %s", REG_D, REG_A); }
+          if (brew_pattern_match(insn_code, ".0c.")) { SIM(CLASS(TYPE); if ((SIM_REG(FIELD_A).val & 0xf) != BREW_REG_TYPE_MASK) SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), SIM_REG(FIELD_A).val & 0xf)); INST("type %s <- %s", REG_D, REG_A); }
+          if (brew_pattern_match(insn_code, ".0d.")) { SIM(CLASS(TYPE); SIM_REGD_T = MAKE_INT(SIM_REG(FIELD_A).type, BREW_REG_TYPE_INT32)); INST("%s <- type %s", REG_D, REG_A); }
+          if (brew_pattern_match(insn_code, ".0e.")) { SIM(CLASS(TYPE); if (FIELD_A != BREW_REG_TYPE_MASK) SIM_REGD_T = MAKE_INT(L32_0(SIM_REG(FIELD_D)), FIELD_A)); INST("type %s <- %s", REG_D, brew_reg_type_name(FIELD_A)); }
 
           // immediate branch
-          if (pattern_match(insn_code, "20ef")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e); INST("$pc <- %u (0x%x)", field_e, field_e); }
-          if (pattern_match(insn_code, "30ef")) { SIM(CLASS(BRANCH); SIM_TPC_T = field_e); INST("$tpc <- %u (0x%x)", field_e, field_e); }
-          if (pattern_match(insn_code, "40ef")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e; SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC + length, BREW_REG_TYPE_INT32)); INST("call %u (0x%x)", field_e, field_e); }
+          if (brew_pattern_match(insn_code, "20ef")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e); INST("$pc <- %u (0x%x)", field_e, field_e); }
+          if (brew_pattern_match(insn_code, "30ef")) { SIM(CLASS(BRANCH); SIM_TPC_T = field_e); INST("$tpc <- %u (0x%x)", field_e, field_e); }
+          if (brew_pattern_match(insn_code, "40ef")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e; SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC + length, BREW_REG_TYPE_INT32)); INST("call %u (0x%x)", field_e, field_e); }
 
           // load short immediate
-          if (pattern_match(insn_code, ".0f0")) {SIM( CLASS(IMM); SIM_REGD_T = MAKE_INT(field_e, SIM_REGD_TYPE)); INST("%s <- short %u (0x%x)", REG_D, field_e, field_e); }
+          if (brew_pattern_match(insn_code, ".0f0")) {SIM( CLASS(IMM); SIM_REGD_T = MAKE_INT(field_e, SIM_REGD_TYPE)); INST("%s <- short %u (0x%x)", REG_D, field_e, field_e); }
 
           // short immediate branch
-          if (pattern_match(insn_code, "20fe")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e); INST("$pc <- short %u (0x%x)", field_e, field_e); }
-          if (pattern_match(insn_code, "30fe")) { SIM(CLASS(BRANCH); SIM_TPC_T = field_e); INST("$tpc <- short %u (0x%x)", field_e, field_e); }
-          if (pattern_match(insn_code, "40fe")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e; SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC + length, BREW_REG_TYPE_INT32)); INST("call short %u (0x%x)", field_e, field_e); }
+          if (brew_pattern_match(insn_code, "20fe")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e); INST("$pc <- short %u (0x%x)", field_e, field_e); }
+          if (brew_pattern_match(insn_code, "30fe")) { SIM(CLASS(BRANCH); SIM_TPC_T = field_e); INST("$tpc <- short %u (0x%x)", field_e, field_e); }
+          if (brew_pattern_match(insn_code, "40fe")) { SIM(CLASS(BRANCH); SIM_PC_T = field_e; SIM_REG_T(BREW_REG_LINK) = MAKE_INT(SIM_PC + length, BREW_REG_TYPE_INT32)); INST("call short %u (0x%x)", field_e, field_e); }
 
           // CSR loads and stores
-          if (pattern_match(insn_code, ".0f8")) { SIM(CLASS(LD); SIM_REGD_T = MAKE_INT(sim_csr_load(scpu, sim_state, field_e), SIM_REGD_TYPE)); INST("%s <- CSR[%u (0x%x)]", REG_D, field_e, field_e); }
-          if (pattern_match(insn_code, ".0f9")) { SIM(CLASS(ST); sim_csr_store(scpu, sim_state, field_e, SIM_REG(FIELD_D).val)); INST("CSR[%u (0x%x)] <- %s", field_e, field_e, REG_D); }
+          if (brew_pattern_match(insn_code, ".0f8")) { SIM(CLASS(LD); SIM_REGD_T = MAKE_INT(sim_csr_load(scpu, sim_state, field_e), SIM_REGD_TYPE)); INST("%s <- CSR[%u (0x%x)]", REG_D, field_e, field_e); }
+          if (brew_pattern_match(insn_code, ".0f9")) { SIM(CLASS(ST); sim_csr_store(scpu, sim_state, field_e, SIM_REG(FIELD_D).val)); INST("CSR[%u (0x%x)] <- %s", field_e, field_e, REG_D); }
 
           // bulk type load immediate
-          if (pattern_match(insn_code, "80ef") || pattern_match(insn_code, "90ef")) {
+          if (brew_pattern_match(insn_code, "80ef") || brew_pattern_match(insn_code, "90ef")) {
             int reg_ofs = (FIELD_D == 9) ? 8 : 0;
             SIM(CLASS(TYPE));
             char regs[1024];
@@ -1061,11 +1061,11 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
         case 0x8: if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>>", srsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
         REGULAR_ALU_PATTERN(9, *, mul_op, "", MUL);
         case 0xa:
-          if (pattern_match(insn_code, ".a..")) { CLASS(TYPE); SIM(SIM_REGD_T = type_conv_op(FIELD_A, SIM_REG(FIELD_B))); INST("%s <- %s %s", REG_D, brew_reg_type_name(FIELD_A), REG_B); }
+          if (brew_pattern_match(insn_code, ".a..")) { CLASS(TYPE); SIM(SIM_REGD_T = type_conv_op(FIELD_A, SIM_REG(FIELD_B))); INST("%s <- %s %s", REG_D, brew_reg_type_name(FIELD_A), REG_B); }
           UNKNOWN;
           break;
         case 0xb:
-          if (pattern_match(insn_code, ".b..")) {
+          if (brew_pattern_match(insn_code, ".b..")) {
             int imm = decode_ones_complement(FIELD_A, 4);
             SIM(CLASS(ARITH));
             SIM(SIM_REGD_T = add_op(MAKE_INT(imm, SIM_REG_TYPE(FIELD_B)), SIM_REG(FIELD_B)));
@@ -1204,39 +1204,39 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
     {
       #define ZERO (brew_typed_reg){0, BREW_REG_TYPE_INT32}
       // conditional branch group
-      if (pattern_match(insn_code, "f00.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_EQ, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f01.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_NE, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f02.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_GT, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f03.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_LE, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f04.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_LT, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s > 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f05.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_GE, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s <= 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f06.")) { UNKNOWN; }
-      if (pattern_match(insn_code, "f07.")) { UNKNOWN; }
-      if (pattern_match(insn_code, "f08.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_EQ, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f09.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_NE, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f0a.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_GT, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f0b.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_LE, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f0c.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_LT, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s > 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f0d.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_GE, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s <= 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f0e.")) { UNKNOWN; }
+      if (brew_pattern_match(insn_code, "f00.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_EQ, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f01.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_NE, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f02.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_GT, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f03.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_LE, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f04.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_LT, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s > 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f05.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_GE, SIM_REG(FIELD_A), true, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s <= 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f06.")) { UNKNOWN; }
+      if (brew_pattern_match(insn_code, "f07.")) { UNKNOWN; }
+      if (brew_pattern_match(insn_code, "f08.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_EQ, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f09.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_NE, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f0a.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_GT, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f0b.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_LE, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f0c.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_LT, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s > 0 $pc %s",  REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f0d.")) { CLASS(CBRANCH0); SIM(if (cond(ZERO, COND_GE, SIM_REG(FIELD_A), true, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s <= 0 $pc %s", REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f0e.")) { UNKNOWN; }
 
-      if (pattern_match(insn_code, "f1..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_EQ, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f2..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_NE, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f3..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), true,  false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f4..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), true,  false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f5..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f6..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f7..")) { UNKNOWN; }
-      if (pattern_match(insn_code, "f8..")) { UNKNOWN; }
-      if (pattern_match(insn_code, "f9..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_EQ, SIM_REG(FIELD_A), false, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "fa..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_NE, SIM_REG(FIELD_A), false, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "fb..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), true,  true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "fc..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), true,  true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "fd..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), false, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "fe..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), false, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f1..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_EQ, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f2..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_NE, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f3..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), true,  false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f4..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), true,  false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f5..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f6..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), false, false)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f7..")) { UNKNOWN; }
+      if (brew_pattern_match(insn_code, "f8..")) { UNKNOWN; }
+      if (brew_pattern_match(insn_code, "f9..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_EQ, SIM_REG(FIELD_A), false, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s == %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "fa..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_NE, SIM_REG(FIELD_A), false, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s != %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "fb..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), true,  true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "fc..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), true,  true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if signed %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "fd..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_LT, SIM_REG(FIELD_A), false, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s < %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "fe..")) { CLASS(CBRANCH); SIM(if (cond(SIM_REG(FIELD_B), COND_GE, SIM_REG(FIELD_A), false, true)) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s >= %s $pc %s", REG_B, REG_A, format_branch_target(field_e, str_buffer)); }
 
-      if (pattern_match(insn_code, "f.f.")) { CLASS(CBRANCHBIT); SIM(if (get_bit(SIM_REG(FIELD_A).val, field_c_to_bit_map[FIELD_C]) == 1) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 1 $pc %s", REG_A, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer)); }
-      if (pattern_match(insn_code, "f..f")) { CLASS(CBRANCHBIT); SIM(if (get_bit(SIM_REG(FIELD_B).val, field_c_to_bit_map[FIELD_C]) == 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 0 $pc %s", REG_B, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f.f.")) { CLASS(CBRANCHBIT); SIM(if (get_bit(SIM_REG(FIELD_A).val, field_c_to_bit_map[FIELD_C]) == 1) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 1 $pc %s", REG_A, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer)); }
+      if (brew_pattern_match(insn_code, "f..f")) { CLASS(CBRANCHBIT); SIM(if (get_bit(SIM_REG(FIELD_B).val, field_c_to_bit_map[FIELD_C]) == 0) SIM_PC_T = sim_branch_target(field_e, SIM_PC)); INST("if %s[%d] == 0 $pc %s", REG_B, field_c_to_bit_map[FIELD_C], format_branch_target(field_e, str_buffer)); }
     }
   else if (FIELD_D == 0xf && FIELD_C == 0xf && FIELD_B == 0xf)
     {
@@ -1246,39 +1246,39 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
         {
         case 0:
           // conditional branch group
-          if (pattern_match(field_e, ".00.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_EQ, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s == 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".01.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_NE, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s != 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".02.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_GT, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s < 0",  REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".03.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_LE, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s >= 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".04.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_LT, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s > 0",  REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".05.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_GE, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s <= 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".06.")) { UNKNOWN; }
-          if (pattern_match(field_e, ".07.")) { UNKNOWN; }
-          if (pattern_match(field_e, ".08.")) { UNKNOWN; }
-          if (pattern_match(field_e, ".09.")) { UNKNOWN; }
-          if (pattern_match(field_e, ".0a.")) { UNKNOWN; }
-          if (pattern_match(field_e, ".0b.")) { UNKNOWN; }
-          if (pattern_match(field_e, ".0c.")) { UNKNOWN; }
-          if (pattern_match(field_e, ".0d.")) { UNKNOWN; }
-          if (pattern_match(field_e, ".0e.")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".00.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_EQ, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s == 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".01.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_NE, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s != 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".02.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_GT, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s < 0",  REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".03.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_LE, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s >= 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".04.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_LT, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s > 0",  REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".05.")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(ZERO, COND_GE, SIM_REG(EXT_FIELD_A), true)); INST("%s <- %s <= 0", REG(EXT_FIELD_D), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".06.")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".07.")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".08.")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".09.")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".0a.")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".0b.")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".0c.")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".0d.")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".0e.")) { UNKNOWN; }
 
-          if (pattern_match(field_e, ".1..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_EQ, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s == %s",        REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".2..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_NE, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s != %s",        REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".3..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_LT, SIM_REG(EXT_FIELD_A), true )); INST("%s <- signed %s < %s",  REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".4..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_GE, SIM_REG(EXT_FIELD_A), true )); INST("%s <- signed %s >= %s", REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".5..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_LT, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s < %s",         REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".6..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_GE, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s > %s",         REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
-          if (pattern_match(field_e, ".7..")) { UNKNOWN; }
-          if (pattern_match(field_e, ".8..")) { UNKNOWN; }
-          if (pattern_match(field_e, ".9..")) { UNKNOWN; }
-          if (pattern_match(field_e, ".a..")) { UNKNOWN; }
-          if (pattern_match(field_e, ".b..")) { UNKNOWN; }
-          if (pattern_match(field_e, ".c..")) { UNKNOWN; }
-          if (pattern_match(field_e, ".d..")) { UNKNOWN; }
-          if (pattern_match(field_e, ".e..")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".1..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_EQ, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s == %s",        REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".2..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_NE, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s != %s",        REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".3..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_LT, SIM_REG(EXT_FIELD_A), true )); INST("%s <- signed %s < %s",  REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".4..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_GE, SIM_REG(EXT_FIELD_A), true )); INST("%s <- signed %s >= %s", REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".5..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_LT, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s < %s",         REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".6..")) { CLASS(VECTOR); SIM(SIM_REG_T(EXT_FIELD_D) = lane_cond(SIM_REG(EXT_FIELD_B), COND_GE, SIM_REG(EXT_FIELD_A), false)); INST("%s <- %s > %s",         REG(EXT_FIELD_D), REG(EXT_FIELD_B), REG(EXT_FIELD_A)); }
+          if (brew_pattern_match(field_e, ".7..")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".8..")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".9..")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".a..")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".b..")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".c..")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".d..")) { UNKNOWN; }
+          if (brew_pattern_match(field_e, ".e..")) { UNKNOWN; }
           UNKNOWN;
         case 1:
-          if (pattern_match(field_e, ".0.."))
+          if (brew_pattern_match(field_e, ".0.."))
             {
               CLASS(VECTOR);
               SIM(SIM_REG_T(EXT_FIELD_D) = interpolate_op(SIM_REG(EXT_FIELD_A), SIM_REG(EXT_FIELD_B)));
@@ -1296,13 +1296,13 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
       switch (FIELD_B >> 1)
         {
         case 0:
-          if (pattern_match(field_e, ".0.."))
+          if (brew_pattern_match(field_e, ".0.."))
             {
               CLASS(MUL);
               SIM(SIM_REG_T(EXT_FIELD_D) = sfullmul_op(SIM_REG(EXT_FIELD_A), SIM_REG(EXT_FIELD_B), insn_code & 0x1f));
               INST("%s <- full %s * %s >>> %d", REG(EXT_FIELD_D), REG(EXT_FIELD_A), REG(EXT_FIELD_B), insn_code & 0x1f);
             }
-          if (pattern_match(field_e, ".1.."))
+          if (brew_pattern_match(field_e, ".1.."))
             {
               CLASS(MUL);
               SIM(SIM_REG_T(EXT_FIELD_D) = fullmul_op(SIM_REG(EXT_FIELD_A), SIM_REG(EXT_FIELD_B), insn_code & 0x1f));

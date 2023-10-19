@@ -161,5 +161,6 @@ extern void brew_print_insn(fprintf_ftype fpr, void *strm_or_buffer, uint16_t in
 extern void brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_code, uint32_t field_e);
 extern const char *brew_insn_class_name(brew_insn_classes cls);
 extern const char *brew_reg_type_name(brew_reg_types reg_type);
+extern bool brew_pattern_match(uint16_t insn_code, const char *pattern);
 
 #endif // __OPCODE_BREW_H__

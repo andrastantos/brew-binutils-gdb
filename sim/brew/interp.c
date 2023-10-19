@@ -336,43 +336,45 @@ static INLINE void write_mem_unaligned(uint8_t *memory, uint32_t val)
 
 /* Store register (rn) at memory location (memory). Length is required to be 8 (32-bit value, 32-bit type) */
 /* Returns the number of bytes stored in memory */
+// TODO: actually, for now, let's disregard type and return only a 32-bit value
 static int
 brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 {
   if (rn > BREW_GDB_NUM_REGS && rn < 0)
     return 0;
-  if (length != 8)
+  if (length != 4)
     // Report back proper register size, but do no transfer.
-    return 8;
+    return 4;
 
   if (rn == BREW_GDB_REG_TPC)
     {
       write_mem_unaligned(memory, scpu->sim_state.tpc);
-      write_mem_unaligned(memory+4, BREW_REG_TYPE_INT32);
+      //write_mem_unaligned(memory+4, BREW_REG_TYPE_INT32);
     }
   else if (rn == BREW_GDB_REG_SPC)
     {
       write_mem_unaligned(memory, scpu->sim_state.spc);
-      write_mem_unaligned(memory+4, BREW_REG_TYPE_INT32);
+      //write_mem_unaligned(memory+4, BREW_REG_TYPE_INT32);
     }
   else
     {
       write_mem_unaligned(memory, scpu->sim_state.reg[rn].val);
-      write_mem_unaligned(memory+4, scpu->sim_state.reg[rn].type);
+      //write_mem_unaligned(memory+4, scpu->sim_state.reg[rn].type);
     }
 
-  return 8;
+  return 4;
 }
 
 /* Read a memory location (memory) and store it in register (rn). Length is required to be 8 (32-bit value, 32-bit type) */
 /* Returns the number of bytes read from memory, 0 if no store is performed and negative if an error occured */
 /* This apparently is called by GDB when storing all registers in memory for it's ... reasons */
+// TODO: actually, for now, let's disregard type and return only a 32-bit value
 static int
 brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 {
   if (rn > BREW_GDB_NUM_REGS && rn < 0)
     return 0;
-  if (length != 8)
+  if (length != 4)
     return -1;
 
   if (rn == BREW_GDB_REG_TPC)
@@ -388,10 +390,10 @@ brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
   else
     {
       scpu->sim_state.reg[rn].val = read_mem_unaligned(memory);
-      scpu->sim_state.reg[rn].type = read_mem_unaligned(memory+4);
+      //scpu->sim_state.reg[rn].type = read_mem_unaligned(memory+4);
     }
 
-  return 8;
+  return 4;
 }
 
 /* Returns the current PC. Used in tracing and generic syscalls. */

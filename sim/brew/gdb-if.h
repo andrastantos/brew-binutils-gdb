@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 // Most registers are seen by the same index in both the processor (simulator)
 // and in GDB. The two PCs are handled differently though. They are indexed
-// as registers normal by GDB while they're special-cased in the simulator.
+// as registers normally by GDB while they're special-cased in the simulator.
 #define BREW_GDB_REG_TPC 15
 #define BREW_GDB_REG_SPC 16
 
