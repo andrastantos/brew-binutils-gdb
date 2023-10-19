@@ -334,10 +334,10 @@ static bool brew_analyze_prolog(
     if (lr_is_saved) {
       int32_t fp_ofs = frame_info->saved_regs[BREW_REG_LINK];
       uint32_t fp = cur_fp;
-      uint32_t old_fp;
-      if (!read_memory_uint(fp+fp_ofs, byte_order, old_fp))
+      uint32_t return_addr;
+      if (!read_memory_uint(fp+fp_ofs, byte_order, return_addr))
         return false;
-      frame_info->prev_fp = old_fp;
+      frame_info->return_addr = return_addr;
     } else {
       frame_info->return_addr = get_frame_register_unsigned(this_frame, BREW_REG_LINK);
     }
