@@ -26,8 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 // as registers normally by GDB while they're special-cased in the simulator.
 #define BREW_GDB_REG_TPC 15
 #define BREW_GDB_REG_SPC 16
+#define BREW_GDB_REG_PC  17
+#define BREW_GDB_REG_TASK_MODE 18
 
 // Total number of registers as seen by GDB.
-#define BREW_GDB_NUM_REGS 17
+#define BREW_GDB_NUM_REGS 19
 
 #endif

@@ -346,6 +346,15 @@ brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
     // Report back proper register size, but do no transfer.
     return 4;
 
+  // Override PC to the appropriate one, before fetching the value.
+  if (rn == BREW_GDB_REG_PC)
+    {
+      if (scpu->sim_state.is_task_mode)
+        rn = BREW_GDB_REG_TPC;
+      else
+        rn = BREW_GDB_REG_SPC;
+    }
+
   if (rn == BREW_GDB_REG_TPC)
     {
       write_mem_unaligned(memory, scpu->sim_state.tpc);
@@ -355,6 +364,10 @@ brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
     {
       write_mem_unaligned(memory, scpu->sim_state.spc);
       //write_mem_unaligned(memory+4, BREW_REG_TYPE_INT32);
+    }
+  else if (rn == BREW_GDB_REG_TASK_MODE)
+    {
+      write_mem_unaligned(memory, scpu->sim_state.is_task_mode ? 1 : 0);
     }
   else
     {
@@ -377,6 +390,15 @@ brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
   if (length != 4)
     return -1;
 
+  // Override PC to the appropriate one, before doing the update.
+  if (rn == BREW_GDB_REG_PC)
+    {
+      if (scpu->sim_state.is_task_mode)
+        rn = BREW_GDB_REG_TPC;
+      else
+        rn = BREW_GDB_REG_SPC;
+    }
+
   if (rn == BREW_GDB_REG_TPC)
     {
       scpu->sim_state.tpc = read_mem_unaligned(memory);
@@ -386,6 +408,11 @@ brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
     {
       scpu->sim_state.spc = read_mem_unaligned(memory);
       scpu->sim_state.nspc = scpu->sim_state.spc;
+    }
+  else if (rn == BREW_GDB_REG_TASK_MODE)
+    {
+      // We don't support changing execution mode from debugger
+      return -1;
     }
   else
     {

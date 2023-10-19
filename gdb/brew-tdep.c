@@ -88,7 +88,7 @@ typedef BP_MANIPULATION (brew_break_insn) brew_breakpoint;
 
 // Virtual registers. Their definition is in sim/brew/gdb-if.h
 static const char * const brew_virtual_reg_names[] = {
-  "$tpc", "$spc"
+  "$tpc", "$spc", "$pc", "task mode"
 };
 
 // gdbarch 'method' implementations. The follow the name in gdbarch with the 'brew_' prefix
@@ -109,8 +109,7 @@ static const char *brew_register_name(struct gdbarch *gdbarch, int reg_nr)
 // TODO: we should handle true target register types here
 static struct type *brew_register_type (struct gdbarch *gdbarch, int reg_nr)
 {
-  // FIXME: this only supports user-mode debugging
-  if (reg_nr == BREW_GDB_REG_TPC || reg_nr == BREW_GDB_REG_SPC)
+  if (reg_nr == BREW_GDB_REG_TPC || reg_nr == BREW_GDB_REG_SPC || reg_nr == BREW_GDB_REG_PC)
     return  builtin_type(gdbarch)->builtin_func_ptr;
   else if (reg_nr == BREW_REG_SP || reg_nr == BREW_REG_FP)
     return builtin_type(gdbarch)->builtin_data_ptr;
@@ -785,7 +784,7 @@ static struct value *brew_frame_prev_register(
   if (regnum == BREW_REG_FP) {
     return frame_unwind_got_constant(this_frame, regnum, frame_info->prev_fp);
   }
-  if (regnum == BREW_GDB_REG_TPC) {
+  if (regnum == BREW_GDB_REG_PC) {
     // TODO: how to know what the *size* of the call instruction was????
     //       for now, we're returning the return address, but that might not be what we want
     // Apparently ARM (arm-tdep.c) does a similar number: returning the value of LR, i.e. the return address
@@ -1051,8 +1050,7 @@ static int brew_process_record (struct gdbarch *gdbarch, struct regcache *regcac
     return -1;
 
 finish:
-  // TODO: this is a very interesting question: how do we know if the target is in TASK or SCHEDULER mode?
-  if (record_full_arch_list_add_reg(regcache, BREW_GDB_REG_TPC))
+  if (record_full_arch_list_add_reg(regcache, BREW_GDB_REG_PC))
     return -1;
   if (record_full_arch_list_add_end())
     return -1;
@@ -1094,11 +1092,7 @@ static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbar
 
   set_gdbarch_num_regs(gdbarch, BREW_GDB_NUM_REGS);
   set_gdbarch_sp_regnum(gdbarch, BREW_REG_SP);
-  // TODO: this is where we should set up SCHEDULER/TASK mode debugging.
-  // Or, even better: we should have a pseudo-register that reflects
-  // whatever the appropriate $xPC contains. For that however we would
-  // need to know the mode the target is in, which is tricky.
-  set_gdbarch_pc_regnum(gdbarch, BREW_GDB_REG_TPC);
+  set_gdbarch_pc_regnum(gdbarch, BREW_GDB_REG_PC);
   set_gdbarch_register_name(gdbarch, brew_register_name);
   set_gdbarch_register_type(gdbarch, brew_register_type);
 
