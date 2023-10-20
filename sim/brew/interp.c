@@ -307,6 +307,11 @@ sim_engine_run(
           non_branch_tpc = scpu->sim_state.ntpc;
 
           brew_sim_insn(scpu, &scpu->sim_state, insn_code, field_e);
+        } else {
+          // If we had a fetch exception, what should the non-branch PCs be? We branch no matter what???
+          // I actually don't think it matters all that much, we use it only for reporting below, but still...
+          non_branch_spc = scpu->sim_state.spc;
+          non_branch_tpc = scpu->sim_state.tpc;
         }
 
       post_exec(scpu, insn_code, non_branch_tpc, non_branch_spc);
