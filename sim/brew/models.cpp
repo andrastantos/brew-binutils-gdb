@@ -197,6 +197,8 @@ static char *sim_core_read_str(sim_cpu *scpu, uint32_t vma)
 #define NEWLIB_TCSETS     0x5402
 #define NEWLIB_TCSETSW    0x5403
 #define NEWLIB_TCSETSF    0x5404
+#define NEWLIB_FIONREAD   0x541B
+#define NEWLIB_TIOCINQ    NEWLIB_FIONREAD
 
 struct newlib_termios {
     uint32_t c_iflag;     /* input mode flags */
@@ -485,6 +487,17 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
             sim_core_write_buffer(sd, scpu, write_map, &target_buffer, arg_ptr, sizeof(target_buffer));
           }
         } break;
+        case NEWLIB_TIOCINQ: {
+          int32_t val;
+          if (ioctl(fd, FIONREAD, &val) == -1) {
+            SET_ERRNO(errno);
+          } else {
+            sim_core_write_buffer(sd, scpu, write_map, &val, arg_ptr, 4);
+          }
+        }
+        default:
+          SET_ERRNO(EINVAL);
+        break;
       }
 
       SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
