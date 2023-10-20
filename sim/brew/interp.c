@@ -553,6 +553,8 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
   STATE_MACHS(sd) = brew_sim_machs;
 
   /* Set default options before parsing user options.  */
+  STATE_MACHS (sd) = brew_sim_machs;
+  STATE_MODEL_NAME (sd) = "brew";
   current_target_byte_order = BFD_ENDIAN_LITTLE;
 
   /* The cpu data is kept in a separately allocated chunk of memory.  */
