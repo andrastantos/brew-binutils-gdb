@@ -11,6 +11,8 @@ extern "C" {
 #if ! defined __MINGW32__
 #include <sys/times.h>
 #endif // __MINGW32__
+#include <sys/ioctl.h>
+#include <termios.h>
 #include <errno.h>
 #include <math.h>
 
@@ -191,6 +193,22 @@ static char *sim_core_read_str(sim_cpu *scpu, uint32_t vma)
 }
 
 
+#define NEWLIB_TCGETS     0x5401
+#define NEWLIB_TCSETS     0x5402
+#define NEWLIB_TCSETSW    0x5403
+#define NEWLIB_TCSETSF    0x5404
+
+struct newlib_termios {
+    uint32_t c_iflag;     /* input mode flags */
+    uint32_t c_oflag;     /* output mode flags */
+    uint32_t c_cflag;     /* control mode flags */
+    uint32_t c_lflag;     /* local mode flags */
+    uint8_t  c_line;      /* line discipline */
+    uint8_t  c_cc[32];    /* control characters */
+    uint32_t c_ispeed;    /* input speed */
+    uint32_t c_ospeed;    /* output speed */
+};
+
 static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
 {
   // Syscalls follow normal function-call ABI with the addition that
@@ -280,7 +298,7 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
     }
     case SYS_write: {
       void *buffer = malloc(arg3);
-      sim_core_read_buffer(sd, scpu, write_map, buffer, arg2, arg3);
+      sim_core_read_buffer(sd, scpu, read_map, buffer, arg2, arg3);
       ret_val = write(arg1, buffer, arg3);
       SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
@@ -425,6 +443,55 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
         SET_ERRNO(errno);
       break;
 
+    case BREW_ioctl: {
+      int fd = arg1;
+      int cmd = arg2;
+      uint32_t arg_ptr = arg3;
+      // At this point we only support a tiny subset of the IOCTLs on the host
+      switch (cmd) {
+        case NEWLIB_TCSETS:
+        case NEWLIB_TCSETSW:
+        case NEWLIB_TCSETSF: {
+          newlib_termios target_buffer;
+          termios host_buffer;
+          sim_core_read_buffer(sd, scpu, read_map, &target_buffer, arg_ptr, sizeof(target_buffer));
+          host_buffer.c_iflag = target_buffer.c_iflag;
+          host_buffer.c_oflag = target_buffer.c_oflag;
+          host_buffer.c_cflag = target_buffer.c_cflag;
+          host_buffer.c_lflag = target_buffer.c_lflag;
+          host_buffer.c_line  = target_buffer.c_line;
+          memcpy(host_buffer.c_cc, target_buffer.c_cc, min(sizeof(host_buffer.c_cc), sizeof(target_buffer.c_cc)));
+          host_buffer.c_ispeed = target_buffer.c_ispeed;
+          host_buffer.c_ospeed = target_buffer.c_ospeed;
+          int ret_val = ioctl(fd, cmd, &host_buffer);
+          if (ret_val == -1)
+            SET_ERRNO(errno);
+        } break;
+        case NEWLIB_TCGETS: {
+          termios host_buffer;
+          int ret_val = ioctl(fd, cmd, &host_buffer);
+          if (ret_val == -1) {
+            SET_ERRNO(errno);
+          } else {
+            newlib_termios target_buffer;
+            target_buffer.c_iflag = host_buffer.c_iflag;
+            target_buffer.c_oflag = host_buffer.c_oflag;
+            target_buffer.c_cflag = host_buffer.c_cflag;
+            target_buffer.c_lflag = host_buffer.c_lflag;
+            target_buffer.c_line  = host_buffer.c_line;
+            memcpy(target_buffer.c_cc, host_buffer.c_cc, min(sizeof(host_buffer.c_cc), sizeof(target_buffer.c_cc)));
+            target_buffer.c_ispeed = host_buffer.c_ispeed;
+            target_buffer.c_ospeed = host_buffer.c_ospeed;
+            sim_core_write_buffer(sd, scpu, write_map, &target_buffer, arg_ptr, sizeof(target_buffer));
+          }
+        } break;
+      }
+
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
+      if (ret_val == 0)
+        SET_ERRNO(errno);
+      break;
+    }
     default:
       TRACE_EVENTS (scpu, "Unknown SYSCALL: %d", syscall_no);
       sim_engine_halt(sd, scpu, NULL, sim_pc_get(scpu), sim_stopped, SIM_SIGTRAP);

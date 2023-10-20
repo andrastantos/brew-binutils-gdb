@@ -1,5 +1,5 @@
 /* brew_calls.h -- Extra syscall numbers implemented by the brew runtime.
- * 
+ *
  * Copyright (c) 2022 Andras Tantos
  *
  * The authors hereby grant permission to use, copy, modify, distribute,
@@ -17,3 +17,4 @@
          to be compatible. */
 
 #define BREW_isatty (0x8000)
+#define BREW_ioctl  (0x8001)
