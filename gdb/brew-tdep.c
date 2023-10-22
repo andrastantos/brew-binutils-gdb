@@ -177,8 +177,14 @@ static inline uint8_t FIELD_B(uint16_t inst) { return (inst & 0x00f0) >> 4; }
 static inline uint8_t FIELD_C(uint16_t inst) { return (inst & 0x0f00) >> 8; }
 static inline uint8_t FIELD_D(uint16_t inst) { return (inst & 0xf000) >> 12; }
 
-static inline int32_t sign_extend_32(uint16_t value) {
+static inline int32_t sign_extend_short_to_32(uint16_t value) {
   if ((value & 0x8000) != 0) return value | 0xffff0000;
+  return value;
+}
+
+static inline int32_t sign_extend_tiny_to_32(uint16_t value) {
+  value = value & 0xf;
+  if ((value & 0x8) != 0) return -(~value & 0xf);
   return value;
 }
 
@@ -293,14 +299,19 @@ static bool brew_analyze_prolog(
   // This is the $sp adjustment. It could be a short or a long decrement
   if (!read_memory_uint(inst_addr, byte_order, inst))
     return false;
-  if (inst == 0xd4fd) {
+  if ((inst & 0xfff0) == 0xdbd0) {
+    // tiny decrement 0x.b..
+    inst_addr += 2;
+    // Sign-extend
+    offset = sign_extend_tiny_to_32(FIELD_A(inst));
+  } else if (inst == 0xd4fd) {
     // short decrement
     inst_addr += 2;
     uint16_t short_offset;
     if (!read_memory_uint(inst_addr, byte_order, short_offset))
       return false;
     // Sign-extend
-    offset = sign_extend_32(short_offset);
+    offset = sign_extend_short_to_32(short_offset);
     inst_addr += 2;
   } else if (inst == 0xd4df) {
     // long decrement
@@ -479,13 +490,13 @@ static std::vector<CORE_ADDR> brew_software_single_step(struct regcache *regcach
     brew_pattern_match(inst, "20fe") ||
     brew_pattern_match(inst, "40fe")
   ) {
-    uint32_t field_e = (uint32_t)sign_extend_32((uint16_t)read_memory_unsigned_integer(cur_pc + 2, 2, byte_order));
+    uint32_t field_e = (uint32_t)sign_extend_short_to_32((uint16_t)read_memory_unsigned_integer(cur_pc + 2, 2, byte_order));
     next_pcs.push_back(field_e);
     return next_pcs;
   }
   //0x30fe 0x**** $tpc <- short VALUE         Load sign-extended value into $tpc
   if (brew_pattern_match(inst, "30fe")) {
-    uint32_t field_e = (uint32_t)sign_extend_32((uint16_t)read_memory_unsigned_integer(cur_pc + 2, 2, byte_order));
+    uint32_t field_e = (uint32_t)sign_extend_short_to_32((uint16_t)read_memory_unsigned_integer(cur_pc + 2, 2, byte_order));
     next_pcs.push_back(field_e);
     next_pcs.push_back(next_pc);
     return next_pcs;
@@ -525,7 +536,7 @@ static std::vector<CORE_ADDR> brew_software_single_step(struct regcache *regcach
     brew_pattern_match(inst, "2fe.") ||
     brew_pattern_match(inst, "4fe.")
   ) {
-    uint32_t field_e = (uint32_t)sign_extend_32((uint16_t)read_memory_unsigned_integer(cur_pc + 2, 2, byte_order));
+    uint32_t field_e = (uint32_t)sign_extend_short_to_32((uint16_t)read_memory_unsigned_integer(cur_pc + 2, 2, byte_order));
     uint32_t base;
     if (regcache_read_unsigned_reg(regcache, FIELD_A(inst), base) == REG_VALID)
       {
@@ -536,7 +547,7 @@ static std::vector<CORE_ADDR> brew_software_single_step(struct regcache *regcach
   }
   // 0x3fe. 0x****  $tpc <- MEM32[$rA + VALUE]              32-bit load from MEM[$rA+VALUE] into $TPC
   if (brew_pattern_match(inst, "3fe.")) {
-    uint32_t field_e = (uint32_t)sign_extend_32((uint16_t)read_memory_unsigned_integer(cur_pc + 2, 2, byte_order));
+    uint32_t field_e = (uint32_t)sign_extend_short_to_32((uint16_t)read_memory_unsigned_integer(cur_pc + 2, 2, byte_order));
     uint32_t base;
     if (regcache_read_unsigned_reg(regcache, FIELD_A(inst), base) == REG_VALID)
       {
@@ -1003,7 +1014,7 @@ static int brew_process_record (struct gdbarch *gdbarch, struct regcache *regcac
     brew_pattern_match(inst, ".fa.") ||
     brew_pattern_match(inst, ".fb.")
   ) {
-    uint32_t field_e = (uint32_t)sign_extend_32((uint16_t)read_memory_unsigned_integer(addr + 2, 2, byte_order));
+    uint32_t field_e = (uint32_t)sign_extend_short_to_32((uint16_t)read_memory_unsigned_integer(addr + 2, 2, byte_order));
     uint32_t base;
     if (regcache_read_unsigned_reg(regcache, FIELD_A(inst), base) != REG_VALID)
       return -1;
@@ -1031,7 +1042,7 @@ static int brew_process_record (struct gdbarch *gdbarch, struct regcache *regcac
     brew_pattern_match(inst, ".faf") ||
     brew_pattern_match(inst, ".fbf")
   ) {
-    uint32_t field_e = (uint32_t)sign_extend_32((uint16_t)read_memory_unsigned_integer(addr + 2, 2, byte_order));
+    uint32_t field_e = (uint32_t)sign_extend_short_to_32((uint16_t)read_memory_unsigned_integer(addr + 2, 2, byte_order));
     int length;
     switch (FIELD_B(inst)) {
       case 0x8: length = 1; break;
