@@ -224,7 +224,7 @@ test_self_move ()
   /* Some compilers warn about moving to self, but that's precisely what we want
      to test here, so turn this warning off.  */
   DIAGNOSTIC_PUSH
-  DIAGNOSTIC_IGNORE_SELF_MOVE
+  DIAGNOSTIC_IGNORE ("-Wself-move")
   env = std::move (env);
   DIAGNOSTIC_POP
 

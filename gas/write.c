@@ -410,9 +410,12 @@ chain_frchains_together (bfd *abfd ATTRIBUTE_UNUSED,
   /* BFD may have introduced its own sections without using
      subseg_new, so it is possible that seg_info is NULL.  */
   info = seg_info (section);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer="
   if (info != (segment_info_type *) NULL)
     info->frchainP->frch_last
       = chain_frchains_together_1 (section, info->frchainP);
+#pragma GCC diagnostic pop
 
   /* Now that we've chained the frags together, we must add new fixups
      to the segment, not to the frag chain.  */
