@@ -733,7 +733,8 @@ static INLINE brew_typed_reg type_conv_op(uint8_t reg_type, brew_typed_reg a)
           switch (a.type)
             {
               case BREW_REG_TYPE_INT32:
-                return MAKE_FP32((float)L32_0(a), BREW_REG_TYPE_FP32);
+                /* INT32 is a signed (two's complement) integer for conversion purposes.  */
+                return MAKE_FP32((float)(int32_t)L32_0(a), BREW_REG_TYPE_FP32);
               case BREW_REG_TYPE_FP32:
                 return a;
               case BREW_REG_TYPE_INT16x2:
