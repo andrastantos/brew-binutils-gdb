@@ -1206,7 +1206,7 @@ static int action_reciprocal(void *context ATTRIBUTE_UNUSED, const brew_parser_t
   insn_code =
     FIELD_D(tokens[0].first_lexer_token->sub_type) |
     FIELD_C(0x0) |
-    FIELD_B(0x9) |
+    FIELD_B(0x8) |
     FIELD_A(tokens[4].first_lexer_token->sub_type);
   A_RETURN();
 }
@@ -1492,7 +1492,7 @@ static int action_move_reg_to_reg(void *context ATTRIBUTE_UNUSED, const brew_par
 static int action_type_conversion(void *context ATTRIBUTE_UNUSED, const brew_parser_tokenS *tokens)
 {
   A_PROLOG(2);
-  A_CHECK(6);
+  A_CHECK(4);
 
   gas_assert(tokens[0].parser_token == T_REG);
   gas_assert(tokens[2].parser_token == T_TYPENAME);

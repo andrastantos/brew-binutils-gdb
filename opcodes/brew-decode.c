@@ -690,6 +690,20 @@ static INLINE brew_typed_reg rsqrt_op(brew_typed_reg a, const brew_sim_state *si
 #define OPCODES_ASSERT_UNREACHABLE \
   opcodes_assert (__FILE__, __LINE__);
 
+/* Converts a float to int32, rounding to nearest, ties to even (the default rounding
+   mode in csr_fpstat). Implemented by hand to avoid a libm dependency in libopcodes.
+   Out-of-range values (and NaN) have no defined result.  */
+static INLINE int32_t fp32_to_int32(float f)
+{
+  int32_t r = (int32_t)f; /* truncates towards zero */
+  float diff = f - (float)r;
+  if (diff > 0.5f || (diff == 0.5f && (r & 1)))
+    ++r;
+  else if (diff < -0.5f || (diff == -0.5f && (r & 1)))
+    --r;
+  return r;
+}
+
 static INLINE brew_typed_reg type_conv_op(uint8_t reg_type, brew_typed_reg a)
 {
   switch (reg_type)
@@ -701,7 +715,7 @@ static INLINE brew_typed_reg type_conv_op(uint8_t reg_type, brew_typed_reg a)
               case BREW_REG_TYPE_INT32:
                 return a;
               case BREW_REG_TYPE_FP32:
-                return MAKE_INT((int32_t)(FP32_0(a)+0.5), BREW_REG_TYPE_INT32);
+                return MAKE_INT(fp32_to_int32(FP32_0(a)), BREW_REG_TYPE_INT32);
               case BREW_REG_TYPE_INT16x2:
               case BREW_REG_TYPE_UINT16x2S:
               case BREW_REG_TYPE_SINT16x2S:
@@ -757,7 +771,7 @@ static INLINE brew_typed_reg popcnt_op(brew_typed_reg a)
       pop_cnt += (val & mask) != 0;
       mask <<= 1;
     }
-  return MAKE_INT(val, BREW_REG_TYPE_INT32);
+  return MAKE_INT(pop_cnt, BREW_REG_TYPE_INT32);
 }
 
 static INLINE bool any(bool a, bool b, bool c, bool d) { return a || b || c || d; }
@@ -785,7 +799,7 @@ static bool cond(brew_typed_reg left, brew_cond cond, brew_typed_reg right, bool
         else
           return ANY_OR_ALL1(CMP(L32_0(left), L32_0(right)));
       case BREW_REG_TYPE_FP32:
-        return ANY_OR_ALL1(CMP(L32_0(left), L32_0(right)));
+        return ANY_OR_ALL1(CMP(FP32_0(left), FP32_0(right)));
       case BREW_REG_TYPE_INT16x2:
       case BREW_REG_TYPE_UINT16x2S:
       case BREW_REG_TYPE_SINT16x2S:
@@ -932,7 +946,7 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
       UNKNOWN;
   if (FIELD_C == 0xf && FIELD_B == 0xf && FIELD_A == 0xf)
     UNKNOWN;
-  if (FIELD_C == 0xe && FIELD_A == 0xf)
+  if (FIELD_D != 0xf && FIELD_C == 0xe && FIELD_A == 0xf)
     UNKNOWN;
 
   if (FIELD_D != 0xf && FIELD_C < 0xc)
@@ -1384,17 +1398,18 @@ brew_insn_class_name(brew_insn_classes cls)
   return insn_class_names[cls];
 }
 
+// Indexed by the BREW_REG_TYPE_* values in include/opcode/brew.h
 static const char *reg_type_names[] = {
   "int32",        //  BREW_REG_TYPE_INT32
+  "fp32",         //  BREW_REG_TYPE_FP32
   "int16x2",      //  BREW_REG_TYPE_INT16x2
   "int8x4",       //  BREW_REG_TYPE_INT8x4
   "uint16x2s",    //  BREW_REG_TYPE_UINT16x2S
   "sint16x2s",    //  BREW_REG_TYPE_SINT16x2S
   "uint8x4s",     //  BREW_REG_TYPE_UINT8x4S
   "sint8x4s",     //  BREW_REG_TYPE_SINT8x4S
-  "type7",
-  "fp32",         //  BREW_REG_TYPE_FP32
   "fp16x2",       //  BREW_REG_TYPE_FP16x2
+  "type9",
   "type10",
   "type11",
   "type12",
