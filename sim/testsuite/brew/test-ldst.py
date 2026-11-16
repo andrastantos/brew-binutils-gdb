@@ -12,17 +12,22 @@ def wsi(val):
         return (val & 0xffff) | 0xffff0000
     return val & 0xffff
 
+def mem_ref_str(prefix, r_b, offset):
+    if r_b is None and offset is not None:
+        return f"{prefix}[{offset}+.buffer+128]"
+    elif r_b is not None and offset is None:
+        return f"{prefix}[{r_b:gas_u}]"
+    elif r_b is not None and offset is not None:
+        return f"{prefix}[{r_b:gas_u}{offset:+d}]"
+    assert False, "Either r_b or offset (or both) must be specified"
+
 def test_ld_st(r_d, r_b, offset, size, sign_extend):
+    # Sign-extending loads only exist for 8- and 16-bit accesses (smem8, smem16)
+    assert not (sign_extend and size == 32), "there is no sign-extending 32-bit load"
     init_regs(False)
     print_header()
-    if r_b is None and offset is not None:
-        mem_ref = f"mem{size}[{offset}+.buffer+128]"
-    elif r_b is not None and offset is None:
-        mem_ref = f"mem{size}[{r_b:gas_u}]"
-    elif r_b is not None and offset is not None:
-        mem_ref = f"mem{size}[{r_b:gas_u},{offset}]"
-    else:
-        assert False, "Either r_b or offset (or both) must be specified"
+    mem_ref = mem_ref_str(f"mem{size}", r_b, offset)
+    load_ref = mem_ref_str(f"smem{size}", r_b, offset) if sign_extend else mem_ref
     print(f"        $r0 <- .buffer")
     print(f"        $r1 <- .buffer_end")
     print(f"        $r2 <- $r2 ^ $r2")
@@ -37,10 +42,7 @@ def test_ld_st(r_d, r_b, offset, size, sign_extend):
         print(f"        {r_b:gas_u} <- {r_b:gas_u} + 128")
     print(f"        {mem_ref} <- {r_d:gas_u}")
     print(f"        {r_d:gas_u} <- 0xdeadbeef")
-    if sign_extend:
-        print(f"        {r_d:gas_s} <- {mem_ref}")
-    else:
-        print(f"        {r_d:gas_u} <- {mem_ref}")
+    print(f"        {r_d:gas_u} <- {load_ref}")
     if r_b is not None:
         print(f"        {r_b:gas_u} <- {r_d:gas_u}")
     print(f"        #<<<<<<<")
@@ -86,9 +88,6 @@ for r_d in range(0,15):
         test_ld_st(reg[r_d], reg[r_b], 4,     8, False)
         test_ld_st(reg[r_d], reg[r_b], None,  8, False)
         test_ld_st(reg[r_d], None,     4,     8, False)
-        test_ld_st(reg[r_d], reg[r_b], 4,    32, True)
-        test_ld_st(reg[r_d], reg[r_b], None, 32, True)
-        test_ld_st(reg[r_d], None,     4,    32, True)
         test_ld_st(reg[r_d], reg[r_b], 4,    16, True)
         test_ld_st(reg[r_d], reg[r_b], None, 16, True)
         test_ld_st(reg[r_d], None,     4,    16, True)

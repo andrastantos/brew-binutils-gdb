@@ -102,10 +102,11 @@ class RegOrImm(object):
         if self.is_reg():
             if fmt_spec == "" or fmt_spec == "gas" or fmt_spec == "gas_u":
                 return f"$r{self.idx}"
-            if fmt_spec == "gas_s":
-                return f"$sr{self.idx}"
-            if fmt_spec == "gas_f":
-                return f"$fr{self.idx}"
+            if fmt_spec == "gas_s" or fmt_spec == "gas_f":
+                # There are no typed register names ($sr, $fr) any more: signedness is part of
+                # the instruction ('>>>', 'smem8', 'if signed ...') and float-ness is the register
+                # type (see set_type()).
+                assert False, f"typed register names are no longer supported: {fmt_spec}"
             if fmt_spec == "val" or fmt_spec == "val_u":
                 return f"({as_uint32(self.val)})"
             if fmt_spec == "val_s":
@@ -176,6 +177,18 @@ def init_regs(for_float: bool):
             reg[i].set_val((-1.0)**i * (2.0 ** i))
         else:
             reg[i].set_val((-1)**i * (1 << i))
+
+def set_type(type_name: str, *regs):
+    """Sets the type of the given registers (de-duplicated, in order) to 'type_name' (int32, fp32)."""
+    seen = set()
+    for r in regs:
+        if r.is_reg() and r.idx not in seen:
+            seen.add(r.idx)
+            print(f"        type {r:gas} <- {type_name}")
+
+def reset_types(*regs):
+    """Sets the given registers back to int32, so the integer-based checks in test() work on them."""
+    set_type("int32", *regs)
 
 def test(reg = reg):
     for r in reg:

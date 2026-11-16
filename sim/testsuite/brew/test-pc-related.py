@@ -53,7 +53,7 @@ def test_pc_load(r_b, offset):
     elif r_b is not None and offset is None:
         mem_ref = f"mem[{r_b:gas_u}]"
     elif r_b is not None and offset is not None:
-        mem_ref = f"mem[{r_b:gas_u},{offset}]"
+        mem_ref = f"mem[{r_b:gas_u}{offset:+d}]"
     else:
         assert False, "Either r_b or offset (or both) must be specified"
     setup()
@@ -88,19 +88,29 @@ def test_cbranch_rr(r_a, r_b, is_signed, is_float, cond):
     print(f"        #>>>>>>>")
     print(f"        $r0 <- 0xc001c001")
     if is_float:
-        print(f"        if {r_a:gas_f} {cond} {r_b:gas_f} $pc <- 3f")
+        # Float compares are selected by the operand types
+        set_type("fp32", r_a, r_b)
+        print(f"        if {r_a:gas} {cond} {r_b:gas} $pc <- 3f")
     elif is_signed:
-        print(f"        if {r_a:gas_s} {cond} {r_b:gas_s} $pc <- 3f")
+        print(f"        if signed {r_a:gas} {cond} {r_b:gas} $pc <- 3f")
     else:
-        print(f"        if {r_a:gas_u} {cond} {r_b:gas_u} $pc <- 3f")
+        print(f"        if {r_a:gas} {cond} {r_b:gas} $pc <- 3f")
     print(f"        $r0 <- 0xdeadbeef")
     print(f"    3:")
+    if is_float:
+        reset_types(r_a, r_b)
     print(f"        #<<<<<<<")
     reg[0].set_val(0xc001c001 if taken else 0xdeadbeef)
     test()
     print()
 
+# Compares against zero test the sign bit: they only exist in a signed flavor. Unsigned
+# variants are only meaningful (and tested) for == and !=.
+UNSIGNED_RZ_CONDS = ("==", "!=")
+
 def test_cbranch_rz(r_a, is_signed, is_float, cond):
+    if not is_signed and not is_float and cond not in UNSIGNED_RZ_CONDS:
+        return
     init_regs(is_float)
     print_header()
     setup()
@@ -111,13 +121,12 @@ def test_cbranch_rz(r_a, is_signed, is_float, cond):
     print(f"        #>>>>>>>")
     print(f"        $r0 <- 0xc001c001")
     if is_float:
-        print(f"        if {r_a:gas_f} {cond} 0 $pc <- 3f")
-    elif is_signed:
-        print(f"        if {r_a:gas_s} {cond} 0 $pc <- 3f")
-    else:
-        print(f"        if {r_a:gas_u} {cond} 0 $pc <- 3f")
+        set_type("fp32", r_a)
+    print(f"        if {r_a:gas} {cond} 0 $pc <- 3f")
     print(f"        $r0 <- 0xdeadbeef")
     print(f"    3:")
+    if is_float:
+        reset_types(r_a)
     print(f"        #<<<<<<<")
     reg[0].set_val(0xc001c001 if taken else 0xdeadbeef)
     test()

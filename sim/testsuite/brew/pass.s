@@ -7,6 +7,13 @@
     .Lstr_fail:
         .string "fail\n"
     .Lstr_fail_end:
+.data
+    .p2align 2
+    .buffer:
+        .rept 256
+        .long 0
+        .endr
+    .buffer_end:
 
 .text
     .global _start
