@@ -647,8 +647,11 @@ struct brew_model_info
 
 static void brew_model_done(sim_cpu *scpu)
 {
+  SIM_DESC sd = CPU_STATE(scpu);
+
   free(scpu->model_info);
-  printf("Done with model BREW\n");
+  if (STATE_VERBOSE_P(sd))
+    sim_io_printf(sd, "Done with model BREW\n");
 }
 
 static void brew_model_setup_sim(SIM_DESC sd, sim_cpu *scpu)
@@ -792,7 +795,8 @@ void brew_model_init(sim_cpu *scpu)
   SIM_DESC sd = CPU_STATE(scpu);
   int i;
 
-  printf("Setting model to BREW\n");
+  if (STATE_VERBOSE_P(sd))
+    sim_io_printf(sd, "Setting model to BREW\n");
 
   scpu->model_info = ZALLOC(brew_model_info);
   brew_model_functions *model_functions = &scpu->sim_state.model_functions;
@@ -850,7 +854,8 @@ static void espresso_model_done(sim_cpu *scpu)
   SIM_DESC sd = CPU_STATE(scpu);
   uint32_t wait_state;
 
-  printf("Done with model ESPRESSO\n");
+  if (STATE_VERBOSE_P(sd))
+    sim_io_printf(sd, "Done with model ESPRESSO\n");
   SIM_ASSERT(scpu->model_info != NULL);
   espresso_model_info *model_info = (espresso_model_info*)scpu->model_info;
 
@@ -1186,7 +1191,8 @@ void espresso_model_init(sim_cpu *scpu)
   SIM_DESC sd = CPU_STATE(scpu);
   int i;
 
-  printf("Setting model to ESPRESSO\n");
+  if (STATE_VERBOSE_P(sd))
+    sim_io_printf(sd, "Setting model to ESPRESSO\n");
 
   espresso_model_info *model_info = ZALLOC(espresso_model_info);
   scpu->model_info = model_info;
