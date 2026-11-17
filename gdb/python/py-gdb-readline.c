@@ -1,6 +1,6 @@
 /* Readline support for Python.
 
-   Copyright (C) 2012-2022 Free Software Foundation, Inc.
+   Copyright (C) 2012-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,11 +38,12 @@ gdbpy_readline_wrapper (FILE *sys_stdin, FILE *sys_stdout,
 {
   int n;
   const char *p = NULL;
+  std::string buffer;
   char *q;
 
   try
     {
-      p = command_line_input (prompt, "python");
+      p = command_line_input (buffer, prompt, "python");
     }
   /* Handle errors by raising Python exceptions.  */
   catch (const gdb_exception &except)
@@ -51,10 +52,13 @@ gdbpy_readline_wrapper (FILE *sys_stdin, FILE *sys_stdout,
       if (except.reason == RETURN_QUIT)
 	return NULL;
 
-      /* This readline callback is called without the GIL held.  */
-      gdbpy_gil gil;
-
+      /* The thread state is nulled during gdbpy_readline_wrapper,
+	 with the original value saved in the following undocumented
+	 variable (see Python's Parser/myreadline.c and
+	 Modules/readline.c).  */
+      PyEval_RestoreThread (_PyOS_ReadlineTState);
       gdbpy_convert_exception (except);
+      PyEval_SaveThread ();
       return NULL;
     }
 

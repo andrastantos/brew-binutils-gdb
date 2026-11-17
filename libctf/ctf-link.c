@@ -1,5 +1,5 @@
 /* CTF linking.
-   Copyright (C) 2019-2022 Free Software Foundation, Inc.
+   Copyright (C) 2019-2023 Free Software Foundation, Inc.
 
    This file is part of libctf.
 
@@ -114,7 +114,7 @@ ctf_link_add_ctf_internal (ctf_dict_t *fp, ctf_archive_t *ctf,
     goto oom;
 
   if ((input = calloc (1, sizeof (ctf_link_input_t))) == NULL)
-    goto oom;
+    goto oom1;
 
   input->clin_arc = ctf;
   input->clin_fp = fp_input;
@@ -125,19 +125,23 @@ ctf_link_add_ctf_internal (ctf_dict_t *fp, ctf_archive_t *ctf,
     {
       if (asprintf (&keyname, "%s#%li", name, (long int)
 		    ctf_dynhash_elements (fp->ctf_link_inputs)) < 0)
-	goto oom;
+	goto oom2;
     }
   else if ((keyname = strdup (name)) == NULL)
-    goto oom;
+    goto oom2;
 
   if (ctf_dynhash_insert (fp->ctf_link_inputs, keyname, input) < 0)
-    goto oom;
+    goto oom3;
 
   return 0;
- oom:
-  free (input);
-  free (filename);
+
+ oom3:
   free (keyname);
+ oom2:
+  free (input);
+ oom1:
+  free (filename);
+ oom:
   return ctf_set_errno (fp, ENOMEM);
 }
 
@@ -427,7 +431,10 @@ ctf_link_add_cu_mapping (ctf_dict_t *fp, const char *from, const char *to)
 	}
     }
   else
-    free (t);
+    {
+      free (t);
+      t = NULL;
+    }
 
   if (ctf_dynhash_insert (one_out, f, NULL) < 0)
     {
@@ -1841,19 +1848,42 @@ ctf_link_warn_outdated_inputs (ctf_dict_t *fp)
 {
   ctf_next_t *i = NULL;
   void *name_;
-  void *ifp_;
+  void *input_;
   int err;
 
-  while ((err = ctf_dynhash_next (fp->ctf_link_inputs, &i, &name_, &ifp_)) == 0)
+  while ((err = ctf_dynhash_next (fp->ctf_link_inputs, &i, &name_, &input_)) == 0)
     {
       const char *name = (const char *) name_;
-      ctf_dict_t *ifp = (ctf_dict_t *) ifp_;
+      ctf_link_input_t *input = (ctf_link_input_t *) input_;
+      ctf_next_t *j = NULL;
+      ctf_dict_t *ifp;
+      int err;
+
+      /* We only care about CTF archives by this point: lazy-opened archives
+	 have always been opened by this point, and short-circuited entries have
+	 a matching corresponding archive member. Entries with NULL clin_arc can
+	 exist, and constitute old entries renamed via a name changer: the
+	 renamed entries exist elsewhere in the list, so we can just skip
+	 those.  */
+
+      if (!input->clin_arc)
+	continue;
+
+      /* All entries in the archive will necessarily contain the same
+	 CTF_F_NEWFUNCINFO flag, so we only need to check the first. We don't
+	 even need to do that if we can't open it for any reason at all: the
+	 link will fail later on regardless, since an input can't be opened. */
+
+      ifp = ctf_archive_next (input->clin_arc, &j, NULL, 0, &err);
+      if (!ifp)
+	continue;
+      ctf_next_destroy (j);
 
       if (!(ifp->ctf_header->cth_flags & CTF_F_NEWFUNCINFO)
 	  && (ifp->ctf_header->cth_varoff - ifp->ctf_header->cth_funcoff) > 0)
-	ctf_err_warn (ifp, 1, 0, _("linker input %s has CTF func info but uses "
-				   "an old, unreleased func info format: "
-				   "this func info section will be dropped."),
+	ctf_err_warn (fp, 1, 0, _("linker input %s has CTF func info but uses "
+				  "an old, unreleased func info format: "
+				  "this func info section will be dropped."),
 		      name);
     }
   if (err != ECTF_NEXT_END)

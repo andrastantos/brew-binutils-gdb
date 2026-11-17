@@ -1,6 +1,6 @@
 ## Process this file with automake to generate Makefile.in
 #
-#   Copyright (C) 2021 Free Software Foundation, Inc.
+#   Copyright (C) 2021-2023 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -108,7 +108,7 @@ LOCALEDIR = @localedir@
 SYSCONFDIR = @sysconfdir@
 
 AM_CPPFLAGS = $(GPROFNG_CPPFLAGS) -DLOCALEDIR=\"$(LOCALEDIR)\" \
-	-DSYSCONFDIR=\"$(SYSCONFDIR)\" \
+	-DSYSCONFDIR=\"$(SYSCONFDIR)\" -DLIBDIR=\"$(libdir)\" \
 	-I.. -I$(srcdir) \
 	-I$(srcdir)/../common \
 	-I$(srcdir)/../../include -I$(srcdir)/../../opcodes \
@@ -132,8 +132,6 @@ libgprofng_la_LDFLAGS = -version-info 0:0:0
 # when -nostdlib is passed to libtool.
 # See bug 29364 - libgprofng.so: needs to link against -pthread
 libgprofng_la_LIBADD = $(top_builddir)/../opcodes/libopcodes.la \
-	$(top_builddir)/../bfd/libbfd.la \
-	$(GPROFNG_LIBADD) \
 	-lpthread -ldl
 
 dbedir = $(SYSCONFDIR)

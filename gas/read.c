@@ -1,5 +1,5 @@
 /* read.c - read a source file -
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -38,6 +38,7 @@
 #include "obstack.h"
 #include "ecoff.h"
 #include "dw2gencfi.h"
+#include "codeview.h"
 #include "wchar.h"
 
 #include <limits.h>
@@ -867,7 +868,10 @@ read_a_source_file (const char *name)
 		  /* Find the end of the current expanded macro line.  */
 		  s = find_end_of_line (input_line_pointer, flag_m68k_mri);
 
-		  if (s != last_eol)
+		  if (s != last_eol
+		      && !startswith (input_line_pointer,
+				      !flag_m68k_mri ? " .linefile "
+						     : " linefile "))
 		    {
 		      char *copy;
 		      size_t len;
@@ -1629,7 +1633,10 @@ read_symbol_name (void)
       /* Since quoted symbol names can contain non-ASCII characters,
 	 check the string and warn if it cannot be recognised by the
 	 current character set.  */
-      if (mbstowcs (NULL, name, len) == (size_t) -1)
+      /* PR 29447: mbstowcs ignores the third (length) parameter when
+	 the first (destination) parameter is NULL.  For clarity sake
+	 therefore we pass 0 rather than 'len' as the third parameter.  */
+      if (mbstowcs (NULL, name, 0) == (size_t) -1)
 	as_warn (_("symbol name not recognised in the current locale"));
     }
   else if (is_name_beginner (c) || (input_from_string && c == FAKE_LABEL_CHAR))
@@ -4495,14 +4502,9 @@ emit_expr_with_reloc (expressionS *exp,
       use = get & unmask;
       if ((get & mask) != 0 && (-get & mask) != 0)
 	{
-	  char get_buf[128];
-	  char use_buf[128];
-
-	  /* These buffers help to ease the translation of the warning message.  */
-	  sprintf_vma (get_buf, get);
-	  sprintf_vma (use_buf, use);
 	  /* Leading bits contain both 0s & 1s.  */
-	  as_warn (_("value 0x%s truncated to 0x%s"), get_buf, use_buf);
+	  as_warn (_("value 0x%" PRIx64 " truncated to 0x%" PRIx64),
+		   (uint64_t) get, (uint64_t) use);
 	}
       /* Put bytes in right order.  */
       md_number_to_chars (p, use, (int) nbytes);
@@ -5966,6 +5968,9 @@ generate_lineno_debug (void)
 	 has changed.  However, since there is additional backend
 	 support that is required (calling dwarf2_emit_insn), we
 	 let dwarf2dbg.c call as_where on its own.  */
+      break;
+    case DEBUG_CODEVIEW:
+      codeview_generate_asm_lineno ();
       break;
     }
 }

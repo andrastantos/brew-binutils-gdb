@@ -1,6 +1,6 @@
 /* Generate a core file for the inferior process.
 
-   Copyright (C) 2001-2022 Free Software Foundation, Inc.
+   Copyright (C) 2001-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -198,7 +198,7 @@ default_gcore_target (void)
 static int
 derive_stack_segment (bfd_vma *bottom, bfd_vma *top)
 {
-  struct frame_info *fi, *tmp_fi;
+  frame_info_ptr fi, tmp_fi;
 
   gdb_assert (bottom);
   gdb_assert (top);
@@ -372,8 +372,12 @@ make_output_phdrs (bfd *obfd, asection *osec)
   bfd_record_phdr (obfd, p_type, 1, p_flags, 0, 0, 0, 0, 1, &osec);
 }
 
-/* find_memory_region_ftype implementation.  DATA is 'bfd *' for the core file
-   GDB is creating.  */
+/* find_memory_region_ftype implementation.
+
+   MEMORY_TAGGED is true if the memory region contains memory tags, false
+   otherwise.
+
+   DATA is 'bfd *' for the core file GDB is creating.  */
 
 static int
 gcore_create_callback (CORE_ADDR vaddr, unsigned long size, int read,
@@ -407,7 +411,7 @@ gcore_create_callback (CORE_ADDR vaddr, unsigned long size, int read,
       for (objfile *objfile : current_program_space->objfiles ())
 	ALL_OBJFILE_OSECTIONS (objfile, objsec)
 	  {
-	    bfd *abfd = objfile->obfd;
+	    bfd *abfd = objfile->obfd.get ();
 	    asection *asec = objsec->the_bfd_section;
 	    bfd_vma align = (bfd_vma) 1 << bfd_section_alignment (asec);
 	    bfd_vma start = objsec->addr () & -align;
@@ -462,6 +466,10 @@ gcore_create_callback (CORE_ADDR vaddr, unsigned long size, int read,
 }
 
 /* gdbarch_find_memory_region callback for creating a memory tag section.
+
+   MEMORY_TAGGED is true if the memory region contains memory tags, false
+   otherwise.
+
    DATA is 'bfd *' for the core file GDB is creating.  */
 
 static int

@@ -1,6 +1,6 @@
 /* Print in infix form a struct expression.
 
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -59,10 +59,17 @@ op_name (enum exp_opcode opcode)
     }
 }
 
+/* Meant to be used in debug sessions, so don't export it in a header file.  */
+extern void ATTRIBUTE_USED debug_exp (struct expression *exp);
+
+/* Print EXP.  */
+
 void
-dump_prefix_expression (struct expression *exp, struct ui_file *stream)
+ATTRIBUTE_USED
+debug_exp (struct expression *exp)
 {
-  exp->op->dump (stream, 0);
+  exp->dump (gdb_stdlog);
+  gdb_flush (gdb_stdlog);
 }
 
 namespace expr
@@ -107,6 +114,7 @@ dump_for_expression (struct ui_file *stream, int depth, symbol *sym)
 {
   gdb_printf (stream, _("%*sSymbol: %s\n"), depth, "",
 	      sym->print_name ());
+  dump_for_expression (stream, depth + 1, sym->type ());
 }
 
 void

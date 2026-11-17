@@ -1,4 +1,4 @@
-# Copyright 2019-2022 Free Software Foundation, Inc.
+# Copyright 2019-2023 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -757,9 +757,15 @@ namespace eval Term {
     # clean_restart.
     proc clean_restart {rows cols {executable {}}} {
 	global env stty_init
-	save_vars {env(TERM) stty_init} {
+	save_vars {env(TERM) stty_init ::GDBFLAGS} {
 	    setenv TERM ansi
 	    _setup $rows $cols
+
+	    # Make GDB not print the directory names.  Use this setting to
+	    # remove the differences in test runs due to varying directory
+	    # names.
+	    append ::GDBFLAGS " -ex \"set filename-display basename\""
+
 	    if {$executable == ""} {
 		::clean_restart
 	    } else {
@@ -772,7 +778,7 @@ namespace eval Term {
     # Setup ready for starting the tui, but don't actually start it.
     # Returns 1 on success, 0 if TUI tests should be skipped.
     proc prepare_for_tui {} {
-	if {[skip_tui_tests]} {
+	if {![allow_tui_tests]} {
 	    return 0
 	}
 

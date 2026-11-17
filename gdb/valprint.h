@@ -1,6 +1,6 @@
 /* Declarations for value printing routines for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -171,7 +171,7 @@ extern void print_function_pointer_address (const struct value_print_options *op
    If TYPE represents some aggregate type (e.g., a structure), return 1.
 
    Otherwise, any of the bytes starting at OFFSET and extending for
-   TYPE_LENGTH(TYPE) bytes are invalid, print a message to STREAM and
+   TYPE->length () bytes are invalid, print a message to STREAM and
    return 0.  The checking is done using FUNCS.
 
    Otherwise, return 1.  */

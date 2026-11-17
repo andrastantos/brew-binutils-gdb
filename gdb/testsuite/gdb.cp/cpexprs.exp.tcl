@@ -1,6 +1,6 @@
 # cpexprs.exp - C++ expressions tests
 #
-# Copyright 2008-2022 Free Software Foundation, Inc.
+# Copyright 2008-2023 Free Software Foundation, Inc.
 #
 # Contributed by Red Hat, originally written by Keith Seitz.
 #
@@ -678,7 +678,7 @@ add {policyd5::function} \
     {operation_1<T>::function}
 
 # Start the test
-if {[skip_cplus_tests]} { continue }
+if {![allow_cplus_tests]} { continue }
 
 #
 # test running programs

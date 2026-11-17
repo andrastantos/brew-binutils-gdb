@@ -1,6 +1,6 @@
 /* General python/gdb code
 
-   Copyright (C) 2008-2022 Free Software Foundation, Inc.
+   Copyright (C) 2008-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -254,6 +254,30 @@ gdbpy_enter::finalize ()
 {
   python_gdbarch = target_gdbarch ();
 }
+
+/* A helper class to save and restore the GIL, but without touching
+   the other globals that are handled by gdbpy_enter.  */
+
+class gdbpy_gil
+{
+public:
+
+  gdbpy_gil ()
+    : m_state (PyGILState_Ensure ())
+  {
+  }
+
+  ~gdbpy_gil ()
+  {
+    PyGILState_Release (m_state);
+  }
+
+  DISABLE_COPY_AND_ASSIGN (gdbpy_gil);
+
+private:
+
+  PyGILState_STATE m_state;
+};
 
 /* Set the quit flag.  */
 
@@ -620,7 +644,7 @@ execute_gdb_command (PyObject *self, PyObject *args, PyObject *kw)
       bool first = true;
       char *save_ptr = nullptr;
       auto reader
-	= [&] ()
+	= [&] (std::string &buffer)
 	  {
 	    const char *result = strtok_r (first ? &arg_copy[0] : nullptr,
 					   "\n", &save_ptr);
@@ -1559,11 +1583,8 @@ gdbpy_current_language (PyObject *unused1, PyObject *unused2)
 
 
 
-/* The "current" objfile.  This is set when gdb detects that a new
-   objfile has been loaded.  It is only set for the duration of a call to
-   gdbpy_source_objfile_script and gdbpy_execute_objfile_script; it is NULL
-   at other times.  */
-static struct objfile *gdbpy_current_objfile;
+/* See python.h.  */
+struct objfile *gdbpy_current_objfile;
 
 /* Set the current objfile to OBJFILE and then read FILE named FILENAME
    as Python code.  This does not throw any errors.  If an exception
@@ -1842,14 +1863,21 @@ python_write_bytecode ()
   int wbc = 0;
 
   if (python_dont_write_bytecode == AUTO_BOOLEAN_AUTO)
-    wbc = (!python_ignore_environment
-	    && getenv ("PYTHONDONTWRITEBYTECODE") != nullptr) ? 0 : 1;
+    {
+      if (python_ignore_environment)
+	wbc = 1;
+      else
+	{
+	  const char *pdwbc = getenv ("PYTHONDONTWRITEBYTECODE");
+	  wbc = (pdwbc == nullptr || pdwbc[0] == '\0') ? 1 : 0;
+	}
+    }
   else
     wbc = python_dont_write_bytecode == AUTO_BOOLEAN_TRUE ? 0 : 1;
 
   return wbc;
 }
-#endif
+#endif /* HAVE_PYTHON */
 
 /* Implement 'set python dont-write-bytecode'.  This sets Python's internal
    flag no matter when the command is issued, however, if this is used
@@ -2110,6 +2138,7 @@ init_done:
       || gdbpy_initialize_pspace () < 0
       || gdbpy_initialize_objfile () < 0
       || gdbpy_initialize_breakpoints () < 0
+      || gdbpy_initialize_breakpoint_locations () < 0
       || gdbpy_initialize_finishbreakpoints () < 0
       || gdbpy_initialize_lazy_string () < 0
       || gdbpy_initialize_linetable () < 0
@@ -2216,10 +2245,13 @@ test_python ()
 	SELF_CHECK (*e.message == "Error while executing Python code.");
       }
     SELF_CHECK (saw_exception);
-    std::string ref_output("Traceback (most recent call last):\n"
-			   "  File \"<string>\", line 1, in <module>\n"
-			   "KeyboardInterrupt\n");
-    SELF_CHECK (output == ref_output);
+    std::string ref_output_0 ("Traceback (most recent call last):\n"
+			      "  File \"<string>\", line 0, in <module>\n"
+			      "KeyboardInterrupt\n");
+    std::string ref_output_1 ("Traceback (most recent call last):\n"
+			      "  File \"<string>\", line 1, in <module>\n"
+			      "KeyboardInterrupt\n");
+    SELF_CHECK (output == ref_output_0 || output == ref_output_1);
   }
 
 #undef CMD
@@ -2319,11 +2351,22 @@ python executable."),
 
   add_setshow_auto_boolean_cmd ("dont-write-bytecode", no_class,
 				&python_dont_write_bytecode, _("\
-Set whether the Python interpreter should ignore environment variables."), _(" \
-Show whether the Python interpreter showlist ignore environment variables."), _(" \
-When enabled GDB's Python interpreter will ignore any Python related\n	\
-flags in the environment.  This is equivalent to passing `-E' to a\n	\
-python executable."),
+Set whether the Python interpreter should avoid byte-compiling python modules."), _("\
+Show whether the Python interpreter should avoid byte-compiling python modules."), _("\
+When enabled, GDB's embedded Python interpreter won't byte-compile python\n\
+modules.  In order to take effect, this setting must be enabled in an early\n\
+initialization file, i.e. those run via the --early-init-eval-command or\n\
+-eix command line options.  A 'set python dont-write-bytecode on' command\n\
+can also be issued directly from the GDB command line via the\n\
+--early-init-eval-command or -eiex command line options.\n\
+\n\
+This setting defaults to 'auto'.  In this mode, provided the 'python\n\
+ignore-environment' setting is 'off', the environment variable\n\
+PYTHONDONTWRITEBYTECODE is examined to determine whether or not to\n\
+byte-compile python modules.  PYTHONDONTWRITEBYTECODE is considered to be\n\
+off/disabled either when set to the empty string or when the\n\
+environment variable doesn't exist.  All other settings, including those\n\
+which don't seem to make sense, indicate that it's on/enabled."),
 				set_python_dont_write_bytecode,
 				show_python_dont_write_bytecode,
 				&user_set_python_list,

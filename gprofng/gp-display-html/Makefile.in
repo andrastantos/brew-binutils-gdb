@@ -15,7 +15,7 @@
 @SET_MAKE@
 
 #
-#   Copyright (C) 2021 Free Software Foundation, Inc.
+#   Copyright (C) 2021-2023 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -212,7 +212,6 @@ FGREP = @FGREP@
 GPROFNG_BROKEN_JAVAC = @GPROFNG_BROKEN_JAVAC@
 GPROFNG_CFLAGS = @GPROFNG_CFLAGS@
 GPROFNG_CPPFLAGS = @GPROFNG_CPPFLAGS@
-GPROFNG_LIBADD = @GPROFNG_LIBADD@
 GPROFNG_NO_FORMAT_TRUNCATION_CFLAGS = @GPROFNG_NO_FORMAT_TRUNCATION_CFLAGS@
 GPROFNG_NO_SWITCH_CFLAGS = @GPROFNG_NO_SWITCH_CFLAGS@
 GREP = @GREP@

@@ -1,6 +1,6 @@
 /* MI Interpreter Definitions and Commands for GDB, the GNU debugger.
 
-   Copyright (C) 2017-2022 Free Software Foundation, Inc.
+   Copyright (C) 2017-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -52,16 +52,12 @@ public:
   /* Raw console output.  */
   struct ui_file *raw_stdout;
 
-  /* Raw logfile output.  */
-  struct ui_file *raw_stdlog;
-
-  /* Save the original value of raw_stdout and raw_stdlog here when logging, and
-     the file which we need to delete, so we can restore correctly when
+  /* Save the original value of raw_stdout here when logging, and the
+     file which we need to delete, so we can restore correctly when
      done.  */
   struct ui_file *saved_raw_stdout;
-  struct ui_file *saved_raw_stdlog;
-  struct ui_file *saved_raw_file_to_delete;
-
+  ui_file_up logfile_holder;
+  ui_file_up stdout_holder;
 
   /* MI's builder.  */
   struct ui_out *mi_uiout;

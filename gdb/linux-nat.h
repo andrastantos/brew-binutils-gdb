@@ -1,6 +1,6 @@
 /* Native debugging support for GNU/Linux (LWP layer).
 
-   Copyright (C) 2000-2022 Free Software Foundation, Inc.
+   Copyright (C) 2000-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -87,7 +87,7 @@ public:
   bool supports_non_stop () override;
   bool always_non_stop_p () override;
 
-  void async (int) override;
+  void async (bool) override;
 
   void stop (ptid_t) override;
 
@@ -101,16 +101,16 @@ public:
 
   int fileio_open (struct inferior *inf, const char *filename,
 		   int flags, int mode, int warn_if_slow,
-		   int *target_errno) override;
+		   fileio_error *target_errno) override;
 
   gdb::optional<std::string>
     fileio_readlink (struct inferior *inf,
 		     const char *filename,
-		     int *target_errno) override;
+		     fileio_error *target_errno) override;
 
   int fileio_unlink (struct inferior *inf,
 		     const char *filename,
-		     int *target_errno) override;
+		     fileio_error *target_errno) override;
 
   int insert_fork_catchpoint (int) override;
   int remove_fork_catchpoint (int) override;
@@ -330,8 +330,8 @@ extern void linux_unstop_all_lwps (void);
 void linux_nat_switch_fork (ptid_t new_ptid);
 
 /* Store the saved siginfo associated with PTID in *SIGINFO.
-   Return 1 if it was retrieved successfully, 0 otherwise (*SIGINFO is
+   Return true if it was retrieved successfully, false otherwise (*SIGINFO is
    uninitialized in such case).  */
-int linux_nat_get_siginfo (ptid_t ptid, siginfo_t *siginfo);
+bool linux_nat_get_siginfo (ptid_t ptid, siginfo_t *siginfo);
 
 #endif /* LINUX_NAT_H */

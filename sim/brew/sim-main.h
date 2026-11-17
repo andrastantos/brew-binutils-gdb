@@ -42,12 +42,11 @@ typedef struct {
 } mem_trace_s;
 
 
-// forward-declare our struct. This is going to be only valid for simulation contexts, but this header is used everywhere.
-struct _sim_cpu;
 struct brew_model_functions;
 
-struct _sim_cpu {
-  sim_cpu_base base;
+/* Brew-specific CPU state. The common sim_cpu holds a pointer to this (CPU_ARCH_DATA);
+   it is allocated by sim_cpu_alloc_all_extra in sim_open.  */
+struct brew_sim_cpu {
   brew_sim_state sim_state;
   char decode_buf[255];
   mem_trace_s mem_trace;
@@ -56,6 +55,8 @@ struct _sim_cpu {
   // going to be, so neither sim_state.model_functions.XXX nor model_info is filled in.
   const char *rom_file_name;
 };
+
+#define BREW_SIM_CPU(cpu) ((struct brew_sim_cpu *) CPU_ARCH_DATA (cpu))
 
 // sim_engine_halt normally tries to set the PC to whatever
 // is passed in. We don't implement 'sim_pc_set' (brew_pc_set asserts).

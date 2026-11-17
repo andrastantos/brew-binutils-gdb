@@ -1,6 +1,6 @@
 /* Python interface to finish breakpoints
 
-   Copyright (C) 2011-2022 Free Software Foundation, Inc.
+   Copyright (C) 2011-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -55,6 +55,10 @@ struct finish_breakpoint_object
      the function; Py_None if the value is not computable; NULL if GDB is
      not stopped at a FinishBreakpoint.  */
   PyObject *return_value;
+
+  /* The initiating frame for this operation, used to decide when we have
+     left this frame.  */
+  struct frame_id initiating_frame;
 };
 
 extern PyTypeObject finish_breakpoint_object_type
@@ -90,9 +94,9 @@ bpfinishpy_dealloc (PyObject *self)
   Py_TYPE (self)->tp_free (self);
 }
 
-/* Triggered when gdbpy_should_stop is about to execute the `stop' callback
-   of the gdb.FinishBreakpoint object BP_OBJ.  Will compute and cache the
-   `return_value', if possible.  */
+/* Triggered when gdbpy_breakpoint_cond_says_stop is about to execute the `stop'
+   callback of the gdb.FinishBreakpoint object BP_OBJ.  Will compute and cache
+   the `return_value', if possible.  */
 
 void
 bpfinishpy_pre_stop_hook (struct gdbpy_breakpoint_object *bp_obj)
@@ -134,8 +138,8 @@ bpfinishpy_pre_stop_hook (struct gdbpy_breakpoint_object *bp_obj)
     }
 }
 
-/* Triggered when gdbpy_should_stop has triggered the `stop' callback
-   of the gdb.FinishBreakpoint object BP_OBJ.  */
+/* Triggered when gdbpy_breakpoint_cond_says_stop has triggered the `stop'
+   callback of the gdb.FinishBreakpoint object BP_OBJ.  */
 
 void
 bpfinishpy_post_stop_hook (struct gdbpy_breakpoint_object *bp_obj)
@@ -145,7 +149,7 @@ bpfinishpy_post_stop_hook (struct gdbpy_breakpoint_object *bp_obj)
     {
       /* Can't delete it here, but it will be removed at the next stop.  */
       disable_breakpoint (bp_obj->bp);
-      gdb_assert (bp_obj->bp->disposition == disp_del);
+      bp_obj->bp->disposition = disp_del_at_next_stop;
     }
   catch (const gdb_exception &except)
     {
@@ -164,8 +168,8 @@ bpfinishpy_init (PyObject *self, PyObject *args, PyObject *kwargs)
       (struct finish_breakpoint_object *) self;
   PyObject *frame_obj = NULL;
   int thread;
-  struct frame_info *frame = NULL; /* init for gcc -Wall */
-  struct frame_info *prev_frame = NULL;
+  frame_info_ptr frame = NULL; /* init for gcc -Wall */
+  frame_info_ptr prev_frame = NULL;
   struct frame_id frame_id;
   PyObject *internal = NULL;
   int internal_bp = 0;
@@ -205,12 +209,7 @@ bpfinishpy_init (PyObject *self, PyObject *args, PyObject *kwargs)
 				 "be set on a dummy frame."));
 	    }
 	  else
-	    {
-	      frame_id = get_frame_id (prev_frame);
-	      if (frame_id_eq (frame_id, null_frame_id))
-		PyErr_SetString (PyExc_ValueError,
-				 _("Invalid ID for the `frame' object."));
-	    }
+	    frame_id = get_frame_id (prev_frame);
 	}
     }
   catch (const gdb_exception &except)
@@ -254,7 +253,7 @@ bpfinishpy_init (PyObject *self, PyObject *args, PyObject *kwargs)
 	  if (function != nullptr)
 	    {
 	      struct type *ret_type =
-		check_typedef (TYPE_TARGET_TYPE (function->type ()));
+		check_typedef (function->type ()->target_type ());
 
 	      /* Remember only non-void return types.  */
 	      if (ret_type->code () != TYPE_CODE_VOID)
@@ -315,6 +314,7 @@ bpfinishpy_init (PyObject *self, PyObject *args, PyObject *kwargs)
 
   self_bpfinish->py_bp.bp->frame_id = frame_id;
   self_bpfinish->py_bp.is_finish_bp = 1;
+  self_bpfinish->initiating_frame = get_frame_id (frame);
 
   /* Bind the breakpoint with the current program space.  */
   self_bpfinish->py_bp.bp->pspace = current_program_space;
@@ -365,9 +365,11 @@ bpfinishpy_detect_out_scope_cb (struct breakpoint *b,
 	{
 	  try
 	    {
+	      struct frame_id initiating_frame = finish_bp->initiating_frame;
+
 	      if (b->pspace == current_inferior ()->pspace
 		  && (!target_has_registers ()
-		      || frame_find_by_id (b->frame_id) == NULL))
+		      || frame_find_by_id (initiating_frame) == NULL))
 		bpfinishpy_out_of_scope (finish_bp);
 	    }
 	  catch (const gdb_exception &except)
@@ -408,6 +410,9 @@ bpfinishpy_handle_exit (struct inferior *inf)
 int
 gdbpy_initialize_finishbreakpoints (void)
 {
+  if (!gdbpy_breakpoint_init_breakpoint_type ())
+    return -1;
+
   if (PyType_Ready (&finish_breakpoint_object_type) < 0)
     return -1;
 

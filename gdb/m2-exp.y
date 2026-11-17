@@ -1,5 +1,5 @@
 /* YACC grammar for Modula-2 expressions, for GDB.
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
    Generated from expread.y (now c-exp.y) and contributed by the Department
    of Computer Science at the State University of New York at Buffalo, 1991.
 
@@ -480,7 +480,7 @@ exp	:	SIZE '(' type ')'	%prec UNARY
 			{
 			  pstate->push_new<long_const_operation>
 			    (parse_m2_type (pstate)->builtin_int,
-			     TYPE_LENGTH ($3));
+			     $3->length ());
 			}
 	;
 

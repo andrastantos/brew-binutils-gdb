@@ -1,5 +1,5 @@
 /* Instruction printing code for the ARC.
-   Copyright (C) 1994-2022 Free Software Foundation, Inc.
+   Copyright (C) 1994-2023 Free Software Foundation, Inc.
 
    Contributed by Claudiu Zissulescu (claziss@synopsys.com)
 
@@ -1611,6 +1611,8 @@ print_arc_disassembler_options (FILE *stream)
   for (i = 0; args[i].name != NULL; ++i)
     {
       size_t len = 3;
+      if (args[i].values == NULL)
+	continue;
       fprintf (stream, _("\n\
   For the options above, the following values are supported for \"%s\":\n   "),
 	       args[i].name);

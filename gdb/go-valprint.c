@@ -1,6 +1,6 @@
 /* Support for printing Go values for GDB, the GNU debugger.
 
-   Copyright (C) 2012-2022 Free Software Foundation, Inc.
+   Copyright (C) 2012-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -45,7 +45,7 @@ print_go_string (struct type *type,
 {
   struct gdbarch *gdbarch = type->arch ();
   struct type *elt_ptr_type = type->field (0).type ();
-  struct type *elt_type = TYPE_TARGET_TYPE (elt_ptr_type);
+  struct type *elt_type = elt_ptr_type->target_type ();
   LONGEST length;
   /* TODO(dje): The encapsulation of what a pointer is belongs in value.c.
      I.e. If there's going to be unpack_pointer, there should be

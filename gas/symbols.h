@@ -1,5 +1,5 @@
 /* symbols.h -
-   Copyright (C) 1987-2022 Free Software Foundation, Inc.
+   Copyright (C) 1987-2023 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -92,6 +92,7 @@ extern void copy_symbol_attributes (symbolS *, symbolS *);
 
 /* Get and set the values of symbols.  These used to be macros.  */
 extern valueT S_GET_VALUE (symbolS *);
+extern valueT S_GET_VALUE_WHERE (symbolS *, const char *, unsigned int);
 extern void S_SET_VALUE (symbolS *, valueT);
 
 extern int S_IS_FUNCTION (symbolS *);

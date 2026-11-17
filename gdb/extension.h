@@ -1,6 +1,6 @@
 /* Interface between gdb and its extension languages.
 
-   Copyright (C) 2014-2022 Free Software Foundation, Inc.
+   Copyright (C) 2014-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,7 +26,7 @@
 
 struct breakpoint;
 struct command_line;
-struct frame_info;
+class frame_info_ptr;
 struct language_defn;
 struct objfile;
 struct extension_language_defn;
@@ -291,7 +291,7 @@ extern int apply_ext_lang_val_pretty_printer
    const struct language_defn *language);
 
 extern enum ext_lang_bt_status apply_ext_lang_frame_filter
-  (struct frame_info *frame, frame_filter_flags flags,
+  (frame_info_ptr frame, frame_filter_flags flags,
    enum ext_lang_frame_args args_type,
    struct ui_out *out, int frame_low, int frame_high);
 
@@ -300,7 +300,7 @@ extern void preserve_ext_lang_values (struct objfile *, htab_t copied_types);
 extern const struct extension_language_defn *get_breakpoint_cond_ext_lang
   (struct breakpoint *b, enum extension_language skip_lang);
 
-extern int breakpoint_ext_lang_cond_says_stop (struct breakpoint *);
+extern bool breakpoint_ext_lang_cond_says_stop (struct breakpoint *);
 
 /* If a method with name METHOD_NAME is to be invoked on an object of type
    TYPE, then all extension languages are searched for implementations of

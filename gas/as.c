@@ -1,5 +1,5 @@
 /* as.c - GAS main program.
-   Copyright (C) 1987-2022 Free Software Foundation, Inc.
+   Copyright (C) 1987-2023 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -42,6 +42,7 @@
 #include "macro.h"
 #include "dwarf2dbg.h"
 #include "dw2gencfi.h"
+#include "codeview.h"
 #include "bfdver.h"
 #include "write.h"
 
@@ -226,7 +227,7 @@ print_version_id (void)
 
 #ifdef DEFAULT_FLAG_COMPRESS_DEBUG
 enum compressed_debug_section_type flag_compress_debug
-  = COMPRESS_DEBUG_GABI_ZLIB;
+  = DEFAULT_COMPRESSED_DEBUG_ALGORITHM;
 #endif
 
 static void
@@ -250,23 +251,20 @@ Options:\n\
 
   fprintf (stream, _("\
   --alternate             initially turn on alternate macro syntax\n"));
-#ifdef DEFAULT_FLAG_COMPRESS_DEBUG
   fprintf (stream, _("\
-  --compress-debug-sections[={none|zlib|zlib-gnu|zlib-gabi}]\n\
-                          compress DWARF debug sections using zlib [default]\n"));
+  --compress-debug-sections[={none|zlib|zlib-gnu|zlib-gabi|zstd}]\n\
+                          compress DWARF debug sections\n")),
+  fprintf (stream, _("\
+		            Default: %s\n"),
+	   bfd_get_compression_algorithm_name (flag_compress_debug));
+
   fprintf (stream, _("\
   --nocompress-debug-sections\n\
                           don't compress DWARF debug sections\n"));
-#else
-  fprintf (stream, _("\
-  --compress-debug-sections[={none|zlib|zlib-gnu|zlib-gabi}]\n\
-                          compress DWARF debug sections using zlib\n"));
-  fprintf (stream, _("\
-  --nocompress-debug-sections\n\
-                          don't compress DWARF debug sections [default]\n"));
-#endif
   fprintf (stream, _("\
   -D                      produce assembler debugging messages\n"));
+  fprintf (stream, _("\
+  --dump-config           display how the assembler is configured and then exit\n"));
   fprintf (stream, _("\
   --debug-prefix-map OLD=NEW\n\
                           map OLD to NEW in debug information\n"));
@@ -278,7 +276,7 @@ Options:\n\
     const char *def_em;
 
     fprintf (stream, "\
-  --em=[");
+  --emulation=[");
     for (i = 0; i < n_emulations - 1; i++)
       fprintf (stream, "%s | ", emulations[i]->name);
     fprintf (stream, "%s]\n", emulations[i]->name);
@@ -318,6 +316,8 @@ Options:\n\
 #endif
   fprintf (stream, _("\
                           generate GNU Build notes if none are present in the input\n"));
+  fprintf (stream, _("\
+  --gsframe               generate SFrame unwind info\n"));
 #endif /* OBJ_ELF */
 
   fprintf (stream, _("\
@@ -331,7 +331,17 @@ Options:\n\
   fprintf (stream, _("\
   --gdwarf-<N>            generate DWARF<N> debugging information. 2 <= <N> <= 5\n"));
   fprintf (stream, _("\
+  --gdwarf-cie-version=<N> generate version 1, 3 or 4 DWARF CIEs\n"));
+  fprintf (stream, _("\
   --gdwarf-sections       generate per-function section names for DWARF line information\n"));
+#if defined (TE_PE) && defined (O_secrel)
+  fprintf (stream, _("\
+  --gcodeview             generate CodeView debugging information\n"));
+#endif
+  fprintf (stream, _("\
+  --hash-size=<N>         ignored\n"));
+  fprintf (stream, _("\
+  --help                  show all assembler options\n"));
   fprintf (stream, _("\
   --target-help           show target specific options\n"));
   fprintf (stream, _("\
@@ -347,6 +357,9 @@ Options:\n\
   fprintf (stream, _("\
   --MD FILE               write dependency information in FILE (default none)\n"));
   fprintf (stream, _("\
+  --multibyte-handling=<method>\n\
+                          what to do with multibyte characters encountered in the input\n"));
+  fprintf (stream, _("\
   -nocpp                  ignored\n"));
   fprintf (stream, _("\
   -no-pad-sections        do not pad the end of sections to alignment boundaries\n"));
@@ -354,6 +367,8 @@ Options:\n\
   -o OBJFILE              name the object-file output OBJFILE (default a.out)\n"));
   fprintf (stream, _("\
   -R                      fold data section into text section\n"));
+  fprintf (stream, _("\
+  --reduce-memory-overheads ignored\n"));
   fprintf (stream, _("\
   --statistics            print various measured statistics from execution\n"));
   fprintf (stream, _("\
@@ -473,6 +488,7 @@ parse_args (int * pargc, char *** pargv)
       OPTION_GDWARF_5,
       OPTION_GDWARF_SECTIONS, /* = STD_BASE + 20 */
       OPTION_GDWARF_CIE_VERSION,
+      OPTION_GCODEVIEW,
       OPTION_STRIP_LOCAL_ABSOLUTE,
       OPTION_TRADITIONAL_FORMAT,
       OPTION_WARN,
@@ -491,7 +507,8 @@ parse_args (int * pargc, char *** pargv)
       OPTION_COMPRESS_DEBUG,
       OPTION_NOCOMPRESS_DEBUG,
       OPTION_NO_PAD_SECTIONS,
-      OPTION_MULTIBYTE_HANDLING  /* = STD_BASE + 40 */
+      OPTION_MULTIBYTE_HANDLING,  /* = STD_BASE + 40 */
+      OPTION_SFRAME
     /* When you add options here, check that they do
        not collide with OPTION_MD_BASE.  See as.h.  */
     };
@@ -522,6 +539,7 @@ parse_args (int * pargc, char *** pargv)
     ,{"elf-stt-common", required_argument, NULL, OPTION_ELF_STT_COMMON}
     ,{"sectname-subst", no_argument, NULL, OPTION_SECTNAME_SUBST}
     ,{"generate-missing-build-notes", required_argument, NULL, OPTION_ELF_BUILD_NOTES}
+    ,{"gsframe", no_argument, NULL, OPTION_SFRAME}
 #endif
     ,{"fatal-warnings", no_argument, NULL, OPTION_WARN_FATAL}
     ,{"gdwarf-2", no_argument, NULL, OPTION_GDWARF_2}
@@ -533,6 +551,9 @@ parse_args (int * pargc, char *** pargv)
     ,{"gdwarf2", no_argument, NULL, OPTION_GDWARF_2}
     ,{"gdwarf-sections", no_argument, NULL, OPTION_GDWARF_SECTIONS}
     ,{"gdwarf-cie-version", required_argument, NULL, OPTION_GDWARF_CIE_VERSION}
+#if defined (TE_PE) && defined (O_secrel)
+    ,{"gcodeview", no_argument, NULL, OPTION_GCODEVIEW}
+#endif
     ,{"gen-debug", no_argument, NULL, 'g'}
     ,{"gstabs", no_argument, NULL, OPTION_GSTABS}
     ,{"gstabs+", no_argument, NULL, OPTION_GSTABS_PLUS}
@@ -688,7 +709,7 @@ parse_args (int * pargc, char *** pargv)
 	case OPTION_VERSION:
 	  /* This output is intended to follow the GNU standards document.  */
 	  printf (_("GNU assembler %s\n"), BFD_VERSION_STRING);
-	  printf (_("Copyright (C) 2022 Free Software Foundation, Inc.\n"));
+	  printf (_("Copyright (C) 2023 Free Software Foundation, Inc.\n"));
 	  printf (_("\
 This program is free software; you may redistribute it under the terms of\n\
 the GNU General Public License version 3 or later.\n\
@@ -728,15 +749,13 @@ This program has absolutely no warranty.\n"));
 	  if (optarg)
 	    {
 #if defined OBJ_ELF || defined OBJ_MAYBE_ELF
-	      if (strcasecmp (optarg, "none") == 0)
-		flag_compress_debug = COMPRESS_DEBUG_NONE;
-	      else if (strcasecmp (optarg, "zlib") == 0)
-		flag_compress_debug = COMPRESS_DEBUG_GABI_ZLIB;
-	      else if (strcasecmp (optarg, "zlib-gnu") == 0)
-		flag_compress_debug = COMPRESS_DEBUG_GNU_ZLIB;
-	      else if (strcasecmp (optarg, "zlib-gabi") == 0)
-		flag_compress_debug = COMPRESS_DEBUG_GABI_ZLIB;
-	      else
+	      flag_compress_debug = bfd_get_compression_algorithm (optarg);
+#ifndef HAVE_ZSTD
+	      if (flag_compress_debug == COMPRESS_DEBUG_ZSTD)
+		  as_fatal (_ ("--compress-debug-sections=zstd: gas is not "
+			       "built with zstd support"));
+#endif
+	      if (flag_compress_debug == COMPRESS_UNKNOWN)
 		as_fatal (_("Invalid --compress-debug-sections option: `%s'"),
 			  optarg);
 #else
@@ -859,6 +878,12 @@ This program has absolutely no warranty.\n"));
 	case OPTION_GDWARF_SECTIONS:
 	  flag_dwarf_sections = true;
 	  break;
+
+#if defined (TE_PE) && defined (O_secrel)
+	case OPTION_GCODEVIEW:
+	  debug_type = DEBUG_CODEVIEW;
+	  break;
+#endif
 
         case OPTION_GDWARF_CIE_VERSION:
 	  flag_dwarf_cie_version = atoi (optarg);
@@ -985,6 +1010,10 @@ This program has absolutely no warranty.\n"));
 	  else
 	    as_fatal (_("Invalid --generate-missing-build-notes option: `%s'"),
 		      optarg);
+	  break;
+
+	case OPTION_SFRAME:
+	  flag_gen_sframe = 1;
 	  break;
 
 #endif /* OBJ_ELF */
@@ -1414,6 +1443,8 @@ main (int argc, char ** argv)
 
     }
 #endif
+
+  codeview_finish ();
 
   /* If we've been collecting dwarf2 .debug_line info, either for
      assembly debugging or on behalf of the compiler, emit it now.  */

@@ -1,5 +1,5 @@
 /* Target-dependent code for the 32-bit OpenRISC 1000, for the GDB.
-   Copyright (C) 2008-2022 Free Software Foundation, Inc.
+   Copyright (C) 2008-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -63,7 +63,7 @@ show_or1k_debug (struct ui_file *file, int from_tty,
 
 /* The target-dependent structure for gdbarch.  */
 
-struct or1k_gdbarch_tdep : gdbarch_tdep
+struct or1k_gdbarch_tdep : gdbarch_tdep_base
 {
   int bytes_per_word = 0;
   int bytes_per_address = 0;
@@ -247,8 +247,8 @@ or1k_return_value (struct gdbarch *gdbarch, struct value *functype,
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   enum type_code rv_type = valtype->code ();
-  unsigned int rv_size = TYPE_LENGTH (valtype);
-  or1k_gdbarch_tdep *tdep = (or1k_gdbarch_tdep *) gdbarch_tdep (gdbarch);
+  unsigned int rv_size = valtype->length ();
+  or1k_gdbarch_tdep *tdep = gdbarch_tdep<or1k_gdbarch_tdep> (gdbarch);
   int bpw = tdep->bytes_per_word;
 
   /* Deal with struct/union as addresses.  If an array won't fit in a
@@ -353,7 +353,7 @@ or1k_delay_slot_p (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
   const CGEN_INSN *insn;
   CGEN_FIELDS tmp_fields;
-  or1k_gdbarch_tdep *tdep = (or1k_gdbarch_tdep *) gdbarch_tdep (gdbarch);
+  or1k_gdbarch_tdep *tdep = gdbarch_tdep<or1k_gdbarch_tdep> (gdbarch);
 
   insn = cgen_lookup_insn (tdep->gdb_cgen_cpu_desc,
 			   NULL,
@@ -379,7 +379,7 @@ or1k_delay_slot_p (struct gdbarch *gdbarch, CORE_ADDR pc)
 
 static int
 or1k_single_step_through_delay (struct gdbarch *gdbarch,
-				struct frame_info *this_frame)
+				frame_info_ptr this_frame)
 {
   ULONGEST val;
   CORE_ADDR ppc;
@@ -559,7 +559,7 @@ or1k_frame_align (struct gdbarch *gdbarch, CORE_ADDR sp)
 /* Implement the unwind_pc gdbarch method.  */
 
 static CORE_ADDR
-or1k_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
+or1k_unwind_pc (struct gdbarch *gdbarch, frame_info_ptr next_frame)
 {
   CORE_ADDR pc;
 
@@ -579,7 +579,7 @@ or1k_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
 /* Implement the unwind_sp gdbarch method.  */
 
 static CORE_ADDR
-or1k_unwind_sp (struct gdbarch *gdbarch, struct frame_info *next_frame)
+or1k_unwind_sp (struct gdbarch *gdbarch, frame_info_ptr next_frame)
 {
   CORE_ADDR sp;
 
@@ -635,7 +635,7 @@ or1k_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
   int heap_offset = 0;
   CORE_ADDR heap_sp = sp - 128;
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-  or1k_gdbarch_tdep *tdep = (or1k_gdbarch_tdep *) gdbarch_tdep (gdbarch);
+  or1k_gdbarch_tdep *tdep = gdbarch_tdep<or1k_gdbarch_tdep> (gdbarch);
   int bpa = tdep->bytes_per_address;
   int bpw = tdep->bytes_per_word;
   struct type *func_type = value_type (function);
@@ -663,7 +663,7 @@ or1k_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 
       struct value *arg = args[argnum];
       struct type *arg_type = check_typedef (value_type (arg));
-      int len = TYPE_LENGTH (arg_type);
+      int len = arg_type->length ();
       enum type_code typecode = arg_type->code ();
 
       if (func_type->has_varargs () && argnum >= func_type->num_fields ())
@@ -753,7 +753,7 @@ or1k_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
     {
       struct value *arg = args[argnum];
       struct type *arg_type = check_typedef (value_type (arg));
-      int len = TYPE_LENGTH (arg_type);
+      int len = arg_type->length ();
       enum type_code typecode = arg_type->code ();
 
       if ((TYPE_CODE_STRUCT == typecode) || (TYPE_CODE_UNION == typecode)
@@ -785,7 +785,7 @@ or1k_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 
       struct value *arg = args[argnum];
       struct type *arg_type = check_typedef (value_type (arg));
-      int len = TYPE_LENGTH (arg_type);
+      int len = arg_type->length ();
       enum type_code typecode = arg_type->code ();
       /* The EABI passes structures that do not fit in a register by
 	 reference.  In all other cases, pass the structure by value.  */
@@ -890,7 +890,7 @@ or1k_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
    Reportedly, this is only valid for frames less than 0x7fff in size.  */
 
 static struct trad_frame_cache *
-or1k_frame_cache (struct frame_info *this_frame, void **prologue_cache)
+or1k_frame_cache (frame_info_ptr this_frame, void **prologue_cache)
 {
   struct gdbarch *gdbarch;
   struct trad_frame_cache *info;
@@ -1103,7 +1103,7 @@ or1k_frame_cache (struct frame_info *this_frame, void **prologue_cache)
 /* Implement the this_id function for the stub unwinder.  */
 
 static void
-or1k_frame_this_id (struct frame_info *this_frame,
+or1k_frame_this_id (frame_info_ptr this_frame,
 		    void **prologue_cache, struct frame_id *this_id)
 {
   struct trad_frame_cache *info = or1k_frame_cache (this_frame,
@@ -1115,7 +1115,7 @@ or1k_frame_this_id (struct frame_info *this_frame,
 /* Implement the prev_register function for the stub unwinder.  */
 
 static struct value *
-or1k_frame_prev_register (struct frame_info *this_frame,
+or1k_frame_prev_register (frame_info_ptr this_frame,
 			  void **prologue_cache, int regnum)
 {
   struct trad_frame_cache *info = or1k_frame_cache (this_frame,
@@ -1142,7 +1142,6 @@ static const struct frame_unwind or1k_frame_unwind = {
 static struct gdbarch *
 or1k_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 {
-  struct gdbarch *gdbarch;
   const struct bfd_arch_info *binfo;
   tdesc_arch_data_up tdesc_data;
   const struct target_desc *tdesc = info.target_desc;
@@ -1157,10 +1156,12 @@ or1k_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
      actually know which target we are talking to, but put in some defaults
      for now.  */
   binfo = info.bfd_arch_info;
-  or1k_gdbarch_tdep *tdep = new or1k_gdbarch_tdep;
+  gdbarch *gdbarch
+    = gdbarch_alloc (&info, gdbarch_tdep_up (new or1k_gdbarch_tdep));
+  or1k_gdbarch_tdep *tdep = gdbarch_tdep<or1k_gdbarch_tdep> (gdbarch);
+
   tdep->bytes_per_word = binfo->bits_per_word / binfo->bits_per_byte;
   tdep->bytes_per_address = binfo->bits_per_address / binfo->bits_per_byte;
-  gdbarch = gdbarch_alloc (&info, tdep);
 
   /* Target data types */
   set_gdbarch_short_bit (gdbarch, 16);
@@ -1273,7 +1274,7 @@ or1k_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 static void
 or1k_dump_tdep (struct gdbarch *gdbarch, struct ui_file *file)
 {
-  or1k_gdbarch_tdep *tdep = (or1k_gdbarch_tdep *) gdbarch_tdep (gdbarch);
+  or1k_gdbarch_tdep *tdep = gdbarch_tdep<or1k_gdbarch_tdep> (gdbarch);
 
   if (NULL == tdep)
     return; /* Nothing to report */

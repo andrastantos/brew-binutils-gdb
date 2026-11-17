@@ -1,6 +1,6 @@
 /* Convert a DWARF location expression to C
 
-   Copyright (C) 2014-2022 Free Software Foundation, Inc.
+   Copyright (C) 2014-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -633,7 +633,7 @@ do_compile_dwarf_expr_to_c (int indent, string_file *stream,
      offset by hand seemed too hackish.  */
   if (is_tls)
     {
-      struct frame_info *frame = get_selected_frame (NULL);
+      frame_info_ptr frame = get_selected_frame (NULL);
       struct value *val;
 
       if (frame == NULL)

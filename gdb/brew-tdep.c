@@ -96,13 +96,14 @@ static const char * const brew_virtual_reg_names[] = {
 static const char *brew_register_name(struct gdbarch *gdbarch, int reg_nr)
 {
   // TODO: what to do with $pc/$tpc/$spc????
+  // gdb only asks for valid register numbers, and the result must never be NULL.
   if (reg_nr < 0)
-    return NULL;
+    return "";
   if (reg_nr < 15) // normal registers
     return brew_reg_names[reg_nr];
   reg_nr -= 15;
   if (reg_nr >= sizeof(brew_virtual_reg_names)/sizeof(brew_virtual_reg_names[0]))
-    return NULL;
+    return "";
   return brew_virtual_reg_names[reg_nr];
 }
 
@@ -122,7 +123,7 @@ static void brew_store_return_value(struct type *type, struct regcache *regcache
 {
   //struct gdbarch *gdbarch = regcache->arch();
   CORE_ADDR regval;
-  int len = TYPE_LENGTH(type);
+  int len = type->length ();
 
   for (int ofs = 0; ofs < len; ofs+=4)
     {
@@ -239,7 +240,7 @@ static bool brew_analyze_prolog(
   CORE_ADDR cur_pc,
   CORE_ADDR cur_fp,
   struct brew_frame_info *frame_info,
-  struct frame_info *this_frame,
+  frame_info_ptr this_frame,
   struct gdbarch *gdbarch
 ) {
   enum bfd_endian byte_order = gdbarch_byte_order(gdbarch);
@@ -649,7 +650,7 @@ static void brew_extract_return_value(struct type *type, struct regcache *regcac
 {
   struct gdbarch *gdbarch = regcache->arch();
   enum bfd_endian byte_order = gdbarch_byte_order(gdbarch);
-  int len = TYPE_LENGTH(type); // NOTE: must be signed: we're decrementing by 4 no matter how much we need, so len might turn negative.
+  int len = type->length (); // NOTE: must be signed: we're decrementing by 4 no matter how much we need, so len might turn negative.
   int reg_idx = 0;
   uint32_t tmp;
 
@@ -683,7 +684,7 @@ static enum return_value_convention brew_return_value(
   //
   // This is determined by `brew_return_in_memory` in `brew.cc` inside gcc.
   //
-  if (TYPE_LENGTH(valtype) > 16)
+  if (valtype->length () > 16)
     return RETURN_VALUE_STRUCT_CONVENTION;
   else
     {
@@ -717,7 +718,7 @@ static struct brew_frame_info *brew_alloc_frame_info (void)
 }
 
 // Populate a brew_frame_info object for this_frame.
-static struct brew_frame_info *brew_frame_info_fill(struct frame_info *this_frame, void **this_cache)
+static struct brew_frame_info *brew_frame_info_fill(frame_info_ptr this_frame, void **this_cache)
 {
   struct brew_frame_info *frame_info;
 
@@ -764,7 +765,7 @@ static struct brew_frame_info *brew_frame_info_fill(struct frame_info *this_fram
 // during the execution of the function. That is, the same ID should be returned when
 // we're in the prolog, function body or epilog of the function.
 static void brew_frame_this_id(
-  struct frame_info *this_frame,
+  frame_info_ptr this_frame,
   void **this_prologue_cache,
   struct frame_id *this_id
 ) {
@@ -780,7 +781,7 @@ static void brew_frame_this_id(
 
 // Get the value of register regnum in the previous stack frame.
 static struct value *brew_frame_prev_register(
-  struct frame_info *this_frame,
+  frame_info_ptr this_frame,
   void **this_prologue_cache,
   int regnum
 ) {
@@ -815,7 +816,7 @@ static struct value *brew_frame_prev_register(
 }
 
 // Return the base address of this_frame.
-static CORE_ADDR brew_frame_base_address (struct frame_info *this_frame, void **this_cache)
+static CORE_ADDR brew_frame_base_address (frame_info_ptr this_frame, void **this_cache)
 {
   struct brew_frame_info *frame_info = brew_frame_info_fill(this_frame, this_cache);
   gdb_assert(frame_info->valid);
@@ -1095,8 +1096,7 @@ static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbar
     return arches->gdbarch;
 
   // Allocate space for the new architecture.
-  brew_gdbarch_tdep *tdep = new brew_gdbarch_tdep;
-  gdbarch = gdbarch_alloc(&info, tdep);
+  gdbarch = gdbarch_alloc(&info, gdbarch_tdep_up (new brew_gdbarch_tdep));
 
   set_gdbarch_wchar_bit(gdbarch, 32);
   set_gdbarch_wchar_signed(gdbarch, 0);
@@ -1145,5 +1145,5 @@ void _initialize_brew_tdep();
 void
 _initialize_brew_tdep ()
 {
-  register_gdbarch_init(bfd_arch_brew, brew_gdbarch_init);
+  gdbarch_register(bfd_arch_brew, brew_gdbarch_init);
 }

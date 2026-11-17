@@ -1,4 +1,4 @@
-#   Copyright 1998-2022 Free Software Foundation, Inc.
+#   Copyright 1998-2023 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,10 +23,7 @@ gdb_start
 
 standard_testfile actions.c
 
-if ![gdb_trace_common_supports_arch] {
-    unsupported "no trace-common.h support for arch"
-    return -1
-}
+require gdb_trace_common_supports_arch
 
 if { [gdb_compile "$srcdir/$subdir/$srcfile" $binfile \
 	  executable {debug nowarnings}] != "" } {
@@ -47,7 +44,7 @@ gdb_file_cmd $binfile
 gdb_delete_tracepoints
 set c_test_num [gdb_gettpnum gdb_c_test]
 set asm_test_num [gdb_gettpnum gdb_asm_test]
-if { $c_test_num <= 0 || $asm_test_num <= 0 } then {
+if {$c_test_num <= 0 || $asm_test_num <= 0} {
     fail "setting tracepoints"
     return
 }
@@ -111,7 +108,7 @@ if {[gdb_test "" "Breakpoint ${decimal}, main.*" "run to main"] != 0} {
     return -1
 }
 
-if { ![gdb_target_supports_trace] } then {
+if {![gdb_target_supports_trace]} {
     unsupported "current target does not support trace"
     return 1
 }

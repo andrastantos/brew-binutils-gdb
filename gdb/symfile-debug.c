@@ -1,6 +1,6 @@
 /* Debug logging for the symbol file functions for the GNU debugger, GDB.
 
-   Copyright (C) 2013-2022 Free Software Foundation, Inc.
+   Copyright (C) 2013-2023 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support, using pieces from other GDB modules.
 
@@ -47,7 +47,7 @@ struct debug_sym_fns_data
 
 /* We need to record a pointer to the real set of functions for each
    objfile.  */
-static const struct objfile_key<debug_sym_fns_data>
+static const registry<objfile>::key<debug_sym_fns_data>
   symfile_debug_objfile_data_key;
 
 /* If true all calls to the symfile functions are logged.  */

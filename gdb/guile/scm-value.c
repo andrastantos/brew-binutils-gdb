@@ -1,6 +1,6 @@
 /* Scheme interface to values.
 
-   Copyright (C) 2008-2022 Free Software Foundation, Inc.
+   Copyright (C) 2008-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -148,7 +148,7 @@ vlscm_print_value_smob (SCM self, SCM port, scm_print_state *pstate)
     gdbscm_printf (port, "#<%s ", value_smob_name);
 
   get_user_print_options (&opts);
-  opts.deref_ref = 0;
+  opts.deref_ref = false;
 
   /* pstate->writingp = zero if invoked by display/~A, and nonzero if
      invoked by write/~S.  What to do here may need to evolve.
@@ -576,7 +576,7 @@ gdbscm_value_dynamic_type (SCM self)
 
       if (((type->code () == TYPE_CODE_PTR)
 	   || (type->code () == TYPE_CODE_REF))
-	  && (TYPE_TARGET_TYPE (type)->code () == TYPE_CODE_STRUCT))
+	  && (type->target_type ()->code () == TYPE_CODE_STRUCT))
 	{
 	  struct value *target;
 	  int was_pointer = type->code () == TYPE_CODE_PTR;
@@ -827,7 +827,7 @@ gdbscm_value_to_bytevector (SCM self)
   try
     {
       type = check_typedef (type);
-      length = TYPE_LENGTH (type);
+      length = type->length ();
       contents = value_contents (value).data ();
     }
   catch (const gdb_exception &except)
@@ -1104,7 +1104,7 @@ gdbscm_value_to_string (SCM self, SCM rest)
   gdbscm_dynwind_xfree (buffer_contents);
 
   result = scm_from_stringn ((const char *) buffer_contents,
-			     length * TYPE_LENGTH (char_type),
+			     length * char_type->length (),
 			     (encoding != NULL && *encoding != '\0'
 			      ? encoding
 			      : la_encoding),
@@ -1181,7 +1181,7 @@ gdbscm_value_to_lazy_string (SCM self, SCM rest)
 	      length = array_length;
 	    else if (array_length == -1)
 	      {
-		type = lookup_array_range_type (TYPE_TARGET_TYPE (realtype),
+		type = lookup_array_range_type (realtype->target_type (),
 						0, length - 1);
 	      }
 	    else if (length != array_length)
@@ -1190,7 +1190,7 @@ gdbscm_value_to_lazy_string (SCM self, SCM rest)
 		   specified length.  */
 		if (length > array_length)
 		  error (_("length is larger than array size"));
-		type = lookup_array_range_type (TYPE_TARGET_TYPE (type),
+		type = lookup_array_range_type (type->target_type (),
 						low_bound,
 						low_bound + length - 1);
 	      }
@@ -1264,7 +1264,7 @@ gdbscm_value_print (SCM self)
   struct value_print_options opts;
 
   get_user_print_options (&opts);
-  opts.deref_ref = 0;
+  opts.deref_ref = false;
 
   string_file stb;
 

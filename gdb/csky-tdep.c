@@ -1,6 +1,6 @@
 /* Target-dependent code for the CSKY architecture, for GDB.
 
-   Copyright (C) 2010-2022 Free Software Foundation, Inc.
+   Copyright (C) 2010-2023 Free Software Foundation, Inc.
 
    Contributed by C-SKY Microsystems and Mentor Graphics.
 
@@ -660,20 +660,11 @@ static const char * const csky_register_names[] =
 static const char *
 csky_register_name (struct gdbarch *gdbarch, int reg_nr)
 {
-  int num_regs = gdbarch_num_regs (gdbarch);
-  int num_pseudo_regs =  gdbarch_num_pseudo_regs (gdbarch);
-
-  if ((reg_nr >= num_regs) && (reg_nr < (num_regs + num_pseudo_regs)))
+  if (reg_nr >= gdbarch_num_regs (gdbarch))
     return csky_pseudo_register_name (gdbarch, reg_nr);
 
   if (tdesc_has_registers (gdbarch_target_desc (gdbarch)))
     return tdesc_register_name (gdbarch, reg_nr);
-
-  if (reg_nr < 0)
-    return NULL;
-
-  if (reg_nr >= gdbarch_num_regs (gdbarch))
-    return NULL;
 
   return csky_register_names[reg_nr];
 }
@@ -709,6 +700,24 @@ csky_vector_type (struct gdbarch *gdbarch)
 static struct type *
 csky_register_type (struct gdbarch *gdbarch, int reg_nr)
 {
+  int num_regs = gdbarch_num_regs (gdbarch);
+  csky_gdbarch_tdep *tdep
+    = gdbarch_tdep<csky_gdbarch_tdep> (gdbarch);
+
+  if (tdep->fv_pseudo_registers_count)
+    {
+      if ((reg_nr >= num_regs)
+	  && (reg_nr < (num_regs + tdep->fv_pseudo_registers_count)))
+	return builtin_type (gdbarch)->builtin_int32;
+    }
+
+  /* Vector register has 128 bits, and only in ck810. Just return
+     csky_vector_type(), not check tdesc_has_registers(), is in case
+     of some GDB stub does not describe type for Vector resgisters
+     in the target-description-xml.  */
+  if ((reg_nr >= CSKY_VR0_REGNUM) && (reg_nr <= CSKY_VR0_REGNUM + 15))
+    return csky_vector_type (gdbarch);
+
   /* If type has been described in tdesc-xml, use it.  */
   if (tdesc_has_registers (gdbarch_target_desc (gdbarch)))
     {
@@ -730,10 +739,6 @@ csky_register_type (struct gdbarch *gdbarch, int reg_nr)
   if ((reg_nr >=CSKY_FR0_REGNUM) && (reg_nr <= CSKY_FR0_REGNUM + 15))
       return arch_float_type (gdbarch, 64, "builtin_type_csky_ext",
 			      floatformats_ieee_double);
-
-  /* Vector register has 128 bits, and only in ck810.  */
-  if ((reg_nr >= CSKY_VR0_REGNUM) && (reg_nr <= CSKY_VR0_REGNUM + 15))
-    return csky_vector_type (gdbarch);
 
   /* Profiling general register has 48 bits, we use 64bit.  */
   if ((reg_nr >= CSKY_PROFGR_REGNUM) && (reg_nr <= CSKY_PROFGR_REGNUM + 44))
@@ -802,7 +807,7 @@ csky_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
       const gdb_byte *val;
 
       arg_type = check_typedef (value_type (args[argnum]));
-      len = TYPE_LENGTH (arg_type);
+      len = arg_type->length ();
       val = value_contents (args[argnum]).data ();
 
       /* Copy the argument to argument registers or the dummy stack.
@@ -869,7 +874,7 @@ csky_return_value (struct gdbarch *gdbarch, struct value *function,
 {
   CORE_ADDR regval;
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-  int len = TYPE_LENGTH (valtype);
+  int len = valtype->length ();
   unsigned int ret_regnum = CSKY_RET_REGNUM;
 
   /* Csky abi specifies that return values larger than 8 bytes
@@ -950,7 +955,7 @@ csky_analyze_prologue (struct gdbarch *gdbarch,
 		       CORE_ADDR start_pc,
 		       CORE_ADDR limit_pc,
 		       CORE_ADDR end_pc,
-		       struct frame_info *this_frame,
+		       frame_info_ptr this_frame,
 		       struct csky_unwind_cache *this_cache,
 		       lr_type_t lr_type)
 {
@@ -2016,201 +2021,6 @@ csky_sw_breakpoint_from_kind (struct gdbarch *gdbarch, int kind, int *size)
     }
 }
 
-/* Implement the memory_insert_breakpoint gdbarch method.  */
-
-static int
-csky_memory_insert_breakpoint (struct gdbarch *gdbarch,
-			       struct bp_target_info *bp_tgt)
-{
-  int val;
-  const unsigned char *bp;
-  gdb_byte bp_write_record1[] = { 0, 0, 0, 0 };
-  gdb_byte bp_write_record2[] = { 0, 0, 0, 0 };
-  gdb_byte bp_record[] = { 0, 0, 0, 0 };
-
-  /* Sanity-check bp_address.  */
-  if (bp_tgt->reqstd_address % 2)
-    warning (_("Invalid breakpoint address 0x%x is an odd number."),
-	     (unsigned int) bp_tgt->reqstd_address);
-  scoped_restore restore_memory
-    = make_scoped_restore_show_memory_breakpoints (1);
-
-  /* Determine appropriate breakpoint_kind for this address.  */
-  bp_tgt->kind = csky_breakpoint_kind_from_pc (gdbarch,
-					       &bp_tgt->reqstd_address);
-
-  /* Save the memory contents.  */
-  bp_tgt->shadow_len = bp_tgt->kind;
-
-  /* Fill bp_tgt->placed_address.  */
-  bp_tgt->placed_address = bp_tgt->reqstd_address;
-
-  if (bp_tgt->kind == CSKY_INSN_SIZE16)
-    {
-      if ((bp_tgt->reqstd_address % 4) == 0)
-	{
-	  /* Read two bytes.  */
-	  val = target_read_memory (bp_tgt->reqstd_address,
-				    bp_tgt->shadow_contents, 2);
-	  if (val)
-	    return val;
-
-	  /* Read two bytes.  */
-	  val = target_read_memory (bp_tgt->reqstd_address + 2,
-				    bp_record, 2);
-	  if (val)
-	    return val;
-
-	  /* Write the breakpoint.  */
-	  bp_write_record1[2] = bp_record[0];
-	  bp_write_record1[3] = bp_record[1];
-	  bp = bp_write_record1;
-	  val = target_write_raw_memory (bp_tgt->reqstd_address, bp,
-					 CSKY_WR_BKPT_MODE);
-	}
-      else
-	{
-	  val = target_read_memory (bp_tgt->reqstd_address,
-				    bp_tgt->shadow_contents, 2);
-	  if (val)
-	    return val;
-
-	  val = target_read_memory (bp_tgt->reqstd_address - 2,
-				    bp_record, 2);
-	  if (val)
-	    return val;
-
-	  /* Write the breakpoint.  */
-	  bp_write_record1[0] = bp_record[0];
-	  bp_write_record1[1] = bp_record[1];
-	  bp = bp_write_record1;
-	  val = target_write_raw_memory (bp_tgt->reqstd_address - 2,
-					 bp, CSKY_WR_BKPT_MODE);
-	}
-    }
-  else
-    {
-      if (bp_tgt->placed_address % 4 == 0)
-	{
-	  val = target_read_memory (bp_tgt->reqstd_address,
-				    bp_tgt->shadow_contents,
-				    CSKY_WR_BKPT_MODE);
-	  if (val)
-	    return val;
-
-	  /* Write the breakpoint.  */
-	  bp = bp_write_record1;
-	  val = target_write_raw_memory (bp_tgt->reqstd_address,
-					 bp, CSKY_WR_BKPT_MODE);
-	}
-      else
-	{
-	  val = target_read_memory (bp_tgt->reqstd_address,
-				    bp_tgt->shadow_contents,
-				    CSKY_WR_BKPT_MODE);
-	  if (val)
-	    return val;
-
-	  val = target_read_memory (bp_tgt->reqstd_address - 2,
-				    bp_record, 2);
-	  if (val)
-	    return val;
-
-	  val = target_read_memory (bp_tgt->reqstd_address + 4,
-				    bp_record + 2, 2);
-	  if (val)
-	    return val;
-
-	  bp_write_record1[0] = bp_record[0];
-	  bp_write_record1[1] = bp_record[1];
-	  bp_write_record2[2] = bp_record[2];
-	  bp_write_record2[3] = bp_record[3];
-
-	  /* Write the breakpoint.  */
-	  bp = bp_write_record1;
-	  val = target_write_raw_memory (bp_tgt->reqstd_address - 2, bp,
-					 CSKY_WR_BKPT_MODE);
-	  if (val)
-	    return val;
-
-	  /* Write the breakpoint.  */
-	  bp = bp_write_record2;
-	  val = target_write_raw_memory (bp_tgt->reqstd_address + 2, bp,
-					 CSKY_WR_BKPT_MODE);
-	}
-    }
-  return val;
-}
-
-/* Restore the breakpoint shadow_contents to the target.  */
-
-static int
-csky_memory_remove_breakpoint (struct gdbarch *gdbarch,
-			       struct bp_target_info *bp_tgt)
-{
-  int val;
-  gdb_byte bp_record[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-  /* Different for shadow_len 2 or 4.  */
-  if (bp_tgt->shadow_len == 2)
-    {
-      /* Do word-sized writes on word-aligned boundaries and read
-	 padding bytes as necessary.  */
-      if (bp_tgt->reqstd_address % 4 == 0)
-	{
-	  val = target_read_memory (bp_tgt->reqstd_address + 2,
-				    bp_record + 2, 2);
-	  if (val)
-	    return val;
-	  bp_record[0] = bp_tgt->shadow_contents[0];
-	  bp_record[1] = bp_tgt->shadow_contents[1];
-	  return target_write_raw_memory (bp_tgt->reqstd_address,
-					  bp_record, CSKY_WR_BKPT_MODE);
-	}
-      else
-	{
-	  val = target_read_memory (bp_tgt->reqstd_address - 2,
-				    bp_record, 2);
-	  if (val)
-	    return val;
-	  bp_record[2] = bp_tgt->shadow_contents[0];
-	  bp_record[3] = bp_tgt->shadow_contents[1];
-	  return target_write_raw_memory (bp_tgt->reqstd_address - 2,
-					  bp_record, CSKY_WR_BKPT_MODE);
-	}
-    }
-  else
-    {
-      /* Do word-sized writes on word-aligned boundaries and read
-	 padding bytes as necessary.  */
-      if (bp_tgt->placed_address % 4 == 0)
-	{
-	  return target_write_raw_memory (bp_tgt->reqstd_address,
-					  bp_tgt->shadow_contents,
-					  CSKY_WR_BKPT_MODE);
-	}
-      else
-	{
-	  val = target_read_memory (bp_tgt->reqstd_address - 2,
-				    bp_record, 2);
-	  if (val)
-	    return val;
-	  val = target_read_memory (bp_tgt->reqstd_address + 4,
-				    bp_record+6, 2);
-	  if (val)
-	    return val;
-
-	  bp_record[2] = bp_tgt->shadow_contents[0];
-	  bp_record[3] = bp_tgt->shadow_contents[1];
-	  bp_record[4] = bp_tgt->shadow_contents[2];
-	  bp_record[5] = bp_tgt->shadow_contents[3];
-
-	  return target_write_raw_memory (bp_tgt->reqstd_address - 2,
-					  bp_record,
-					  CSKY_WR_BKPT_MODE * 2);
-	}
-    }
-}
-
 /* Determine link register type.  */
 
 static lr_type_t
@@ -2250,7 +2060,7 @@ csky_analyze_lr_type (struct gdbarch *gdbarch,
 /* Heuristic unwinder.  */
 
 static struct csky_unwind_cache *
-csky_frame_unwind_cache (struct frame_info *this_frame)
+csky_frame_unwind_cache (frame_info_ptr this_frame)
 {
   CORE_ADDR prologue_start, prologue_end, func_end, prev_pc, block_addr;
   struct csky_unwind_cache *cache;
@@ -2309,7 +2119,7 @@ csky_frame_unwind_cache (struct frame_info *this_frame)
 /* Implement the this_id function for the normal unwinder.  */
 
 static void
-csky_frame_this_id (struct frame_info *this_frame,
+csky_frame_this_id (frame_info_ptr this_frame,
 		    void **this_prologue_cache, struct frame_id *this_id)
 {
   struct csky_unwind_cache *cache;
@@ -2330,7 +2140,7 @@ csky_frame_this_id (struct frame_info *this_frame,
 /* Implement the prev_register function for the normal unwinder.  */
 
 static struct value *
-csky_frame_prev_register (struct frame_info *this_frame,
+csky_frame_prev_register (frame_info_ptr this_frame,
 			  void **this_prologue_cache, int regnum)
 {
   struct csky_unwind_cache *cache;
@@ -2358,26 +2168,76 @@ static const struct frame_unwind csky_unwind_cache = {
   NULL
 };
 
+static CORE_ADDR
+csky_check_long_branch (frame_info_ptr frame, CORE_ADDR pc)
+{
+  gdb_byte buf[8];
+  struct gdbarch *gdbarch = get_frame_arch (frame);
+  enum bfd_endian byte_order_for_code
+	= gdbarch_byte_order_for_code (gdbarch);
 
+  if (target_read_memory (pc, buf, 8) == 0)
+    {
+      unsigned int data0
+	= extract_unsigned_integer (buf, 4, byte_order_for_code);
+      unsigned int data1
+	= extract_unsigned_integer (buf + 4, 4, byte_order_for_code);
+
+      /* Case: jmpi [pc+4] : 0xeac00001
+	 .long addr   */
+      if (data0 == CSKY_JMPI_PC_4)
+	return data1;
+
+      /* Case: lrw t1, [pc+8] : 0xea8d0002
+	       jmp t1         : 0x7834
+	       nop            : 0x6c03
+	       .long addr  */
+      if ((data0 == CSKY_LRW_T1_PC_8) && (data1 == CSKY_JMP_T1_VS_NOP))
+	{
+	  if (target_read_memory (pc + 8, buf, 4) == 0)
+	    return  extract_unsigned_integer (buf, 4, byte_order_for_code);
+	}
+
+      return 0;
+    }
+
+  return 0;
+}
 
 static int
 csky_stub_unwind_sniffer (const struct frame_unwind *self,
-			 struct frame_info *this_frame,
-			 void **this_prologue_cache)
+			  frame_info_ptr this_frame,
+			  void **this_prologue_cache)
 {
-  CORE_ADDR addr_in_block;
+  CORE_ADDR addr_in_block, pc;
+  gdb_byte dummy[4];
+  const char *name;
+  CORE_ADDR start_addr;
 
+  /* Get pc */
   addr_in_block = get_frame_address_in_block (this_frame);
+  pc = get_frame_pc (this_frame);
 
-  if (find_pc_partial_function (addr_in_block, NULL, NULL, NULL) == 0
-      || in_plt_section (addr_in_block))
+  if (in_plt_section (addr_in_block)
+      || target_read_memory (pc, dummy, 4) != 0)
     return 1;
+
+  /* Find the starting address and name of the function containing the PC.  */
+  if (find_pc_partial_function (pc, &name, &start_addr, NULL) == 0)
+    {
+      start_addr = csky_check_long_branch (this_frame, pc);
+      /* if not long branch, return 0.  */
+      if (start_addr != 0)
+	return 1;
+
+      return 0;
+    }
 
   return 0;
 }
 
 static struct csky_unwind_cache *
-csky_make_stub_cache (struct frame_info *this_frame)
+csky_make_stub_cache (frame_info_ptr this_frame)
 {
   struct csky_unwind_cache *cache;
 
@@ -2389,7 +2249,7 @@ csky_make_stub_cache (struct frame_info *this_frame)
 }
 
 static void
-csky_stub_this_id (struct frame_info *this_frame,
+csky_stub_this_id (frame_info_ptr this_frame,
 		  void **this_cache,
 		  struct frame_id *this_id)
 {
@@ -2404,7 +2264,7 @@ csky_stub_this_id (struct frame_info *this_frame,
 }
 
 static struct value *
-csky_stub_prev_register (struct frame_info *this_frame,
+csky_stub_prev_register (frame_info_ptr this_frame,
 			    void **this_cache,
 			    int prev_regnum)
 {
@@ -2444,7 +2304,7 @@ static frame_unwind csky_stub_unwind = {
    for the normal unwinder.  */
 
 static CORE_ADDR
-csky_frame_base_address (struct frame_info *this_frame, void **this_cache)
+csky_frame_base_address (frame_info_ptr this_frame, void **this_cache)
 {
   struct csky_unwind_cache *cache;
 
@@ -2467,7 +2327,7 @@ static const struct frame_base csky_frame_base = {
 static void
 csky_dwarf2_frame_init_reg (struct gdbarch *gdbarch, int regnum,
 			    struct dwarf2_frame_state_reg *reg,
-			    struct frame_info *this_frame)
+			    frame_info_ptr this_frame)
 {
   if (regnum == gdbarch_pc_regnum (gdbarch))
     reg->how = DWARF2_FRAME_REG_RA;
@@ -2507,8 +2367,7 @@ csky_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
 {
   int raw_p;
 
-  if (gdbarch_register_name (gdbarch, regnum) == NULL
-      || gdbarch_register_name (gdbarch, regnum)[0] == '\0')
+  if (gdbarch_register_name (gdbarch, regnum)[0] == '\0')
     return 0;
 
   if (reggroup == all_reggroup)
@@ -2518,7 +2377,11 @@ csky_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
   if (reggroup == save_reggroup || reggroup == restore_reggroup)
     return raw_p;
 
-  if (((regnum >= CSKY_R0_REGNUM) && (regnum <= CSKY_R0_REGNUM + 31))
+  if ((((regnum >= CSKY_R0_REGNUM) && (regnum <= CSKY_R0_REGNUM + 31))
+       || (regnum == CSKY_PC_REGNUM)
+       || (regnum == CSKY_EPC_REGNUM)
+       || (regnum == CSKY_CR0_REGNUM)
+       || (regnum == CSKY_EPSR_REGNUM))
       && (reggroup == general_reggroup))
     return 1;
 
@@ -2548,6 +2411,12 @@ csky_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
       && (reggroup == fr_reggroup))
     return 6;
 
+  if (tdesc_has_registers (gdbarch_target_desc (gdbarch)))
+    {
+      if (tdesc_register_in_reggroup_p (gdbarch, regnum, reggroup) > 0)
+        return 7;
+    }
+
   return 0;
 }
 
@@ -2557,16 +2426,16 @@ static int
 csky_dwarf_reg_to_regnum (struct gdbarch *gdbarch, int dw_reg)
 {
   /* For GPRs.  */
-  if (dw_reg >= CSKY_R0_REGNUM && dw_reg <= (CSKY_R0_REGNUM + 31))
+  if (dw_reg >= CSKY_R0_REGNUM && dw_reg <= CSKY_R0_REGNUM + 31)
     return dw_reg;
 
   /* For Hi, Lo, PC.  */
-  if ((dw_reg == CSKY_HI_REGNUM) || (dw_reg == CSKY_LO_REGNUM)
-       || (dw_reg == CSKY_PC_REGNUM))
+  if (dw_reg == CSKY_HI_REGNUM || dw_reg == CSKY_LO_REGNUM
+      || dw_reg == CSKY_PC_REGNUM)
     return dw_reg;
 
   /* For Float and Vector pseudo registers.  */
-  if ((dw_reg >= FV_PSEUDO_REGNO_FIRST)  && (dw_reg <= FV_PSEUDO_REGNO_LAST))
+  if (dw_reg >= FV_PSEUDO_REGNO_FIRST && dw_reg <= FV_PSEUDO_REGNO_LAST)
     {
       char name_buf[4];
 
@@ -2578,30 +2447,6 @@ csky_dwarf_reg_to_regnum (struct gdbarch *gdbarch, int dw_reg)
 
   /* Others, unknown.  */
   return -1;
-}
-
-/* Override interface for command: info register.  */
-
-static void
-csky_print_registers_info (struct gdbarch *gdbarch, struct ui_file *file,
-			   struct frame_info *frame, int regnum, int all)
-{
-  /* Call default print_registers_info function.  */
-  default_print_registers_info (gdbarch, file, frame, regnum, all);
-
-  /* For command: info register.  */
-  if (regnum == -1 && all == 0)
-    {
-      default_print_registers_info (gdbarch, file, frame,
-				    CSKY_PC_REGNUM, 0);
-      default_print_registers_info (gdbarch, file, frame,
-				    CSKY_EPC_REGNUM, 0);
-      default_print_registers_info (gdbarch, file, frame,
-				    CSKY_CR0_REGNUM, 0);
-      default_print_registers_info (gdbarch, file, frame,
-				    CSKY_EPSR_REGNUM, 0);
-    }
-  return;
 }
 
 /* Check whether xml has discribled the essential regs.  */
@@ -2674,7 +2519,7 @@ csky_pseudo_register_name (struct gdbarch *gdbarch, int regno)
 {
   int num_regs = gdbarch_num_regs (gdbarch);
   csky_gdbarch_tdep *tdep
-        = (csky_gdbarch_tdep *) gdbarch_tdep (gdbarch);
+    = gdbarch_tdep<csky_gdbarch_tdep> (gdbarch);
 
   regno -= num_regs;
 
@@ -2702,15 +2547,15 @@ csky_pseudo_register_name (struct gdbarch *gdbarch, int regno)
       if (regno < tdep->fv_pseudo_registers_count)
         {
           if ((regno < 64) && ((regno % 4) >= 2) && !tdep->has_vr0)
-            return NULL;
+            return "";
           else if ((regno >= 64) && ((regno % 4) >= 2))
-            return NULL;
+            return "";
           else
             return fv_pseudo_names[regno];
         }
     }
 
-  return NULL;
+  return "";
 }
 
 /* Read for csky pseudo regs.  */
@@ -2722,7 +2567,7 @@ csky_pseudo_register_read (struct gdbarch *gdbarch,
 {
   int num_regs = gdbarch_num_regs (gdbarch);
   csky_gdbarch_tdep *tdep
-        = (csky_gdbarch_tdep *) gdbarch_tdep (gdbarch);
+    = gdbarch_tdep<csky_gdbarch_tdep> (gdbarch);
 
   regnum -= num_regs;
 
@@ -2774,7 +2619,7 @@ csky_pseudo_register_write (struct gdbarch *gdbarch, struct regcache *regcache,
 {
   int num_regs = gdbarch_num_regs (gdbarch);
   csky_gdbarch_tdep *tdep
-        = (csky_gdbarch_tdep *) gdbarch_tdep (gdbarch);
+    = gdbarch_tdep<csky_gdbarch_tdep> (gdbarch);
 
   regnum -= num_regs;
 
@@ -2826,7 +2671,6 @@ csky_pseudo_register_write (struct gdbarch *gdbarch, struct regcache *regcache,
 static struct gdbarch *
 csky_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 {
-  struct gdbarch *gdbarch;
   /* Analyze info.abfd.  */
   unsigned int fpu_abi = 0;
   unsigned int vdsp_version = 0;
@@ -2902,7 +2746,7 @@ csky_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
        arches = gdbarch_list_lookup_by_info (arches->next, &info))
     {
       csky_gdbarch_tdep *tdep
-        = (csky_gdbarch_tdep *) gdbarch_tdep (arches->gdbarch);
+	= gdbarch_tdep<csky_gdbarch_tdep> (arches->gdbarch);
       if (fpu_abi != tdep->fpu_abi)
         continue;
       if (vdsp_version != tdep->vdsp_version)
@@ -2916,8 +2760,10 @@ csky_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* None found, create a new architecture from the information
      provided.  */
-  csky_gdbarch_tdep *tdep = new csky_gdbarch_tdep;
-  gdbarch = gdbarch_alloc (&info, tdep);
+  gdbarch *gdbarch
+    = gdbarch_alloc (&info, gdbarch_tdep_up (new csky_gdbarch_tdep));
+  csky_gdbarch_tdep *tdep = gdbarch_tdep<csky_gdbarch_tdep> (gdbarch);
+
   tdep->fpu_abi = fpu_abi;
   tdep->vdsp_version = vdsp_version;
   tdep->fpu_hardfp = fpu_hardfp;
@@ -2979,7 +2825,6 @@ csky_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_register_type (gdbarch, csky_register_type);
   set_gdbarch_read_pc (gdbarch, csky_read_pc);
   set_gdbarch_write_pc (gdbarch, csky_write_pc);
-  set_gdbarch_print_registers_info (gdbarch, csky_print_registers_info);
   csky_add_reggroups (gdbarch);
   set_gdbarch_register_reggroup_p (gdbarch, csky_register_reggroup_p);
   set_gdbarch_stab_reg_to_regnum (gdbarch, csky_dwarf_reg_to_regnum);
@@ -3002,12 +2847,6 @@ csky_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   frame_unwind_append_unwinder (gdbarch, &csky_stub_unwind);
   frame_unwind_append_unwinder (gdbarch, &csky_unwind_cache);
 
-  /* Breakpoints.  */
-  set_gdbarch_memory_insert_breakpoint (gdbarch,
-					csky_memory_insert_breakpoint);
-  set_gdbarch_memory_remove_breakpoint (gdbarch,
-					csky_memory_remove_breakpoint);
-
   /* Hook in ABI-specific overrides, if they have been registered.  */
   gdbarch_init_osabi (info, gdbarch);
 
@@ -3020,6 +2859,8 @@ csky_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
       set_gdbarch_num_regs (gdbarch, (num_regs + 1));
       tdesc_use_registers (gdbarch, info.target_desc, std::move (tdesc_data));
       set_gdbarch_register_type (gdbarch, csky_register_type);
+      set_gdbarch_register_reggroup_p (gdbarch,
+                                       csky_register_reggroup_p);
     }
 
   if (tdep->fv_pseudo_registers_count)
@@ -3041,7 +2882,7 @@ void
 _initialize_csky_tdep ()
 {
 
-  register_gdbarch_init (bfd_arch_csky, csky_gdbarch_init);
+  gdbarch_register (bfd_arch_csky, csky_gdbarch_init);
 
   csky_init_reggroup ();
 

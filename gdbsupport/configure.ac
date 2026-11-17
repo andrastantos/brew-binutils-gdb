@@ -1,5 +1,5 @@
 dnl Autoconf configure script for GDB support library
-dnl Copyright (C) 2020-2022 Free Software Foundation, Inc.
+dnl Copyright (C) 2020-2023 Free Software Foundation, Inc.
 dnl
 dnl This program is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -81,7 +81,7 @@ case ${host} in
     ;;
 esac
 
-AC_SUBST([CONFIG_STATUS_DEPENDENCIES], ['$srcdir/../bfd/development.sh'])
+AC_SUBST([CONFIG_STATUS_DEPENDENCIES], ['$(srcdir)/../bfd/development.sh'])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

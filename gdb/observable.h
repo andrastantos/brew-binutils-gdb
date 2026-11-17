@@ -1,6 +1,6 @@
 /* Observers
 
-   Copyright (C) 2016-2022 Free Software Foundation, Inc.
+   Copyright (C) 2016-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -233,7 +233,7 @@ extern observable<ptid_t /* thread */, CORE_ADDR /* address */>
     inferior_call_post;
 
 /* A register in the inferior has been modified by the gdb user.  */
-extern observable<struct frame_info */* frame */, int /* regnum */>
+extern observable<frame_info_ptr /* frame */, int /* regnum */>
     register_changed;
 
 /* The user-selected inferior, thread and/or frame has changed.  The

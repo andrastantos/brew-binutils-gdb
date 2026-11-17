@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 
-# Copyright 2019-2022 Free Software Foundation, Inc.
+# Copyright 2019-2023 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@
 #  - thread apply
 #  - taas
 
+load_lib compile-support.exp
 load_lib completion-support.exp
 
 standard_testfile .c
@@ -46,7 +47,7 @@ if { ![readline_is_used] } {
     return -1
 }
 
-set tui_supported_p [expr ![skip_tui_tests]]
+set tui_supported_p [allow_tui_tests]
 
 # Check the completion result, as returned by the "maintenance show
 # test-options-completion-result" command.  TEST is used as test name.

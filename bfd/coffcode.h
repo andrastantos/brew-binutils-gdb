@@ -1,5 +1,5 @@
 /* Support for the generic parts of most COFF variants, for BFD.
-   Copyright (C) 1990-2022 Free Software Foundation, Inc.
+   Copyright (C) 1990-2023 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -134,9 +134,10 @@ SUBSUBSECTION
 	in output BFDs at runtime; if it is false, as it will be by default
 	when generating an executable image, long section names are truncated;
 	if true, the long section names extension is employed.  The hook
-	points to a function that allows the value of the flag to be altered
-	at runtime, on formats that support long section names at all; on
-	other formats it points to a stub that returns an error indication.
+	points to a function that allows the value of a copy of the flag
+	in coff object tdata to be altered at runtime, on formats that
+	support long section names at all; on other formats it points
+	to a stub that returns an error indication.
 
 	With input BFDs, the flag is set according to whether any long section
 	names are detected while reading the section headers.  For a completely
@@ -462,15 +463,14 @@ static bool ticoff1_bad_format_hook
 static bool
 bfd_coff_set_long_section_names_allowed (bfd *abfd, int enable)
 {
-  coff_backend_info (abfd)->_bfd_coff_long_section_names = enable;
+  bfd_coff_long_section_names (abfd) = enable;
   return true;
 }
 #else /* !defined (COFF_LONG_SECTION_NAMES) */
 static bool
-bfd_coff_set_long_section_names_disallowed (bfd *abfd, int enable)
+bfd_coff_set_long_section_names_disallowed (bfd *abfd ATTRIBUTE_UNUSED,
+					    int enable ATTRIBUTE_UNUSED)
 {
-  (void) abfd;
-  (void) enable;
   return false;
 }
 #endif /* defined (COFF_LONG_SECTION_NAMES) */
@@ -1541,7 +1541,7 @@ Special entry points for gdb to swap in coff symbol table parts:
 .} bfd_coff_backend_data;
 .
 .#define coff_backend_info(abfd) \
-.  ((bfd_coff_backend_data *) (abfd)->xvec->backend_data)
+.  ((const bfd_coff_backend_data *) (abfd)->xvec->backend_data)
 .
 .#define bfd_coff_swap_aux_in(a,e,t,c,ind,num,i) \
 .  ((coff_backend_info (a)->_bfd_coff_swap_aux_in) (a,e,t,c,ind,num,i))
@@ -1584,7 +1584,7 @@ Special entry points for gdb to swap in coff symbol table parts:
 .#define bfd_coff_long_filenames(abfd) \
 .  (coff_backend_info (abfd)->_bfd_coff_long_filenames)
 .#define bfd_coff_long_section_names(abfd) \
-.  (coff_backend_info (abfd)->_bfd_coff_long_section_names)
+.  (coff_data (abfd)->long_section_names)
 .#define bfd_coff_set_long_section_names(abfd, enable) \
 .  ((coff_backend_info (abfd)->_bfd_coff_set_long_section_names) (abfd, enable))
 .#define bfd_coff_default_section_alignment_power(abfd) \
@@ -2067,6 +2067,9 @@ coff_mkobject (bfd * abfd)
   coff->relocbase = 0;
   coff->local_toc_sym_map = 0;
 
+  bfd_coff_long_section_names (abfd)
+    = coff_backend_info (abfd)->_bfd_coff_long_section_names;
+
 /*  make_abs_section(abfd);*/
 
   return true;
@@ -2229,6 +2232,12 @@ coff_set_arch_mach_hook (bfd *abfd, void * filehdr)
     case AARCH64MAGIC:
       arch = bfd_arch_aarch64;
       machine = internal_f->f_flags & F_AARCH64_ARCHITECTURE_MASK;
+      break;
+#endif
+#ifdef LOONGARCH64MAGIC
+    case LOONGARCH64MAGIC:
+      arch = bfd_arch_loongarch;
+      machine = internal_f->f_flags & F_LOONGARCH64_ARCHITECTURE_MASK;
       break;
 #endif
 #ifdef Z80MAGIC
@@ -2495,15 +2504,15 @@ coff_print_aux (bfd *abfd ATTRIBUTE_UNUSED,
       if (SMTYP_SMTYP (aux->u.auxent.x_csect.x_smtyp) != XTY_LD)
 	{
 	  BFD_ASSERT (! aux->fix_scnlen);
-	  fprintf (file, "val %5" BFD_VMA_FMT "d",
-		   aux->u.auxent.x_csect.x_scnlen.l);
+	  fprintf (file, "val %5" PRId64,
+		   (int64_t) aux->u.auxent.x_csect.x_scnlen.l);
 	}
       else
 	{
 	  fprintf (file, "indx ");
 	  if (! aux->fix_scnlen)
-	    fprintf (file, "%4" BFD_VMA_FMT "d",
-		     aux->u.auxent.x_csect.x_scnlen.l);
+	    fprintf (file, "%4" PRId64,
+		     (int64_t) aux->u.auxent.x_csect.x_scnlen.l);
 	  else
 	    fprintf (file, "%4ld",
 		     (long) (aux->u.auxent.x_csect.x_scnlen.p - table_base));
@@ -2792,6 +2801,12 @@ coff_set_flags (bfd * abfd,
 #ifdef AARCH64MAGIC
     case bfd_arch_aarch64:
       * magicp = AARCH64MAGIC;
+      return true;
+#endif
+
+#ifdef LOONGARCH64MAGIC
+    case bfd_arch_loongarch:
+      * magicp = LOONGARCH64MAGIC;
       return true;
 #endif
 
@@ -3189,7 +3204,7 @@ coff_compute_section_file_positions (bfd * abfd)
 #ifdef COFF_IMAGE_WITH_PE
 	  sofar = BFD_ALIGN (sofar, page_size);
 #else
-	  sofar = BFD_ALIGN (sofar, 1 << current->alignment_power);
+	  sofar = BFD_ALIGN (sofar, (bfd_vma) 1 << current->alignment_power);
 #endif
 
 #ifdef RS6000COFF_C
@@ -3259,7 +3274,7 @@ coff_compute_section_file_positions (bfd * abfd)
 
 	  old_size = current->size;
 	  current->size = BFD_ALIGN (current->size,
-				     1 << current->alignment_power);
+				     (bfd_vma) 1 << current->alignment_power);
 	  align_adjust = current->size != old_size;
 	  sofar += current->size - old_size;
 	}
@@ -3269,7 +3284,7 @@ coff_compute_section_file_positions (bfd * abfd)
 #ifdef COFF_IMAGE_WITH_PE
 	  sofar = BFD_ALIGN (sofar, page_size);
 #else
-	  sofar = BFD_ALIGN (sofar, 1 << current->alignment_power);
+	  sofar = BFD_ALIGN (sofar, (bfd_vma) 1 << current->alignment_power);
 #endif
 	  align_adjust = sofar != old_sofar;
 	  current->size += sofar - old_sofar;
@@ -3315,7 +3330,8 @@ coff_compute_section_file_positions (bfd * abfd)
   /* Make sure the relocations are aligned.  We don't need to make
      sure that this byte exists, because it will only matter if there
      really are relocs.  */
-  sofar = BFD_ALIGN (sofar, 1 << COFF_DEFAULT_SECTION_ALIGNMENT_POWER);
+  sofar = BFD_ALIGN (sofar,
+		     (bfd_vma) 1 << COFF_DEFAULT_SECTION_ALIGNMENT_POWER);
 
   obj_relocbase (abfd) = sofar;
   abfd->output_has_begun = true;
@@ -3889,7 +3905,7 @@ coff_write_object_contents (bfd * abfd)
     internal_f.f_flags |= IMAGE_FILE_LARGE_ADDRESS_AWARE;
 #endif
 
-#if !defined(COFF_WITH_pex64) && !defined(COFF_WITH_peAArch64)
+#if !defined(COFF_WITH_pex64) && !defined(COFF_WITH_peAArch64) && !defined(COFF_WITH_peLoongArch64)
 #ifdef COFF_WITH_PE
   internal_f.f_flags |= IMAGE_FILE_32BIT_MACHINE;
 #else
@@ -3939,6 +3955,11 @@ coff_write_object_contents (bfd * abfd)
 #endif
 
 #if defined(AARCH64)
+#define __A_MAGIC_SET__
+    internal_a.magic = ZMAGIC;
+#endif
+
+#if defined(LOONGARCH64)
 #define __A_MAGIC_SET__
     internal_a.magic = ZMAGIC;
 #endif
@@ -4284,10 +4305,13 @@ coff_set_section_contents (bfd * abfd,
 
 	rec = (bfd_byte *) location;
 	recend = rec + count;
-	while (rec < recend)
+	while (recend - rec >= 4)
 	  {
+	    size_t len = bfd_get_32 (abfd, rec);
+	    if (len == 0 || len > (size_t) (recend - rec) / 4)
+	      break;
+	    rec += len * 4;
 	    ++section->lma;
-	    rec += bfd_get_32 (abfd, rec) * 4;
 	  }
 
 	BFD_ASSERT (rec == recend);
@@ -5424,7 +5448,7 @@ coff_final_link_postscript (bfd * abfd ATTRIBUTE_UNUSED,
 #define coff_SWAP_scnhdr_in coff_swap_scnhdr_in
 #endif
 
-static bfd_coff_backend_data bfd_coff_std_swap_table ATTRIBUTE_UNUSED =
+static const bfd_coff_backend_data bfd_coff_std_swap_table ATTRIBUTE_UNUSED =
 {
   coff_SWAP_aux_in, coff_SWAP_sym_in, coff_SWAP_lineno_in,
   coff_SWAP_aux_out, coff_SWAP_sym_out,
@@ -5465,7 +5489,7 @@ static bfd_coff_backend_data bfd_coff_std_swap_table ATTRIBUTE_UNUSED =
 #ifdef TICOFF
 /* COFF0 differs in file/section header size and relocation entry size.  */
 
-static bfd_coff_backend_data ticoff0_swap_table =
+static const bfd_coff_backend_data ticoff0_swap_table =
 {
   coff_SWAP_aux_in, coff_SWAP_sym_in, coff_SWAP_lineno_in,
   coff_SWAP_aux_out, coff_SWAP_sym_out,
@@ -5507,7 +5531,7 @@ static bfd_coff_backend_data ticoff0_swap_table =
 #ifdef TICOFF
 /* COFF1 differs in section header size.  */
 
-static bfd_coff_backend_data ticoff1_swap_table =
+static const bfd_coff_backend_data ticoff1_swap_table =
 {
   coff_SWAP_aux_in, coff_SWAP_sym_in, coff_SWAP_lineno_in,
   coff_SWAP_aux_out, coff_SWAP_sym_out,
@@ -5768,7 +5792,7 @@ coff_bigobj_swap_aux_out (bfd * abfd,
   return AUXESZ;
 }
 
-static bfd_coff_backend_data bigobj_swap_table =
+static const bfd_coff_backend_data bigobj_swap_table =
 {
   coff_bigobj_swap_aux_in, coff_bigobj_swap_sym_in, coff_SWAP_lineno_in,
   coff_bigobj_swap_aux_out, coff_bigobj_swap_sym_out,

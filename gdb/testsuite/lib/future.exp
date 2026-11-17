@@ -1,4 +1,4 @@
-# Copyright 2004-2022 Free Software Foundation, Inc.
+# Copyright 2004-2023 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -403,7 +403,11 @@ proc gdb_default_target_compile_1 {source destfile type options} {
     }
 
     if { $compiler == "" } {
-	set compiler [board_info $dest compiler]
+	if { [board_info $dest exists compiler] } {
+	    set compiler [board_info $dest compiler]
+	} elseif { $compiler_type eq "c" } {
+	    set compiler [find_gcc]
+	}
 	if { $compiler == "" } {
 	    return "default_target_compile: No compiler to compile with"
 	}

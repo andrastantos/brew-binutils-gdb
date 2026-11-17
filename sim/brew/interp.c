@@ -78,10 +78,10 @@ static void
 setup_sim_state(sim_cpu *scpu)
 {
   if (TRACE_P(scpu, TRACE_INSN_IDX))
-    scpu->sim_state.tracer = (fprintf_ftype)sprintf;
+    BREW_SIM_CPU (scpu)->sim_state.tracer = (fprintf_ftype)sprintf;
   else
-    scpu->sim_state.tracer = NULL;
-  scpu->sim_state.tracer_strm = scpu->decode_buf;
+    BREW_SIM_CPU (scpu)->sim_state.tracer = NULL;
+  BREW_SIM_CPU (scpu)->sim_state.tracer_strm = BREW_SIM_CPU (scpu)->decode_buf;
 }
 
 #if 0
@@ -147,7 +147,7 @@ static INLINE void trace_exception(sim_cpu *scpu, char *message, size_t message_
 {
   SIM_DESC sd = CPU_STATE(scpu);
 
-  switch(scpu->sim_state.ecause)
+  switch(BREW_SIM_CPU (scpu)->sim_state.ecause)
     {
       case BREW_EXCEPTION_NONE: break;
       case BREW_EXCEPTION_HWI:               str_append(message, message_size, "exception: hwi"); break;
@@ -175,7 +175,7 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
 
   uint32_t pc;
 
-  pc = scpu->sim_state.is_task_mode ? scpu->sim_state.tpc : scpu->sim_state.spc;
+  pc = BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? BREW_SIM_CPU (scpu)->sim_state.tpc : BREW_SIM_CPU (scpu)->sim_state.spc;
 
   // Handle tracing
   if (TRACE_P(scpu, TRACE_INSN_IDX))
@@ -185,39 +185,39 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
       char fragment[256];
       bool first = true;
 
-      pc_name = scpu->sim_state.is_task_mode ? "$tpc": "$spc";
+      pc_name = BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? "$tpc": "$spc";
 
       snprintf(message, sizeof(message), "%s: 0x%x ", pc_name, pc);
-      STR_APPEND(message, scpu->decode_buf);
-      for (int i=0; i<sizeof(scpu->sim_state.reg)/sizeof(scpu->sim_state.reg[0]); ++i)
+      STR_APPEND(message, BREW_SIM_CPU (scpu)->decode_buf);
+      for (int i=0; i<sizeof(BREW_SIM_CPU (scpu)->sim_state.reg)/sizeof(BREW_SIM_CPU (scpu)->sim_state.reg[0]); ++i)
         {
-          if (scpu->sim_state.dirty_map & (1 << i))
+          if (BREW_SIM_CPU (scpu)->sim_state.dirty_map & (1 << i))
             {
               SIDE_EFFECT_INDENT;
-              snprintf(fragment, sizeof(fragment)-1, " %s <- 0x%x (%s)", brew_reg_names[i], scpu->sim_state.reg[i].val, brew_reg_type_name(scpu->sim_state.reg[i].type));
+              snprintf(fragment, sizeof(fragment)-1, " %s <- 0x%x (%s)", brew_reg_names[i], BREW_SIM_CPU (scpu)->sim_state.reg[i].val, brew_reg_type_name(BREW_SIM_CPU (scpu)->sim_state.reg[i].type));
               STR_APPEND(message, fragment);
             }
         }
-      if (scpu->sim_state.ntpc != non_branch_tpc)
+      if (BREW_SIM_CPU (scpu)->sim_state.ntpc != non_branch_tpc)
         {
           SIDE_EFFECT_INDENT;
-          snprintf(fragment, sizeof(fragment)-1, " $tpc <- 0x%x", scpu->sim_state.ntpc);
+          snprintf(fragment, sizeof(fragment)-1, " $tpc <- 0x%x", BREW_SIM_CPU (scpu)->sim_state.ntpc);
           STR_APPEND(message, fragment);
         }
-      if (scpu->sim_state.nspc != non_branch_spc)
+      if (BREW_SIM_CPU (scpu)->sim_state.nspc != non_branch_spc)
         {
           SIDE_EFFECT_INDENT;
-          snprintf(fragment, sizeof(fragment)-1, " $spc <- 0x%x", scpu->sim_state.nspc);
+          snprintf(fragment, sizeof(fragment)-1, " $spc <- 0x%x", BREW_SIM_CPU (scpu)->sim_state.nspc);
           STR_APPEND(message, fragment);
         }
-      mem_trace_to_str(&scpu->mem_trace, fragment);
+      mem_trace_to_str(&BREW_SIM_CPU (scpu)->mem_trace, fragment);
       if (fragment[0] != 0)
         {
           SIDE_EFFECT_INDENT;
           STR_APPEND(message, " | ");
           STR_APPEND(message, fragment);
         }
-      if (scpu->sim_state.ecause != BREW_EXCEPTION_NONE)
+      if (BREW_SIM_CPU (scpu)->sim_state.ecause != BREW_EXCEPTION_NONE)
         {
           SIDE_EFFECT_INDENT;
           trace_exception(scpu, message, sizeof(message));
@@ -228,29 +228,29 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
   {
     uint16_t profile_idx;
     int insn_length_cls = (brew_insn_len(insn_code) - 2) / 2; // 0 for 2-byte, 1 for 4-byte, 2 for 6-byte instructions.
-    profile_idx = scpu->sim_state.insn_class + BREW_INSN_CLS_MAX * insn_length_cls;
+    profile_idx = BREW_SIM_CPU (scpu)->sim_state.insn_class + BREW_INSN_CLS_MAX * insn_length_cls;
     PROFILE_COUNT_INSN(scpu, NULL, profile_idx);
 
-    if (non_branch_spc != scpu->sim_state.nspc || non_branch_tpc != scpu->sim_state.ntpc)
+    if (non_branch_spc != BREW_SIM_CPU (scpu)->sim_state.nspc || non_branch_tpc != BREW_SIM_CPU (scpu)->sim_state.ntpc)
       ++PROFILE_MODEL_TAKEN_COUNT(profile_data);
     else if (
-      scpu->sim_state.insn_class == BREW_INSN_CLS_CBRANCH ||
-      scpu->sim_state.insn_class == BREW_INSN_CLS_CBRANCH0 ||
-      scpu->sim_state.insn_class == BREW_INSN_CLS_CBRANCHBIT
+      BREW_SIM_CPU (scpu)->sim_state.insn_class == BREW_INSN_CLS_CBRANCH ||
+      BREW_SIM_CPU (scpu)->sim_state.insn_class == BREW_INSN_CLS_CBRANCH0 ||
+      BREW_SIM_CPU (scpu)->sim_state.insn_class == BREW_INSN_CLS_CBRANCHBIT
     )
       ++PROFILE_MODEL_UNTAKEN_COUNT(profile_data);
     ++PROFILE_TOTAL_INSN_COUNT(profile_data);
   }
   // Handle exceptions
-  if (scpu->sim_state.ecause != BREW_EXCEPTION_NONE)
+  if (BREW_SIM_CPU (scpu)->sim_state.ecause != BREW_EXCEPTION_NONE)
     {
-      scpu->sim_state.ntpc = scpu->sim_state.tpc; // Undo any pending changes to $tpc
-      scpu->sim_state.model_functions.handle_exception(scpu);
+      BREW_SIM_CPU (scpu)->sim_state.ntpc = BREW_SIM_CPU (scpu)->sim_state.tpc; // Undo any pending changes to $tpc
+      BREW_SIM_CPU (scpu)->sim_state.model_functions.handle_exception(scpu);
     }
   // Update PC
-  scpu->sim_state.tpc = scpu->sim_state.ntpc;
-  scpu->sim_state.spc = scpu->sim_state.nspc;
-  scpu->sim_state.is_task_mode = scpu->sim_state.nis_task_mode;
+  BREW_SIM_CPU (scpu)->sim_state.tpc = BREW_SIM_CPU (scpu)->sim_state.ntpc;
+  BREW_SIM_CPU (scpu)->sim_state.spc = BREW_SIM_CPU (scpu)->sim_state.nspc;
+  BREW_SIM_CPU (scpu)->sim_state.is_task_mode = BREW_SIM_CPU (scpu)->sim_state.nis_task_mode;
 }
 
 void
@@ -269,22 +269,22 @@ sim_engine_run(
   uint32_t non_branch_spc;
   do
     {
-      scpu->sim_state.ecause = BREW_EXCEPTION_NONE;
+      BREW_SIM_CPU (scpu)->sim_state.ecause = BREW_EXCEPTION_NONE;
       {
         // scoping pc to make sure we don't even accidentally use that for anything
         uint32_t pc = CPU_PC_GET(scpu) & ~1; // PC is always 16-bit aligned, the LSB is ignored
 
-        insn_code = scpu->sim_state.model_functions.read_inst(scpu, pc, 16);
+        insn_code = BREW_SIM_CPU (scpu)->sim_state.model_functions.read_inst(scpu, pc, 16);
         insn_length = brew_insn_len(insn_code);
         switch (insn_length)
           {
             case 2:
             break;
             case 4:
-              field_e = scpu->sim_state.model_functions.read_inst(scpu, pc+2, 16);
+              field_e = BREW_SIM_CPU (scpu)->sim_state.model_functions.read_inst(scpu, pc+2, 16);
             break;
             case 6:
-              field_e = scpu->sim_state.model_functions.read_inst(scpu, pc+2, 32);
+              field_e = BREW_SIM_CPU (scpu)->sim_state.model_functions.read_inst(scpu, pc+2, 32);
             break;
             default:
               SIM_ASSERT(false);
@@ -292,26 +292,26 @@ sim_engine_run(
           }
       }
       // Make sure we don't actually change the state if there was an exception fetching the instruction
-      if (scpu->sim_state.ecause == BREW_EXCEPTION_NONE)
+      if (BREW_SIM_CPU (scpu)->sim_state.ecause == BREW_EXCEPTION_NONE)
         {
-          scpu->sim_state.dirty_map = 0;
-          scpu->sim_state.ntpc = scpu->sim_state.tpc + (scpu->sim_state.is_task_mode ? insn_length : 0);
-          scpu->sim_state.nspc = scpu->sim_state.spc + (scpu->sim_state.is_task_mode ? 0 : insn_length);
-          scpu->sim_state.nis_task_mode = scpu->sim_state.is_task_mode;
-          scpu->sim_state.insn_class = BREW_INSN_CLS_UNKNOWN;
-          if (scpu->sim_state.ecause != BREW_EXCEPTION_NONE)
-            scpu->sim_state.csr_ecause = scpu->sim_state.ecause;
-          scpu->decode_buf[0] = 0;
+          BREW_SIM_CPU (scpu)->sim_state.dirty_map = 0;
+          BREW_SIM_CPU (scpu)->sim_state.ntpc = BREW_SIM_CPU (scpu)->sim_state.tpc + (BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? insn_length : 0);
+          BREW_SIM_CPU (scpu)->sim_state.nspc = BREW_SIM_CPU (scpu)->sim_state.spc + (BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? 0 : insn_length);
+          BREW_SIM_CPU (scpu)->sim_state.nis_task_mode = BREW_SIM_CPU (scpu)->sim_state.is_task_mode;
+          BREW_SIM_CPU (scpu)->sim_state.insn_class = BREW_INSN_CLS_UNKNOWN;
+          if (BREW_SIM_CPU (scpu)->sim_state.ecause != BREW_EXCEPTION_NONE)
+            BREW_SIM_CPU (scpu)->sim_state.csr_ecause = BREW_SIM_CPU (scpu)->sim_state.ecause;
+          BREW_SIM_CPU (scpu)->decode_buf[0] = 0;
 
-          non_branch_spc = scpu->sim_state.nspc;
-          non_branch_tpc = scpu->sim_state.ntpc;
+          non_branch_spc = BREW_SIM_CPU (scpu)->sim_state.nspc;
+          non_branch_tpc = BREW_SIM_CPU (scpu)->sim_state.ntpc;
 
-          brew_sim_insn(scpu, &scpu->sim_state, insn_code, field_e);
+          brew_sim_insn(scpu, &BREW_SIM_CPU (scpu)->sim_state, insn_code, field_e);
         } else {
           // If we had a fetch exception, what should the non-branch PCs be? We branch no matter what???
           // I actually don't think it matters all that much, we use it only for reporting below, but still...
-          non_branch_spc = scpu->sim_state.spc;
-          non_branch_tpc = scpu->sim_state.tpc;
+          non_branch_spc = BREW_SIM_CPU (scpu)->sim_state.spc;
+          non_branch_tpc = BREW_SIM_CPU (scpu)->sim_state.tpc;
         }
 
       post_exec(scpu, insn_code, non_branch_tpc, non_branch_spc);
@@ -322,7 +322,7 @@ sim_engine_run(
 }
 
 
-static INLINE int read_mem_unaligned(uint8_t *memory)
+static INLINE int read_mem_unaligned(const uint8_t *memory)
 {
   return
     (memory[3] << 24) |
@@ -343,9 +343,11 @@ static INLINE void write_mem_unaligned(uint8_t *memory, uint32_t val)
 /* Returns the number of bytes stored in memory */
 // TODO: actually, for now, let's disregard type and return only a 32-bit value
 static int
-brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
+brew_reg_fetch(sim_cpu *scpu, int rn, void *buf, int length)
 {
-  if (rn > BREW_GDB_NUM_REGS && rn < 0)
+  uint8_t *memory = (uint8_t *) buf;
+
+  if (rn < 0 || rn >= BREW_GDB_NUM_REGS)
     return 0;
   if (length != 4)
     // Report back proper register size, but do no transfer.
@@ -354,7 +356,7 @@ brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
   // Override PC to the appropriate one, before fetching the value.
   if (rn == BREW_GDB_REG_PC)
     {
-      if (scpu->sim_state.is_task_mode)
+      if (BREW_SIM_CPU (scpu)->sim_state.is_task_mode)
         rn = BREW_GDB_REG_TPC;
       else
         rn = BREW_GDB_REG_SPC;
@@ -362,22 +364,22 @@ brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 
   if (rn == BREW_GDB_REG_TPC)
     {
-      write_mem_unaligned(memory, scpu->sim_state.tpc);
+      write_mem_unaligned(memory, BREW_SIM_CPU (scpu)->sim_state.tpc);
       //write_mem_unaligned(memory+4, BREW_REG_TYPE_INT32);
     }
   else if (rn == BREW_GDB_REG_SPC)
     {
-      write_mem_unaligned(memory, scpu->sim_state.spc);
+      write_mem_unaligned(memory, BREW_SIM_CPU (scpu)->sim_state.spc);
       //write_mem_unaligned(memory+4, BREW_REG_TYPE_INT32);
     }
   else if (rn == BREW_GDB_REG_TASK_MODE)
     {
-      write_mem_unaligned(memory, scpu->sim_state.is_task_mode ? 1 : 0);
+      write_mem_unaligned(memory, BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? 1 : 0);
     }
   else
     {
-      write_mem_unaligned(memory, scpu->sim_state.reg[rn].val);
-      //write_mem_unaligned(memory+4, scpu->sim_state.reg[rn].type);
+      write_mem_unaligned(memory, BREW_SIM_CPU (scpu)->sim_state.reg[rn].val);
+      //write_mem_unaligned(memory+4, BREW_SIM_CPU (scpu)->sim_state.reg[rn].type);
     }
 
   return 4;
@@ -388,9 +390,11 @@ brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 /* This apparently is called by GDB when storing all registers in memory for it's ... reasons */
 // TODO: actually, for now, let's disregard type and return only a 32-bit value
 static int
-brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
+brew_reg_store(sim_cpu *scpu, int rn, const void *buf, int length)
 {
-  if (rn > BREW_GDB_NUM_REGS && rn < 0)
+  const uint8_t *memory = (const uint8_t *) buf;
+
+  if (rn < 0 || rn >= BREW_GDB_NUM_REGS)
     return 0;
   if (length != 4)
     return -1;
@@ -398,7 +402,7 @@ brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
   // Override PC to the appropriate one, before doing the update.
   if (rn == BREW_GDB_REG_PC)
     {
-      if (scpu->sim_state.is_task_mode)
+      if (BREW_SIM_CPU (scpu)->sim_state.is_task_mode)
         rn = BREW_GDB_REG_TPC;
       else
         rn = BREW_GDB_REG_SPC;
@@ -406,13 +410,13 @@ brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 
   if (rn == BREW_GDB_REG_TPC)
     {
-      scpu->sim_state.tpc = read_mem_unaligned(memory);
-      scpu->sim_state.ntpc = scpu->sim_state.tpc;
+      BREW_SIM_CPU (scpu)->sim_state.tpc = read_mem_unaligned(memory);
+      BREW_SIM_CPU (scpu)->sim_state.ntpc = BREW_SIM_CPU (scpu)->sim_state.tpc;
     }
   else if (rn == BREW_GDB_REG_SPC)
     {
-      scpu->sim_state.spc = read_mem_unaligned(memory);
-      scpu->sim_state.nspc = scpu->sim_state.spc;
+      BREW_SIM_CPU (scpu)->sim_state.spc = read_mem_unaligned(memory);
+      BREW_SIM_CPU (scpu)->sim_state.nspc = BREW_SIM_CPU (scpu)->sim_state.spc;
     }
   else if (rn == BREW_GDB_REG_TASK_MODE)
     {
@@ -421,8 +425,8 @@ brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
     }
   else
     {
-      scpu->sim_state.reg[rn].val = read_mem_unaligned(memory);
-      //scpu->sim_state.reg[rn].type = read_mem_unaligned(memory+4);
+      BREW_SIM_CPU (scpu)->sim_state.reg[rn].val = read_mem_unaligned(memory);
+      //BREW_SIM_CPU (scpu)->sim_state.reg[rn].type = read_mem_unaligned(memory+4);
     }
 
   return 4;
@@ -432,7 +436,7 @@ brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 static sim_cia
 brew_pc_get (sim_cpu *scpu)
 {
-  return scpu->sim_state.is_task_mode ? scpu->sim_state.tpc : scpu->sim_state.spc;
+  return BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? BREW_SIM_CPU (scpu)->sim_state.tpc : BREW_SIM_CPU (scpu)->sim_state.spc;
 }
 
 /* Sets the PC to the required value.
@@ -445,10 +449,10 @@ brew_pc_set (sim_cpu *scpu, sim_cia pc)
 
   SIM_ASSERT(false);
 
-  //if (scpu->sim_state.is_task_mode)
-  //  scpu->sim_state.ntpc = pc;
+  //if (BREW_SIM_CPU (scpu)->sim_state.is_task_mode)
+  //  BREW_SIM_CPU (scpu)->sim_state.ntpc = pc;
   //else
-  //  scpu->sim_state.nspc = pc;
+  //  BREW_SIM_CPU (scpu)->sim_state.nspc = pc;
 }
 
 static void brew_sim_uninstall(SIM_DESC sd)
@@ -456,9 +460,9 @@ static void brew_sim_uninstall(SIM_DESC sd)
   int c;
   for (c = 0; c < MAX_NR_PROCESSORS; ++c) {
     SIM_CPU *scpu = STATE_CPU(sd, c);
-    if (scpu->model_info != NULL)
-      scpu->sim_state.model_functions.free_model_info(scpu);
-    scpu->model_info = NULL;
+    if (BREW_SIM_CPU (scpu)->model_info != NULL)
+      BREW_SIM_CPU (scpu)->sim_state.model_functions.free_model_info(scpu);
+    BREW_SIM_CPU (scpu)->model_info = NULL;
   }
 }
 
@@ -564,7 +568,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
 
   /* The cpu data is kept in a separately allocated chunk of memory.  */
   SIM_ASSERT(MAX_NR_PROCESSORS == 1);
-  if (sim_cpu_alloc_all (sd, MAX_NR_PROCESSORS) != SIM_RC_OK)
+  if (sim_cpu_alloc_all_extra (sd, MAX_NR_PROCESSORS, sizeof (struct brew_sim_cpu)) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -611,8 +615,8 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
   for (i = 0; i < MAX_NR_PROCESSORS; ++i)
     {
       sim_cpu *scpu = STATE_CPU (sd, i);
-      if (scpu->sim_state.model_functions.setup_sim != NULL)
-        scpu->sim_state.model_functions.setup_sim(sd, scpu);
+      if (BREW_SIM_CPU (scpu)->sim_state.model_functions.setup_sim != NULL)
+        BREW_SIM_CPU (scpu)->sim_state.model_functions.setup_sim(sd, scpu);
     }
 
   if(sim_post_argv_init (sd) != SIM_RC_OK)
@@ -645,14 +649,14 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
       sim_cpu *scpu = STATE_CPU (sd, i);
 
       setup_sim_state(scpu);
-      scpu->sim_state.model_functions.reset_cpu(scpu, is_user_mode);
+      BREW_SIM_CPU (scpu)->sim_state.model_functions.reset_cpu(scpu, is_user_mode);
     }
 
   sim_module_add_uninstall_fn(sd, brew_sim_uninstall);
   //sim_module_add_init_fn (sd, sim_core_init);
 
   /* Do any simulator-wide setup, such as loading of firmware */
-  STATE_CPU(sd, 0)->sim_state.model_functions.setup_sd(sd);
+  BREW_SIM_CPU (STATE_CPU(sd, 0))->sim_state.model_functions.setup_sd(sd);
 
   return sd;
 }
@@ -702,15 +706,15 @@ sim_create_inferior (SIM_DESC sd, struct bfd *prog_bfd,
         {
         case USER_ENVIRONMENT:
         case VIRTUAL_ENVIRONMENT:
-          scpu->sim_state.tpc = STATE_START_ADDR(sd);
-          scpu->sim_state.ntpc = STATE_START_ADDR(sd);
-          scpu->sim_state.is_task_mode = true;
+          BREW_SIM_CPU (scpu)->sim_state.tpc = STATE_START_ADDR(sd);
+          BREW_SIM_CPU (scpu)->sim_state.ntpc = STATE_START_ADDR(sd);
+          BREW_SIM_CPU (scpu)->sim_state.is_task_mode = true;
           break;
         case OPERATING_ENVIRONMENT:
           // We're starting the processor from the reset vector, no matter what the BFD was linked to.
-          scpu->sim_state.spc = 0;
-          scpu->sim_state.nspc = 0;
-          scpu->sim_state.is_task_mode = false;
+          BREW_SIM_CPU (scpu)->sim_state.spc = 0;
+          BREW_SIM_CPU (scpu)->sim_state.nspc = 0;
+          BREW_SIM_CPU (scpu)->sim_state.is_task_mode = false;
           break;
         default:
           SIM_ASSERT(false);

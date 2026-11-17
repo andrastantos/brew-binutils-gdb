@@ -1,4 +1,4 @@
-# Copyright 2017-2022 Free Software Foundation, Inc.
+# Copyright 2017-2023 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,9 +17,7 @@
 
 # Test inserting read watchpoints on unaligned addresses.
 
-if {[skip_hw_watchpoint_tests]} {
-    return 0
-}
+require allow_hw_watchpoint_tests
 
 standard_testfile
 if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile}] } {
@@ -157,15 +155,17 @@ if ![runto_main] {
 }
 gdb_breakpoint [gdb_get_line_number "final_return"] "Breakpoint $decimal at $hex" "final_return"
 set test {watch data.u.size8twice[1]}
-set wpnum ""
+set wpnum 0
 gdb_test_multiple $test $test {
     -re "Hardware watchpoint (\[0-9\]+): .*\r\n$gdb_prompt $" {
 	set wpnum $expect_out(1,string)
+	pass $gdb_test_name
     }
     -re "Watchpoint (\[0-9\]+): .*\r\n$gdb_prompt $" {
 	if {[istarget "arm*-*-*"]} {
-	    untested $test
-	    set wpnum 0
+	    untested $gdb_test_name
+	} else {
+	    fail $gdb_test_name
 	}
     }
 }

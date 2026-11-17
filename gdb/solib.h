@@ -1,6 +1,6 @@
 /* Shared library declarations for GDB, the GNU Debugger.
 
-   Copyright (C) 1992-2022 Free Software Foundation, Inc.
+   Copyright (C) 1992-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,6 +28,18 @@ struct program_space;
 
 #include "gdb_bfd.h"
 #include "symfile-add-flags.h"
+
+/* Value of the 'set debug solib' configuration variable.  */
+
+extern bool debug_solib;
+
+/* Print an "solib" debug statement.  */
+
+#define solib_debug_printf(fmt, ...) \
+  debug_prefixed_printf_cond (debug_solib, "solib", fmt, ##__VA_ARGS__)
+
+#define SOLIB_SCOPED_DEBUG_START_END(fmt, ...) \
+  scoped_debug_start_end (debug_solib, "solib", fmt, ##__VA_ARGS__)
 
 /* Called when we free all symtabs, to free the shared library information
    as well.  */
@@ -70,11 +82,6 @@ extern bool in_solib_dynsym_resolve_code (CORE_ADDR);
 /* Discard symbols that were auto-loaded from shared libraries.  */
 
 extern void no_shared_libraries (const char *ignored, int from_tty);
-
-/* Set the solib operations for GDBARCH to NEW_OPS.  */
-
-extern void set_solib_ops (struct gdbarch *gdbarch,
-			   const struct target_so_ops *new_ops);
 
 /* Synchronize GDB's shared object list with inferior's.
 

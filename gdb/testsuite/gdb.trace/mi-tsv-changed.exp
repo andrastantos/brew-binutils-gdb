@@ -1,4 +1,4 @@
-# Copyright 2012-2022 Free Software Foundation, Inc.
+# Copyright 2012-2023 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,10 +18,7 @@ load_lib mi-support.exp
 
 standard_testfile actions.c
 
-if ![gdb_trace_common_supports_arch] {
-    unsupported "no trace-common.h support for arch"
-    return -1
-}
+require gdb_trace_common_supports_arch
 
 if { [gdb_compile "$srcdir/$subdir/$srcfile" $binfile \
 	  executable {debug nowarnings}] != "" } {
@@ -151,7 +148,7 @@ proc test_upload_tsv { } {
 	}
 
 	clean_restart $testfile
-	if ![runto_main] then {
+	if {![runto_main]} {
 	    return 0
 	}
 

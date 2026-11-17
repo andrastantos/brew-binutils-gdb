@@ -23,7 +23,7 @@
 #include "gdbarch.h"
 #include "opcode/brew-abi.h"
 
-struct brew_gdbarch_tdep : gdbarch_tdep
+struct brew_gdbarch_tdep : gdbarch_tdep_base
 {
   /* gdbarch target dependent data here.  Currently unused for BREW.  */
 };

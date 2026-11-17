@@ -1,6 +1,6 @@
 /* Python pretty-printing
 
-   Copyright (C) 2008-2022 Free Software Foundation, Inc.
+   Copyright (C) 2008-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -303,7 +303,7 @@ print_string_repr (PyObject *printer, const char *hint,
 	  gdbpy_extract_lazy_string (py_str.get (), &addr, &type,
 				     &length, &encoding);
 
-	  local_opts.addressprint = 0;
+	  local_opts.addressprint = false;
 	  val_print_string (type, encoding.get (), addr, (int) length,
 			    stream, &local_opts);
 	}
@@ -338,7 +338,7 @@ print_string_repr (PyObject *printer, const char *hint,
     {
       struct value_print_options opts = *options;
 
-      opts.addressprint = 0;
+      opts.addressprint = false;
       common_val_print (replacement, stream, recurse, &opts, language);
     }
   else
@@ -506,7 +506,7 @@ print_children (PyObject *printer, const char *hint,
 
 	  gdbpy_extract_lazy_string (py_v, &addr, &type, &length, &encoding);
 
-	  local_opts.addressprint = 0;
+	  local_opts.addressprint = false;
 	  val_print_string (type, encoding.get (), addr, (int) length, stream,
 			    &local_opts);
 	}
@@ -582,7 +582,7 @@ gdbpy_apply_val_pretty_printer (const struct extension_language_defn *extlang,
     value_fetch_lazy (value);
 
   /* No pretty-printer support for unavailable values.  */
-  if (!value_bytes_available (value, 0, TYPE_LENGTH (type)))
+  if (!value_bytes_available (value, 0, type->length ()))
     return EXT_LANG_RC_NOP;
 
   if (!gdb_python_initialized)

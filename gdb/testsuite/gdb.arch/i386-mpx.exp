@@ -1,4 +1,4 @@
-# Copyright 2013-2022 Free Software Foundation, Inc.
+# Copyright 2013-2023 Free Software Foundation, Inc.
 #
 # Contributed by Intel Corp. <walfred.tedeschi@intel.com>
 #
@@ -130,7 +130,7 @@ gdb_test "print \$bndstatus.status.error" "= 2" "bndstatus error is 2\
 after a failure on allocating an entry"
 
 # Going to test the python extension for lenght.
-if { [skip_python_tests] } { continue }
+if { ![allow_python_tests] } { continue }
 # Verify if size is right
 set test_string ".*\\\: size 0x11.*"
 gdb_test "print /x \$bnd0 = {0x10, 0x20}" "$test_string" "verify size for bnd0"

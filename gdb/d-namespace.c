@@ -1,6 +1,6 @@
 /* Helper routines for D support in GDB.
 
-   Copyright (C) 2014-2022 Free Software Foundation, Inc.
+   Copyright (C) 2014-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -130,7 +130,7 @@ d_lookup_symbol (const struct language_defn *langdef,
 	  if (lang_this.symbol == NULL)
 	    return {};
 
-	  type = check_typedef (TYPE_TARGET_TYPE (lang_this.symbol->type ()));
+	  type = check_typedef (lang_this.symbol->type ()->target_type ());
 	  classname = type->name ();
 	  nested = name;
 	}

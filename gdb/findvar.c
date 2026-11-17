@@ -1,6 +1,6 @@
 /* Find a variable's value in memory, for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -152,11 +152,7 @@ extract_long_unsigned_integer (const gdb_byte *addr, int orig_len,
 CORE_ADDR
 extract_typed_address (const gdb_byte *buf, struct type *type)
 {
-  if (!type->is_pointer_or_reference ())
-    internal_error (__FILE__, __LINE__,
-		    _("extract_typed_address: "
-		    "type is not a pointer or reference"));
-
+  gdb_assert (type->is_pointer_or_reference ());
   return gdbarch_pointer_to_address (type->arch (), type, buf);
 }
 
@@ -205,11 +201,7 @@ template void store_integer (gdb_byte *addr, int len,
 void
 store_typed_address (gdb_byte *buf, struct type *type, CORE_ADDR addr)
 {
-  if (!type->is_pointer_or_reference ())
-    internal_error (__FILE__, __LINE__,
-		    _("store_typed_address: "
-		    "type is not a pointer or reference"));
-
+  gdb_assert (type->is_pointer_or_reference ());
   gdbarch_address_to_pointer (type->arch (), type, buf, addr);
 }
 
@@ -259,7 +251,7 @@ copy_integer_to_size (gdb_byte *dest, int dest_size, const gdb_byte *source,
    determined by register_type ().  */
 
 struct value *
-value_of_register (int regnum, struct frame_info *frame)
+value_of_register (int regnum, frame_info_ptr frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct value *reg_val;
@@ -279,11 +271,11 @@ value_of_register (int regnum, struct frame_info *frame)
    determined by register_type ().  The value is not fetched.  */
 
 struct value *
-value_of_register_lazy (struct frame_info *frame, int regnum)
+value_of_register_lazy (frame_info_ptr frame, int regnum)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct value *reg_val;
-  struct frame_info *next_frame;
+  frame_info_ptr next_frame;
 
   gdb_assert (regnum < gdbarch_num_cooked_regs (gdbarch));
 
@@ -318,7 +310,7 @@ unsigned_pointer_to_address (struct gdbarch *gdbarch,
 {
   enum bfd_endian byte_order = type_byte_order (type);
 
-  return extract_unsigned_integer (buf, TYPE_LENGTH (type), byte_order);
+  return extract_unsigned_integer (buf, type->length (), byte_order);
 }
 
 CORE_ADDR
@@ -327,7 +319,7 @@ signed_pointer_to_address (struct gdbarch *gdbarch,
 {
   enum bfd_endian byte_order = type_byte_order (type);
 
-  return extract_signed_integer (buf, TYPE_LENGTH (type), byte_order);
+  return extract_signed_integer (buf, type->length (), byte_order);
 }
 
 /* Given an address, store it as a pointer of type TYPE in target
@@ -338,7 +330,7 @@ unsigned_address_to_pointer (struct gdbarch *gdbarch, struct type *type,
 {
   enum bfd_endian byte_order = type_byte_order (type);
 
-  store_unsigned_integer (buf, TYPE_LENGTH (type), byte_order, addr);
+  store_unsigned_integer (buf, type->length (), byte_order, addr);
 }
 
 void
@@ -347,7 +339,7 @@ address_to_signed_pointer (struct gdbarch *gdbarch, struct type *type,
 {
   enum bfd_endian byte_order = type_byte_order (type);
 
-  store_signed_integer (buf, TYPE_LENGTH (type), byte_order, addr);
+  store_signed_integer (buf, type->length (), byte_order, addr);
 }
 
 /* See value.h.  */
@@ -403,8 +395,8 @@ symbol_read_needs_frame (struct symbol *sym)
    the static links points to and return it.  Return NULL if we could not find
    such a frame.   */
 
-static struct frame_info *
-follow_static_link (struct frame_info *frame,
+static frame_info_ptr
+follow_static_link (frame_info_ptr frame,
 		    const struct dynamic_prop *static_link)
 {
   CORE_ADDR upper_frame_base;
@@ -446,9 +438,9 @@ follow_static_link (struct frame_info *frame,
    For backward compatibility purposes (with old compilers), we then look for
    the first frame that can host it.  */
 
-static struct frame_info *
+static frame_info_ptr
 get_hosting_frame (struct symbol *var, const struct block *var_block,
-		   struct frame_info *frame)
+		   frame_info_ptr frame)
 {
   const struct block *frame_block = NULL;
 
@@ -559,7 +551,7 @@ get_hosting_frame (struct symbol *var, const struct block *var_block,
 struct value *
 language_defn::read_var_value (struct symbol *var,
 			       const struct block *var_block,
-			       struct frame_info *frame) const
+			       frame_info_ptr frame) const
 {
   struct value *v;
   struct type *type = var->type ();
@@ -595,26 +587,38 @@ language_defn::read_var_value (struct symbol *var,
 	}
       /* Put the constant back in target format. */
       v = allocate_value (type);
-      store_signed_integer (value_contents_raw (v).data (), TYPE_LENGTH (type),
+      store_signed_integer (value_contents_raw (v).data (), type->length (),
 			    type_byte_order (type), var->value_longest ());
       VALUE_LVAL (v) = not_lval;
       return v;
 
     case LOC_LABEL:
-      /* Put the constant back in target format.  */
-      v = allocate_value (type);
-      if (overlay_debugging)
-	{
-	  struct objfile *var_objfile = var->objfile ();
-	  addr = symbol_overlayed_address (var->value_address (),
-					   var->obj_section (var_objfile));
-	  store_typed_address (value_contents_raw (v).data (), type, addr);
-	}
-      else
-	store_typed_address (value_contents_raw (v).data (), type,
-			      var->value_address ());
-      VALUE_LVAL (v) = not_lval;
-      return v;
+      {
+	/* Put the constant back in target format.  */
+	if (overlay_debugging)
+	  {
+	    struct objfile *var_objfile = var->objfile ();
+	    addr = symbol_overlayed_address (var->value_address (),
+					     var->obj_section (var_objfile));
+	  }
+	else
+	  addr = var->value_address ();
+
+	/* First convert the CORE_ADDR to a function pointer type, this
+	   ensures the gdbarch knows what type of pointer we are
+	   manipulating when value_from_pointer is called.  */
+	type = builtin_type (var->arch ())->builtin_func_ptr;
+	v = value_from_pointer (type, addr);
+
+	/* But we want to present the value as 'void *', so cast it to the
+	   required type now, this will not change the values bit
+	   representation.  */
+	struct type *void_ptr_type
+	  = builtin_type (var->arch ())->builtin_data_ptr;
+	v = value_cast_pointers (void_ptr_type, v, 0);
+	VALUE_LVAL (v) = not_lval;
+	return v;
+      }
 
     case LOC_CONST_BYTES:
       if (is_dynamic_type (type))
@@ -624,7 +628,7 @@ language_defn::read_var_value (struct symbol *var,
 	}
       v = allocate_value (type);
       memcpy (value_contents_raw (v).data (), var->value_bytes (),
-	      TYPE_LENGTH (type));
+	      type->length ());
       VALUE_LVAL (v) = not_lval;
       return v;
 
@@ -781,7 +785,7 @@ language_defn::read_var_value (struct symbol *var,
 
 struct value *
 read_var_value (struct symbol *var, const struct block *var_block,
-		struct frame_info *frame)
+		frame_info_ptr frame)
 {
   const struct language_defn *lang = language_def (var->language ());
 
@@ -796,9 +800,9 @@ struct value *
 default_value_from_register (struct gdbarch *gdbarch, struct type *type,
 			     int regnum, struct frame_id frame_id)
 {
-  int len = TYPE_LENGTH (type);
+  int len = type->length ();
   struct value *value = allocate_value (type);
-  struct frame_info *frame;
+  frame_info_ptr frame;
 
   VALUE_LVAL (value) = lval_register;
   frame = frame_find_by_id (frame_id);
@@ -834,7 +838,7 @@ default_value_from_register (struct gdbarch *gdbarch, struct type *type,
    complete resulting value as optimized out.  */
 
 void
-read_frame_register_value (struct value *value, struct frame_info *frame)
+read_frame_register_value (struct value *value, frame_info_ptr frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   LONGEST offset = 0;
@@ -874,7 +878,7 @@ read_frame_register_value (struct value *value, struct frame_info *frame)
 /* Return a value of type TYPE, stored in register REGNUM, in frame FRAME.  */
 
 struct value *
-value_from_register (struct type *type, int regnum, struct frame_info *frame)
+value_from_register (struct type *type, int regnum, frame_info_ptr frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct type *type1 = check_typedef (type);
@@ -902,9 +906,9 @@ value_from_register (struct type *type, int regnum, struct frame_info *frame)
       if (!ok)
 	{
 	  if (optim)
-	    mark_value_bytes_optimized_out (v, 0, TYPE_LENGTH (type));
+	    mark_value_bytes_optimized_out (v, 0, type->length ());
 	  if (unavail)
-	    mark_value_bytes_unavailable (v, 0, TYPE_LENGTH (type));
+	    mark_value_bytes_unavailable (v, 0, type->length ());
 	}
     }
   else
@@ -924,7 +928,7 @@ value_from_register (struct type *type, int regnum, struct frame_info *frame)
    Will abort if register value is not available.  */
 
 CORE_ADDR
-address_from_register (int regnum, struct frame_info *frame)
+address_from_register (int regnum, frame_info_ptr frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct type *type = builtin_type (gdbarch)->builtin_data_ptr;
@@ -947,7 +951,7 @@ address_from_register (int regnum, struct frame_info *frame)
      pointer types.  Avoid constructing a value object in those cases.  */
   if (gdbarch_convert_register_p (gdbarch, regnum, type))
     {
-      gdb_byte *buf = (gdb_byte *) alloca (TYPE_LENGTH (type));
+      gdb_byte *buf = (gdb_byte *) alloca (type->length ());
       int optim, unavail, ok;
 
       ok = gdbarch_register_to_value (gdbarch, frame, regnum, type,

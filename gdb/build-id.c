@@ -1,6 +1,6 @@
 /* build-id-related functions.
 
-   Copyright (C) 1991-2022 Free Software Foundation, Inc.
+   Copyright (C) 1991-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -206,7 +206,7 @@ find_separate_debug_file_by_buildid (struct objfile *objfile)
 {
   const struct bfd_build_id *build_id;
 
-  build_id = build_id_bfd_get (objfile->obfd);
+  build_id = build_id_bfd_get (objfile->obfd.get ());
   if (build_id != NULL)
     {
       if (separate_debug_file_debug)
