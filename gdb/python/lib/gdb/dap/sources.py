@@ -1,4 +1,4 @@
-# Copyright 2023 Free Software Foundation, Inc.
+# Copyright 2023-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,9 +17,8 @@ import os
 
 import gdb
 
-from .server import request, capability
-from .startup import send_gdb_with_response, in_gdb_thread
-
+from .server import capability, request
+from .startup import DAPException, in_gdb_thread
 
 # The next available source reference ID.  Must be greater than 0.
 _next_source = 1
@@ -33,16 +32,20 @@ _id_map = {}
 
 
 @in_gdb_thread
-def make_source(fullname, filename):
+def make_source(fullname, filename=None):
     """Return the Source for a given file name.
 
     FULLNAME is the full name.  This is used as the key.
-    FILENAME is the base name.
+    FILENAME is the base name; if None (the default), then it is
+    computed from FULLNAME.
     """
     global _source_map
     if fullname in _source_map:
         result = _source_map[fullname]
     else:
+        if filename is None:
+            filename = os.path.basename(fullname)
+
         result = {
             "name": filename,
             "path": fullname,
@@ -68,39 +71,22 @@ def decode_source(source):
     if "path" in source:
         return source["path"]
     if "sourceReference" not in source:
-        raise Exception("either 'path' or 'sourceReference' must appear in Source")
+        raise DAPException("either 'path' or 'sourceReference' must appear in Source")
     ref = source["sourceReference"]
     global _id_map
     if ref not in _id_map:
-        raise Exception("no sourceReference " + str(ref))
+        raise DAPException("no sourceReference " + str(ref))
     return _id_map[ref]["path"]
-
-
-@in_gdb_thread
-def _sources():
-    result = []
-    for elt in gdb.execute_mi("-file-list-exec-source-files")["files"]:
-        result.append(make_source(elt["fullname"], elt["file"]))
-    return {
-        "sources": result,
-    }
 
 
 @request("loadedSources")
 @capability("supportsLoadedSourcesRequest")
 def loaded_sources(**extra):
-    return send_gdb_with_response(_sources)
-
-
-# This helper is needed because we must only access the globals here
-# from the gdb thread.
-@in_gdb_thread
-def _get_source(source):
-    filename = decode_source(source)
-    with open(filename) as f:
-        content = f.read()
+    result = []
+    for elt in gdb.execute_mi("-file-list-exec-source-files")["files"]:
+        result.append(make_source(elt["fullname"], elt["file"]))
     return {
-        "content": content,
+        "sources": result,
     }
 
 
@@ -111,4 +97,9 @@ def source(*, source=None, sourceReference: int, **extra):
     # 'source' is preferred.
     if source is None:
         source = {"sourceReference": sourceReference}
-    return send_gdb_with_response(lambda: _get_source(source))
+    filename = decode_source(source)
+    with open(filename) as f:
+        content = f.read()
+    return {
+        "content": content,
+    }

@@ -1,6 +1,6 @@
 /* Self tests for gdb_environ for GDB, the GNU debugger.
 
-   Copyright (C) 2017-2023 Free Software Foundation, Inc.
+   Copyright (C) 2017-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "gdbsupport/selftest.h"
 #include "gdbsupport/environ.h"
 #include "diagnostics.h"
@@ -224,7 +223,7 @@ test_self_move ()
   /* Some compilers warn about moving to self, but that's precisely what we want
      to test here, so turn this warning off.  */
   DIAGNOSTIC_PUSH
-  DIAGNOSTIC_IGNORE ("-Wself-move")
+  DIAGNOSTIC_IGNORE_SELF_MOVE
   env = std::move (env);
   DIAGNOSTIC_POP
 

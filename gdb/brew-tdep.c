@@ -17,14 +17,14 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "frame.h"
 #include "frame-unwind.h"
 #include "frame-base.h"
 #include "symtab.h"
 #include "gdbtypes.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "gdbcore.h"
+#include "extract-store-integer.h"
 #include "value.h"
 #include "inferior.h"
 #include "symfile.h"
@@ -255,7 +255,7 @@ static bool brew_analyze_prolog(
   CORE_ADDR cur_pc,
   CORE_ADDR cur_fp,
   struct brew_frame_info *frame_info,
-  frame_info_ptr this_frame,
+  const frame_info_ptr &this_frame,
   struct gdbarch *gdbarch
 ) {
   enum bfd_endian byte_order = gdbarch_byte_order(gdbarch);
@@ -406,7 +406,7 @@ static CORE_ADDR brew_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
   struct symtab_and_line sal;
   struct symbol *sym;
   // Find the function.
-  sym = lookup_symbol(func_name, NULL, VAR_DOMAIN, NULL).symbol;
+  sym = lookup_symbol(func_name, nullptr, SEARCH_FUNCTION_DOMAIN, nullptr).symbol;
   if (sym && sym->language() == language_asm)
     {
       return func_addr;
@@ -733,7 +733,7 @@ static struct brew_frame_info *brew_alloc_frame_info (void)
 }
 
 // Populate a brew_frame_info object for this_frame.
-static struct brew_frame_info *brew_frame_info_fill(frame_info_ptr this_frame, void **this_cache)
+static struct brew_frame_info *brew_frame_info_fill(const frame_info_ptr &this_frame, void **this_cache)
 {
   struct brew_frame_info *frame_info;
 
@@ -780,7 +780,7 @@ static struct brew_frame_info *brew_frame_info_fill(frame_info_ptr this_frame, v
 // during the execution of the function. That is, the same ID should be returned when
 // we're in the prolog, function body or epilog of the function.
 static void brew_frame_this_id(
-  frame_info_ptr this_frame,
+  const frame_info_ptr &this_frame,
   void **this_prologue_cache,
   struct frame_id *this_id
 ) {
@@ -796,7 +796,7 @@ static void brew_frame_this_id(
 
 // Get the value of register regnum in the previous stack frame.
 static struct value *brew_frame_prev_register(
-  frame_info_ptr this_frame,
+  const frame_info_ptr &this_frame,
   void **this_prologue_cache,
   int regnum
 ) {
@@ -831,7 +831,7 @@ static struct value *brew_frame_prev_register(
 }
 
 // Return the base address of this_frame.
-static CORE_ADDR brew_frame_base_address (frame_info_ptr this_frame, void **this_cache)
+static CORE_ADDR brew_frame_base_address (const frame_info_ptr &this_frame, void **this_cache)
 {
   struct brew_frame_info *frame_info = brew_frame_info_fill(this_frame, this_cache);
   gdb_assert(frame_info->valid);
@@ -875,7 +875,7 @@ static int brew_process_record (struct gdbarch *gdbarch, struct regcache *regcac
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
 
   if (record_debug > 1)
-    gdb_printf (gdb_stdlog, "Process record: brew_process_record addr = 0x%s\n", paddress(target_gdbarch (), addr));
+    gdb_printf (gdb_stdlog, "Process record: brew_process_record addr = 0x%s\n", paddress(current_inferior ()->arch (), addr));
 
   inst = (uint16_t)read_memory_unsigned_integer(addr, 2, byte_order);
 

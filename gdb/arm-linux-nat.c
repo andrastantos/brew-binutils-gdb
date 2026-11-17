@@ -1,5 +1,5 @@
 /* GNU/Linux on ARM native support.
-   Copyright (C) 1999-2023 Free Software Foundation, Inc.
+   Copyright (C) 1999-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "inferior.h"
 #include "gdbcore.h"
 #include "regcache.h"
@@ -568,7 +567,7 @@ arm_linux_nat_target::read_description ()
       /* NEON implies VFPv3-D32 or no-VFP unit.  Say that we only support
 	 Neon with VFPv3-D32.  */
       if (arm_hwcap & HWCAP_NEON)
-	return aarch32_read_description ();
+	return aarch32_read_description (false);
       else if ((arm_hwcap & (HWCAP_VFPv3 | HWCAP_VFPv3D16)) == HWCAP_VFPv3)
 	return arm_read_description (ARM_FP_TYPE_VFPV3, false);
 
