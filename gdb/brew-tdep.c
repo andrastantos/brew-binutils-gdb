@@ -985,7 +985,10 @@ static int brew_process_record (struct gdbarch *gdbarch, struct regcache *regcac
   // Stores
   //   0x.c**                      MEM32[$rS + tiny OFFSET] <- $rD     Store $rD in memory
   if (brew_pattern_match(inst, ".c**")) {
-    int32_t offset = (int32_t)(inst & 0xfe) << 16 >> 15;
+    // Same decoding as the tiny store in opcodes/brew-decode.c: a 7-bit
+    // signed word offset in bits 7..1; bit 0 selects $fp (0) or $sp (1).
+    int32_t offset = ((int32_t)((inst >> 1) & 0x7f) ^ 0x40) - 0x40;
+    offset *= 4;
     uint32_t base;
     if (regcache_read_unsigned_reg(regcache, (inst & 1) == 0 ? BREW_REG_FP : BREW_REG_SP, base) != REG_VALID)
       return -1;
@@ -1059,7 +1062,8 @@ static int brew_process_record (struct gdbarch *gdbarch, struct regcache *regcac
     brew_pattern_match(inst, ".faf") ||
     brew_pattern_match(inst, ".fbf")
   ) {
-    uint32_t field_e = (uint32_t)sign_extend_short_to_32((uint16_t)read_memory_unsigned_integer(addr + 2, 2, byte_order));
+    // 48-bit form: VALUE is a full 32-bit absolute address.
+    uint32_t field_e = (uint32_t)read_memory_unsigned_integer(addr + 2, 4, byte_order);
     int length;
     switch (FIELD_B(inst)) {
       case 0x8: length = 1; break;
