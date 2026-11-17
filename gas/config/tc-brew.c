@@ -2152,6 +2152,14 @@ tc_gen_reloc(asection *section ATTRIBUTE_UNUSED, fixS *fixP)
 {
   arelent *reloc;
 
+  // A remaining subtrahend can't be encoded in a Brew relocation; never
+  // silently drop it (see the symbol-difference notes in tc-brew.h).
+  if (fixP->fx_subsy != NULL)
+    {
+      as_bad_subtract(fixP);
+      return NULL;
+    }
+
   reloc = notes_alloc (sizeof (arelent));
   reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);

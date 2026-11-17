@@ -40,14 +40,18 @@
 
 #define md_section_align(SEGMENT, SIZE)     (SIZE)
 
-// TODO: this comes from risc-v. Others (see tc-msp430.c) handle negative relocations
-//       in tc_gen_reloc.
-/* Postpone text-section label subtraction calculation until linking, since
-   linker relaxations might change the deltas.  */
-#define TC_FORCE_RELOCATION_SUB_SAME(FIX, SEG)	\
-  (GENERIC_FORCE_RELOCATION_SUB_SAME (FIX, SEG)	\
-   || ((SEG)->flags & SEC_CODE) != 0)
+// Symbol differences (A - B):
+// - Same section: resolved by the assembler (the generic
+//   TC_FORCE_RELOCATION_SUB_SAME). The linker doesn't relax, so
+//   in-section deltas can't change at link time. Brew used to inherit
+//   RISC-V's override, which keeps code-section differences as fixups.
+//   Brew relocations can't encode a subtrahend, so tc_gen_reloc emitted
+//   just A, and e.g. DW_AT_high_pc and .debug_aranges lengths
+//   (.Letext0-.Ltext0) became end addresses.
+// - B in the fixup's own section: not turned into a pc-relative
+//   fixup (the only pc-relative relocation is the branch offset).
+// - Anything else can't be expressed, and the generic
+//   TC_VALIDATE_FIX_SUB reports it as an error.
 #define TC_FORCE_RELOCATION_SUB_LOCAL(FIX, SEG) 1
-#define TC_VALIDATE_FIX_SUB(FIX, SEG) 1
 #define TC_FORCE_RELOCATION_LOCAL(FIX) 1
 #define DIFF_EXPR_OK 1
