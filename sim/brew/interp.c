@@ -345,7 +345,7 @@ static INLINE void write_mem_unaligned(uint8_t *memory, uint32_t val)
 static int
 brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 {
-  if (rn > BREW_GDB_NUM_REGS && rn < 0)
+  if (rn < 0 || rn >= BREW_GDB_NUM_REGS)
     return 0;
   if (length != 4)
     // Report back proper register size, but do no transfer.
@@ -390,7 +390,7 @@ brew_reg_fetch(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 static int
 brew_reg_store(sim_cpu *scpu, int rn, unsigned char *memory, int length)
 {
-  if (rn > BREW_GDB_NUM_REGS && rn < 0)
+  if (rn < 0 || rn >= BREW_GDB_NUM_REGS)
     return 0;
   if (length != 4)
     return -1;
