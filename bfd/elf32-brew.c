@@ -382,6 +382,7 @@ brew_elf_relocate_section (
           rel,
           1,
           relend,
+          R_BREW_NONE,
           howto,
           0,
           contents

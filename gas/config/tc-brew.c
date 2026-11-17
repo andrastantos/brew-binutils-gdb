@@ -84,7 +84,7 @@ parse_int(const brew_lexer_tokenS *first_token, const brew_lexer_tokenS *last_to
       terminator = *tok_end;
       *tok_end = 0;
     }
-  while (*digit == '-' || *digit == '+' || ISSPACE(*digit))
+  while (*digit == '-' || *digit == '+' || is_whitespace(*digit))
     {
       if (*digit == '-')
         negative = !negative;
@@ -195,7 +195,7 @@ parse_expression(
           // strings that start with a number or a '.'.
 
           const char *c = expression_str;
-          while (ISSPACE(*c)) ++c;
+          while (is_whitespace(*c)) ++c;
           if (ISDIGIT(*c) || *c == '.')
             {
               parse_end = atof_ieee(expression_str, 'f', float_store);
@@ -212,7 +212,7 @@ parse_expression(
                   LITTLENUM_TYPE *float_ptr;
                   for (float_ptr = float_store + float_part; float_part--;)
                     {
-                      md_number_to_chars(frag_ptr, (valueT)(*--float_ptr), sizeof(LITTLENUM_TYPE));
+                      md_number_to_chars(frag_ptr, *--float_ptr, sizeof(LITTLENUM_TYPE));
                       frag_ptr += sizeof (LITTLENUM_TYPE);
                     }
                   ret_val = true;
@@ -2152,8 +2152,8 @@ tc_gen_reloc(asection *section ATTRIBUTE_UNUSED, fixS *fixP)
 {
   arelent *reloc;
 
-  reloc = XNEW (arelent);
-  reloc->sym_ptr_ptr = XNEW (asymbol *);
+  reloc = notes_alloc (sizeof (arelent));
+  reloc->sym_ptr_ptr = notes_alloc (sizeof (asymbol *));
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
   reloc->address = fixP->fx_frag->fr_address + fixP->fx_where;
 
@@ -2166,8 +2166,6 @@ tc_gen_reloc(asection *section ATTRIBUTE_UNUSED, fixS *fixP)
                    /* xgettext:c-format.  */
                    _("reloc %d not supported by object file format"),
                    (int) fixP->fx_r_type);
-      xfree (reloc->sym_ptr_ptr);
-      xfree (reloc);
 
       return NULL;
     }

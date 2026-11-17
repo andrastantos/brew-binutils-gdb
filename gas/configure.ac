@@ -3,7 +3,7 @@ dnl
 dnl And be careful when changing it!  If you must add tests with square
 dnl brackets, be sure changequote invocations surround it.
 dnl
-dnl   Copyright (C) 2012-2024 Free Software Foundation, Inc.
+dnl   Copyright (C) 2012-2025 Free Software Foundation, Inc.
 dnl
 dnl This file is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -117,6 +117,15 @@ AC_ARG_ENABLE(elf_stt_common,
   yes)  ac_default_elf_stt_common=1 ;;
 esac])dnl
 
+ac_default_sframe=unset
+# Provide a configure time option to override our default.
+AC_ARG_ENABLE(default-sframe,
+	      AS_HELP_STRING([--enable-default-sframe],
+	      [generate SFrame by default]),
+[case "${enableval}" in
+  yes) ac_default_sframe=1 ;;
+  no)  ac_default_sframe=0 ;;
+esac])dnl
 
 # Decide if the ELF assembler should default to generating
 # GNU Build notes if none are provided by the input.
@@ -392,8 +401,11 @@ changequote([,])dnl
 	    use_ef_mips_abi_o32=1
 	    ;;
 	esac
-	# If Vendor is IMG, then MIPSr6 is used
+	# If target vendor is IMG, then MIPSr6 is used.
 	case ${target} in
+	  mips64*-img-*)
+	    mips_cpu=mips64r6
+	    ;;
 	  mips*-img-*)
 	    mips_cpu=mips32r6
 	    ;;
@@ -659,7 +671,7 @@ changequote([,])dnl
         fi
         AC_MSG_RESULT($with_isa_spec)
 
-        # --with-priv-spec=[1.9.1|1.10|1.11|1.12].
+        # --with-priv-spec=[1.9.1|1.10|1.11|1.12|1.13].
         AC_MSG_CHECKING(for default configuration of --with-priv-spec)
         if test "x${with_priv_spec}" != x; then
           AC_DEFINE_UNQUOTED(DEFAULT_RISCV_PRIV_SPEC, "$with_priv_spec",
@@ -762,6 +774,13 @@ AC_DEFINE_UNQUOTED(DEFAULT_GENERATE_ELF_STT_COMMON,
   $ac_default_elf_stt_common,
   [Define to 1 if you want to generate ELF common symbols with the
    STT_COMMON type by default.])
+
+if test ${ac_default_sframe} = unset; then
+  ac_default_sframe=0
+fi
+AC_DEFINE_UNQUOTED(DEFAULT_SFRAME,
+  $ac_default_sframe,
+  [Define to 1 if you want to emit SFrames by default.])
 
 AC_DEFINE_UNQUOTED(DEFAULT_GENERATE_BUILD_NOTES,
   $ac_default_generate_build_notes,
@@ -948,7 +967,6 @@ AM_PROG_LEX
 
 ALL_LINGUAS="es fi fr id ja ru rw sv tr uk zh_CN"
 ZW_GNU_GETTEXT_SISTER_DIR
-AM_PO_SUBDIRS
 
 AM_MAINTAINER_MODE
 AM_CONDITIONAL(GENINSRC_NEVER, false)

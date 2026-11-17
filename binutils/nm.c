@@ -1,5 +1,5 @@
 /* nm.c -- Describe symbol table of a rel file.
-   Copyright (C) 1991-2024 Free Software Foundation, Inc.
+   Copyright (C) 1991-2025 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -36,9 +36,8 @@
 #include "libcoff.h"
 #include "bucomm.h"
 #include "demanguse.h"
-#include "plugin-api.h"
-#include "plugin.h"
 #include "safe-ctype.h"
+#include "plugin.h"
 
 #ifndef streq
 #define streq(a,b) (strcmp ((a),(b)) == 0)
@@ -79,7 +78,15 @@ struct extended_symbol_info
 #define SYM_STAB_DESC(sym)   (sym->sinfo->stab_desc)
 #define SYM_STAB_OTHER(sym)  (sym->sinfo->stab_other)
 #define SYM_SIZE(sym) \
-  (sym->elfinfo ? sym->elfinfo->internal_elf_sym.st_size: sym->ssize)
+  (sym->elfinfo \
+   && sym->elfinfo->internal_elf_sym.st_size \
+   ? sym->elfinfo->internal_elf_sym.st_size \
+   : sym->coffinfo \
+     && ISFCN (sym->coffinfo->native->u.syment.n_type) \
+     && sym->coffinfo->native->u.syment.n_numaux \
+     && sym->coffinfo->native[1].u.auxent.x_sym.x_misc.x_fsize \
+     ? sym->coffinfo->native[1].u.auxent.x_sym.x_misc.x_fsize \
+     : sym->ssize)
 
 /* The output formatting functions.  */
 static void print_object_filename_bsd (const char *);
@@ -213,11 +220,6 @@ static char other_format[] = "%02x";
 static char desc_format[] = "%04x";
 
 static char *target = NULL;
-#if BFD_SUPPORTS_PLUGINS
-static const char *plugin_target = "plugin";
-#else
-static const char *plugin_target = NULL;
-#endif
 
 typedef enum unicode_display_type
 {
@@ -335,10 +337,9 @@ usage (FILE *stream, int status)
   -P, --portability      Same as --format=posix\n"));
   fprintf (stream, _("\
   -r, --reverse-sort     Reverse the sense of the sort\n"));
-#if BFD_SUPPORTS_PLUGINS
-  fprintf (stream, _("\
+  if (bfd_plugin_enabled ())
+    fprintf (stream, _("\
       --plugin NAME      Load the specified plugin\n"));
-#endif
   fprintf (stream, _("\
   -S, --print-size       Print size of defined symbols\n"));
   fprintf (stream, _("\
@@ -793,10 +794,8 @@ filter_symbols (bfd *abfd, bool is_dynamic, void *minisyms,
       if (sym == NULL)
 	continue;
 
-      if (sym->name != NULL
-	  && sym->name[0] == '_'
-	  && sym->name[1] == '_'
-	  && strcmp (sym->name + (sym->name[2] == '_'), "__gnu_lto_slim") == 0
+      if (bfd_lto_slim_symbol_p (abfd, sym->name)
+	  && !bfd_plugin_target_p (abfd->xvec)
 	  && report_plugin_err)
 	{
 	  report_plugin_err = false;
@@ -1036,9 +1035,9 @@ size_forward2 (const void *P_x, const void *P_y)
     return sorters[0][reverse_sort] (x->minisym, y->minisym);
 }
 
-/* Sort the symbols by size.  ELF provides a size but for other formats
-   we have to make a guess by assuming that the difference between the
-   address of a symbol and the address of the next higher symbol is the
+/* Sort the symbols by size.  ELF and COFF may provide a size but for other
+   formats we have to make a guess by assuming that the difference between
+   the address of a symbol and the address of the next higher symbol is the
    size.  */
 
 static long
@@ -1081,6 +1080,8 @@ sort_symbols_by_size (bfd *abfd, bool is_dynamic, void *minisyms,
       asection *sec;
       bfd_vma sz;
       asymbol *temp;
+      const elf_symbol_type *elfsym;
+      const coff_symbol_type *coffsym;
 
       if (from + size < fromend)
 	{
@@ -1100,8 +1101,15 @@ sort_symbols_by_size (bfd *abfd, bool is_dynamic, void *minisyms,
 	 we can't rely on that information for the symbol size.  Ditto for
 	 bfd/section.c:global_syms like *ABS*.  */
       if ((sym->flags & (BSF_SECTION_SYM | BSF_SYNTHETIC)) == 0
-	  && bfd_get_flavour (abfd) == bfd_target_elf_flavour)
-	sz = ((elf_symbol_type *) sym)->internal_elf_sym.st_size;
+	  && (elfsym = elf_symbol_from (sym)) != NULL
+	  && elfsym->internal_elf_sym.st_size != 0)
+	sz = elfsym->internal_elf_sym.st_size;
+      else if ((sym->flags & (BSF_SECTION_SYM | BSF_SYNTHETIC)) == 0
+	       && (coffsym = coff_symbol_from (sym)) != NULL
+	       && ISFCN (coffsym->native->u.syment.n_type)
+	       && coffsym->native->u.syment.n_numaux != 0
+	       && coffsym->native[1].u.auxent.x_sym.x_misc.x_fsize != 0)
+	sz = coffsym->native[1].u.auxent.x_sym.x_misc.x_fsize;
       else if ((sym->flags & (BSF_SECTION_SYM | BSF_SYNTHETIC)) == 0
 	       && bfd_is_com_section (sec))
 	sz = sym->value;
@@ -1470,7 +1478,8 @@ display_rel_file (bfd *abfd, bfd *archive_bfd)
 
   /* lto_type is set to lto_non_ir_object when a bfd is loaded with a
      compiler LTO plugin.  */
-  if (bfd_get_lto_type (abfd) == lto_slim_ir_object)
+  if (bfd_get_lto_type (abfd) == lto_slim_ir_object
+      && !bfd_plugin_target_p (abfd->xvec))
     {
       report_plugin_err = false;
       non_fatal (_("%s: plugin needed to handle lto object"),
@@ -1628,7 +1637,7 @@ display_file (char *filename)
   if (get_file_size (filename) < 1)
     return false;
 
-  file = bfd_openr (filename, target ? target : plugin_target);
+  file = bfd_openr (filename, target);
   if (file == NULL)
     {
       bfd_nonfatal (filename);
@@ -1971,9 +1980,7 @@ main (int argc, char **argv)
   program_name = *argv;
   xmalloc_set_program_name (program_name);
   bfd_set_error_program_name (program_name);
-#if BFD_SUPPORTS_PLUGINS
   bfd_plugin_set_program_name (program_name);
-#endif
 
   expandargv (&argc, &argv);
 
@@ -2120,11 +2127,9 @@ main (int argc, char **argv)
 	  break;
 
 	case OPTION_PLUGIN:	/* --plugin */
-#if BFD_SUPPORTS_PLUGINS
+	  if (!bfd_plugin_enabled ())
+	    fatal (_("sorry - this program has been built without plugin support\n"));
 	  bfd_plugin_set_plugin (optarg);
-#else
-	  fatal (_("sorry - this program has been built without plugin support\n"));
-#endif
 	  break;
 
 	case OPTION_IFUNC_CHARS:

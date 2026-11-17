@@ -285,7 +285,7 @@ brew_lexer_tokenS *brew_tokenize(const char *str)
   bool found;
   while(tok_start[0] != 0)
     {
-      while (ISSPACE(*tok_start))
+      while (is_whitespace(*tok_start))
         tok_start++;
 
       tok_len = 0;
@@ -315,7 +315,7 @@ brew_lexer_tokenS *brew_tokenize(const char *str)
             break;
           if (is_end_of_stmt(*tok_end))
             break;
-          if (ISSPACE(*tok_end) && paren_cnt == 0)
+          if (is_whitespace(*tok_end) && paren_cnt == 0)
             break;
           if (*tok_end == '(')
             {

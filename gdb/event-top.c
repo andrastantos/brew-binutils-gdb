@@ -1,6 +1,6 @@
 /* Top level stuff for GDB, the GNU debugger.
 
-   Copyright (C) 1999-2024 Free Software Foundation, Inc.
+   Copyright (C) 1999-2025 Free Software Foundation, Inc.
 
    Written by Elena Zannoni <ezannoni@cygnus.com> of Cygnus Solutions.
 
@@ -980,11 +980,6 @@ handle_fatal_signal (int sig)
 #endif
 
 #ifdef GDB_PRINT_INTERNAL_BACKTRACE
-  const auto sig_write = [] (const char *msg) -> void
-  {
-    gdb_stderr->write_async_safe (msg, strlen (msg));
-  };
-
   if (bt_on_fatal_signal)
     {
       sig_write ("\n\n");
@@ -1027,7 +1022,13 @@ handle_fatal_signal (int sig)
 	}
       sig_write ("\n\n");
 
-      gdb_stderr->flush ();
+      if (gdb_stderr == nullptr || gdb_stderr->fd () == -1)
+	{
+	  /* Writing to file descriptor instead of stream, no flush
+	     required.  */
+	}
+      else
+	gdb_stderr->flush ();
     }
 #endif
 
@@ -1179,6 +1180,9 @@ quit (void)
       throw_forced_quit ("SIGTERM");
     }
 
+  /* Pressing ^C cancels i-search.  Tell readline that a ^C happened.  */
+  rl_callback_sigcleanup ();
+
 #ifdef __MSDOS__
   /* No steenking SIGINT will ever be coming our way when the
      program is resumed.  Don't lie.  */
@@ -1276,7 +1280,7 @@ fd_copy (fd_set *dst, const fd_set *src, int n)
 {
   FD_ZERO (dst);
   for (int i = 0; i < n; ++i)
-    if (FD_ISSET (i, src))
+    if (FD_ISSET (i, const_cast<fd_set *>(src)))
       FD_SET (i, dst);
 
   return dst;
@@ -1649,9 +1653,7 @@ show_debug_event_loop_command (struct ui_file *file, int from_tty,
   gdb_printf (file, _("Event loop debugging is %s.\n"), value);
 }
 
-void _initialize_event_top ();
-void
-_initialize_event_top ()
+INIT_GDB_FILE (event_top)
 {
   add_setshow_enum_cmd ("event-loop", class_maintenance,
 			debug_event_loop_enum,

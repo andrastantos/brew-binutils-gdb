@@ -1,5 +1,5 @@
 # Expect script for LoongArch ELF linker tests
-#   Copyright (C) 2021-2024 Free Software Foundation, Inc.
+#   Copyright (C) 2021-2025 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -45,8 +45,11 @@ if [istarget "loongarch64-*-*"] {
     run_dump_test "underflow_s_5_20"
     run_dump_test "tls-le-norelax"
     run_dump_test "tls-le-relax"
+    run_dump_test "relax-after-alignment"
     run_dump_test "relax-medium-call"
     run_dump_test "relax-medium-call-1"
+    run_dump_test "relax-sym-size-1"
+    run_dump_test "relax-sym-size-2"
     run_dump_test "check_got_relax"
 }
 
@@ -154,6 +157,21 @@ if [istarget "loongarch64-*-*"] {
       ] \
   ]
 
+  # Using DESC and IE to access the same tls symbol but with
+  # -mno-relax requires allocating GOT entries for both DESC and IE,
+  # not just IE
+  run_ld_link_tests [list \
+      [list \
+	  "desc and ie do not type transition" \
+	  "-pie -e0 --hash-style=both" "" \
+	  "-mno-relax" \
+	  {desc-ie-norelax.s} \
+	  {{objdump {-d} desc-ie-norelax.dd} \
+	   {readelf {-rW} desc-ie-norelax.rd} \
+	   {objdump {-sj.got} desc-ie-norelax.sd}} \
+	  "desc-ie-norelax" \
+      ] \
+  ] \
 }
 
 if [istarget "loongarch64-*-*"] {
@@ -185,6 +203,8 @@ if [istarget "loongarch64-*-*"] {
     run_dump_test "bad_pcrel20_s2_global"
     run_dump_test "bad_pcrel20_s2_weak"
     run_dump_test "weak-undef-hidden-shared"
+    run_dump_test "overflow_32_pcrel"
+    run_dump_test "underflow_32_pcrel"
   }
 
   if [check_pie_support] {

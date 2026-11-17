@@ -1,5 +1,5 @@
 /* Terminal interface definitions for GDB, the GNU Debugger.
-   Copyright (C) 1986-2024 Free Software Foundation, Inc.
+   Copyright (C) 1986-2025 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,6 +18,8 @@
 
 #ifndef GDB_TERMINAL_H
 #define GDB_TERMINAL_H
+
+#include "serial.h"
 
 struct inferior;
 
@@ -43,4 +45,17 @@ extern void gdb_save_tty_state (void);
    have had a chance to alter it.  */
 extern void set_initial_gdb_ttystate (void);
 
+/* Restore initial tty state.  */
+extern void restore_initial_gdb_ttystate (void);
+
+/* An RAII-based object that saves the tty state, and then restores it again
+   when this object is destroyed. */
+class scoped_gdb_ttystate
+{
+public:
+  scoped_gdb_ttystate ();
+  ~scoped_gdb_ttystate ();
+private:
+  serial_ttystate m_ttystate;
+};
 #endif /* GDB_TERMINAL_H */

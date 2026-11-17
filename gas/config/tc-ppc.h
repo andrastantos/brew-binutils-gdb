@@ -1,5 +1,5 @@
 /* tc-ppc.h -- Header file for tc-ppc.c.
-   Copyright (C) 1994-2024 Free Software Foundation, Inc.
+   Copyright (C) 1994-2025 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
 
    This file is part of GAS, the GNU Assembler.
@@ -19,6 +19,7 @@
    Software Foundation, 51 Franklin Street - Fifth Floor, Boston, MA
    02110-1301, USA.  */
 
+#ifndef TC_PPC
 #define TC_PPC
 
 #include "opcode/ppc.h"
@@ -72,15 +73,15 @@ extern const char *ppc_target_format (void);
 /* We don't need to handle .word strangely.  */
 #define WORKING_DOT_WORD
 
-#define MAX_MEM_FOR_RS_ALIGN_CODE 4
-#define HANDLE_ALIGN(FRAGP)						\
+#define MAX_MEM_FOR_RS_ALIGN_CODE(p2align, max) 8
+#define HANDLE_ALIGN(SEC, FRAGP)						\
   if ((FRAGP)->fr_type == rs_align_code)				\
-    ppc_handle_align (FRAGP);
+    ppc_handle_align (SEC, FRAGP);
 
 extern unsigned int ppc_nop_select (void);
 #define NOP_OPCODE ppc_nop_select ()
 
-extern void ppc_handle_align (struct frag *);
+extern void ppc_handle_align (segT, struct frag *);
 extern void ppc_frag_check (struct frag *);
 
 #ifdef OBJ_ELF
@@ -367,3 +368,5 @@ extern int ppc_dwarf2_line_min_insn_length;
 #define DWARF2_DEFAULT_RETURN_COLUMN    0x41
 #define DWARF2_CIE_DATA_ALIGNMENT       ppc_cie_data_alignment
 #define EH_FRAME_ALIGNMENT		2
+
+#endif /* TC_PPC */

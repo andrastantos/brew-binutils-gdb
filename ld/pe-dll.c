@@ -1,5 +1,5 @@
 /* Routines to help build PEI-format DLLs (Win32 etc)
-   Copyright (C) 1998-2024 Free Software Foundation, Inc.
+   Copyright (C) 1998-2025 Free Software Foundation, Inc.
    Written by DJ Delorie <dj@cygnus.com>
 
    This file is part of the GNU Binutils.
@@ -381,7 +381,10 @@ static const autofilter_entry_type autofilter_liblist[] =
   { STRING_COMMA_LEN ("libmsvcrt") },
   { STRING_COMMA_LEN ("libmsvcrt-os") },
   { STRING_COMMA_LEN ("libucrt") },
+  { STRING_COMMA_LEN ("libucrtapp") },
   { STRING_COMMA_LEN ("libucrtbase") },
+  { STRING_COMMA_LEN ("libpthread") },
+  { STRING_COMMA_LEN ("libwinpthread") },
   { NULL, 0 }
 };
 
@@ -777,7 +780,7 @@ process_def_file_and_drectve (bfd *abfd ATTRIBUTE_UNUSED, struct bfd_link_info *
 
 	  if (!bfd_generic_link_read_symbols (b))
 	    {
-	      einfo (_("%F%P: %pB: could not read symbols: %E\n"), b);
+	      fatal (_("%P: %pB: could not read symbols: %E\n"), b);
 	      return;
 	    }
 
@@ -1069,7 +1072,7 @@ build_filler_bfd (bool include_edata)
 			     bfd_get_arch (link_info.output_bfd),
 			     bfd_get_mach (link_info.output_bfd)))
     {
-      einfo (_("%F%P: can not create BFD: %E\n"));
+      fatal (_("%P: can not create BFD: %E\n"));
       return;
     }
 
@@ -1347,7 +1350,7 @@ pe_walk_relocs (struct bfd_link_info *info,
 
       if (!bfd_generic_link_read_symbols (b))
 	{
-	  einfo (_("%F%P: %pB: could not read symbols: %E\n"), b);
+	  fatal (_("%P: %pB: could not read symbols: %E\n"), b);
 	  return;
 	}
 
@@ -1428,7 +1431,7 @@ pe_find_data_imports (const char *symhead,
       if (!bfd_hash_table_init (import_hash,
 				bfd_hash_newfunc,
 				sizeof (struct bfd_hash_entry)))
-	einfo (_("%F%P: bfd_hash_table_init failed: %E\n"));
+	fatal (_("%P: bfd_hash_table_init failed: %E\n"));
     }
   else
     import_hash = NULL;
@@ -1468,7 +1471,7 @@ pe_find_data_imports (const char *symhead,
 
 		if (!bfd_generic_link_read_symbols (b))
 		  {
-		    einfo (_("%F%P: %pB: could not read symbols: %E\n"), b);
+		    fatal (_("%P: %pB: could not read symbols: %E\n"), b);
 		    return;
 		  }
 
@@ -1570,7 +1573,7 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 
       if (!bfd_generic_link_read_symbols (b))
 	{
-	  einfo (_("%F%P: %pB: could not read symbols: %E\n"), b);
+	  fatal (_("%P: %pB: could not read symbols: %E\n"), b);
 	  return;
 	}
 
@@ -1617,18 +1620,18 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 		  printf ("rel: %s\n", sym->name);
 		}
 	      if (!relocs[i]->howto->pc_relative
-		  && relocs[i]->howto->type != pe_details->imagebase_reloc
-		  && (relocs[i]->howto->type < pe_details->secrel_reloc_lo
-		      || relocs[i]->howto->type > pe_details->secrel_reloc_hi)
-		  && relocs[i]->howto->type != pe_details->section_reloc)
+		  && (bfd_get_flavour (b) != bfd_target_coff_flavour
+		      || (relocs[i]->howto->type != pe_details->imagebase_reloc
+			  && (relocs[i]->howto->type < pe_details->secrel_reloc_lo
+			      || relocs[i]->howto->type > pe_details->secrel_reloc_hi)
+			  && relocs[i]->howto->type != pe_details->section_reloc)))
 		{
 		  struct bfd_symbol *sym = *relocs[i]->sym_ptr_ptr;
 		  const struct bfd_link_hash_entry *blhe
 		    = bfd_wrapped_link_hash_lookup (abfd, info, sym->name,
 						    false, false, false);
-
 		  /* Don't create relocs for undefined weak symbols.  */
-		  if (sym->flags == BSF_WEAK)
+		  if (sym->flags & BSF_WEAK)
 		    {
 		      if (blhe && blhe->type == bfd_link_hash_undefweak)
 			{
@@ -1653,7 +1656,7 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 			continue;
 		    }
 		  /* Nor for Dwarf FDE references to discarded sections.  */
-		  else if (bfd_is_abs_section (sym->section->output_section))
+		  if (bfd_is_abs_section (sym->section->output_section))
 		    {
 		      /* We only ignore relocs from .eh_frame sections, as
 			 they are discarded by the final link rather than
@@ -1662,10 +1665,10 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 			continue;
 		    }
 		  /* Nor for absolute symbols.  */
-		  else if (blhe && ldexp_is_final_sym_absolute (blhe)
-			   && (!blhe->linker_def
-			       || (strcmp (sym->name, "__image_base__")
-				   && strcmp (sym->name, U ("__ImageBase")))))
+		  if (blhe && ldexp_is_final_sym_absolute (blhe)
+		      && (!blhe->linker_def
+			  || (strcmp (sym->name, "__image_base__")
+			      && strcmp (sym->name, U ("__ImageBase")))))
 		    continue;
 
 		  reloc_data[total_relocs].vma = sec_vma + relocs[i]->address;
@@ -2636,9 +2639,9 @@ make_import_fixup_mark (arelent *rel, char *name)
   memcpy (fixup_name, buf, prefix_len);
 
   bh = NULL;
-  bfd_coff_link_add_one_symbol (&link_info, abfd, fixup_name, BSF_GLOBAL,
-				current_sec, /* sym->section, */
-				rel->address, NULL, true, false, &bh);
+  _bfd_generic_link_add_one_symbol (&link_info, abfd, fixup_name, BSF_GLOBAL,
+				    current_sec, /* sym->section, */
+				    rel->address, NULL, true, false, &bh);
 
   return bh->root.string;
 }
@@ -3058,13 +3061,6 @@ pe_dll_generate_implib (def_file *def, const char *impfilename, struct bfd_link_
 
   if (! bfd_close (outarch))
     einfo ("%X%P: bfd_close %s: %E\n", impfilename);
-
-  while (head != NULL)
-    {
-      bfd *n = head->archive_next;
-      bfd_close (head);
-      head = n;
-    }
 }
 
 static int undef_count = 0;

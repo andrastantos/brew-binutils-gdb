@@ -1,4 +1,4 @@
-# Copyright (C) 2014-2024 Free Software Foundation, Inc.
+# Copyright (C) 2014-2025 Free Software Foundation, Inc.
 #
 # Copying and distribution of this file, with or without modification,
 # are permitted in any medium without royalty provided the copyright
@@ -244,7 +244,7 @@ RELA_IPLT=".rela.iplt    ${RELOCATING-0} :
 DYNAMIC=".dynamic      ${RELOCATING-0} : { *(.dynamic) }"
 RODATA=".${RODATA_NAME}       ${RELOCATING-0} : { *(.${RODATA_NAME}${RELOCATING+ .${RODATA_NAME}.* .gnu.linkonce.r.*}) }"
 DATARELRO=".data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) }"
-DISCARDED="/DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.gnu.lto_*) }"
+DISCARDED="/DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.gnu.lto_*) *(.gnu_object_only) }"
 if test -z "${NO_SMALL_DATA}"; then
   SBSS=".${SBSS_NAME}         ${RELOCATING-0} :
   {
@@ -417,7 +417,7 @@ EOF
 emit_header()
 {
 cat <<EOF
-/* Copyright (C) 2014-2024 Free Software Foundation, Inc.
+/* Copyright (C) 2014-2025 Free Software Foundation, Inc.
 
    Copying and distribution of this script, with or without modification,
    are permitted in any medium without royalty provided the copyright
@@ -734,7 +734,7 @@ cat <<EOF
      data, but this is not guaranteed to always be the case.  */
   .note.build-id :      { *(.note.build-id) } ${RELOCATING+${REGION}}
   .note.GNU-stack :     { *(.note.GNU-stack) } ${RELOCATING+${REGION}}
-  .note.gnu-property :  { *(.note.gnu-property) } ${RELOCATING+${REGION}}
+  .note.gnu.property :  { *(.note.gnu.property) } ${RELOCATING+${REGION}}
   .note.ABI-tag :       { *(.note.ABI-tag) } ${RELOCATING+${REGION}}
   .note.package :       { *(.note.package) } ${RELOCATING+${REGION}}
   .note.dlopen :        { *(.note.dlopen) } ${RELOCATING+${REGION}}
@@ -912,7 +912,7 @@ emit_large_bss()
     return
   fi
 
-  if test "$1" == "0"; then
+  if test "$1" = "0"; then
     if test -n "${LARGE_BSS_AFTER_BSS}"; then
       return
     fi

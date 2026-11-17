@@ -1,6 +1,6 @@
 ## Process this file with automake to generate Makefile.in
 #
-#   Copyright (C) 2021-2024 Free Software Foundation, Inc.
+#   Copyright (C) 2021-2025 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -78,6 +78,7 @@ CCSOURCES = \
 	Stabs.cc \
 	Stats_data.cc \
 	StringBuilder.cc \
+	Symbol.cc \
 	Table.cc \
 	QLParser.tab.cc \
 	dbe_collctrl.cc \
@@ -179,10 +180,8 @@ $(srcdir)/DbeSession.cc: QLParser.tab.hh
 .PHONY: install-exec-local
 install-exec-local:
 	$(mkinstalldirs) $(DESTDIR)$(bindir)
-	rm -f $(DESTDIR)$(bindir)/gp-{archive,collect-app,display-html,display-src,display-text}
-	ln -s gprofng-archive $(DESTDIR)$(bindir)/gp-archive
-	ln -s gprofng-collect-app $(DESTDIR)$(bindir)/gp-collect-app
-	ln -s gprofng-display-html $(DESTDIR)$(bindir)/gp-display-html
-	ln -s gprofng-display-src $(DESTDIR)$(bindir)/gp-display-src
-	ln -s gprofng-display-text $(DESTDIR)$(bindir)/gp-display-text
-
+	for i in gp-{archive,collect-app,display-html,display-src,display-text}; do \
+		oldname=`echo $$i | sed '$(transform)'`; \
+		rm -f $(DESTDIR)$(bindir)/$$oldname ; \
+		ln -s `echo $$oldname | sed 's&gp-&gprofng-&'` $(DESTDIR)$(bindir)/$$oldname; \
+	done

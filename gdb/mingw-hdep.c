@@ -1,6 +1,6 @@
 /* Host support routines for MinGW, for GDB, the GNU debugger.
 
-   Copyright (C) 2006-2024 Free Software Foundation, Inc.
+   Copyright (C) 2006-2025 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,6 +22,9 @@
 #include "gdbsupport/event-loop.h"
 #include "gdbsupport/gdb_select.h"
 #include "inferior.h"
+#include "cli/cli-style.h"
+#include "command.h"
+#include "cli/cli-cmds.h"
 
 #include <windows.h>
 #include <signal.h>
@@ -212,7 +215,30 @@ static int mingw_console_initialized;
 static HANDLE hstdout = INVALID_HANDLE_VALUE;
 
 /* Text attribute to use for normal text (the "none" pseudo-color).  */
-static SHORT  norm_attr;
+static SHORT norm_attr;
+
+/* Initialize settings related to the console.  */
+
+void
+windows_initialize_console ()
+{
+  hstdout = (HANDLE)_get_osfhandle (fileno (stdout));
+  DWORD cmode;
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+
+  if (hstdout != INVALID_HANDLE_VALUE
+      && GetConsoleMode (hstdout, &cmode) != 0
+      && GetConsoleScreenBufferInfo (hstdout, &csbi))
+    {
+      norm_attr = csbi.wAttributes;
+      mingw_console_initialized = 1;
+    }
+  else if (hstdout != INVALID_HANDLE_VALUE)
+    mingw_console_initialized = -1; /* valid, but not a console device */
+
+  if (mingw_console_initialized > 0)
+    no_emojis ();
+}
 
 /* The most recently applied style.  */
 static ui_file_style last_style;
@@ -223,22 +249,6 @@ static ui_file_style last_style;
 int
 gdb_console_fputs (const char *linebuf, FILE *fstream)
 {
-  if (!mingw_console_initialized)
-    {
-      hstdout = (HANDLE)_get_osfhandle (fileno (fstream));
-      DWORD cmode;
-      CONSOLE_SCREEN_BUFFER_INFO csbi;
-
-      if (hstdout != INVALID_HANDLE_VALUE
-	  && GetConsoleMode (hstdout, &cmode) != 0
-	  && GetConsoleScreenBufferInfo (hstdout, &csbi))
-	{
-	  norm_attr = csbi.wAttributes;
-	  mingw_console_initialized = 1;
-	}
-      else if (hstdout != INVALID_HANDLE_VALUE)
-	mingw_console_initialized = -1; /* valid, but not a console device */
-    }
   /* If our stdout is not a console device, let the default 'fputs'
      handle the task. */
   if (mingw_console_initialized <= 0)
@@ -436,4 +446,63 @@ install_sigint_handler (c_c_handler_ftype *fn)
   c_c_handler_ftype *result = current_handler;
   current_handler = fn;
   return result;
+}
+
+/* Set stdout and stderr handles to translation mode MODE.  */
+
+static void
+set_console_translation_mode (int mode)
+{
+  setmode (fileno (stdout), mode);
+  setmode (fileno (stderr), mode);
+}
+
+/* Arg in "maint set console-translation-mode <arg>.  */
+
+static std::string maint_console_translation_mode;
+
+/* Current value of "maint set/show console-translation-mode".  */
+
+static std::string console_translation_mode = "unknown";
+
+/* Sets the console translation mode.  */
+
+static void
+set_maint_console_translation_mode (const char *args, int from_tty,
+				    struct cmd_list_element *c)
+{
+  if (maint_console_translation_mode == "binary")
+    set_console_translation_mode (O_BINARY);
+  else if (maint_console_translation_mode == "text")
+    set_console_translation_mode (O_TEXT);
+  else
+    error (_("Invalid console translation mode: %s"),
+	   maint_console_translation_mode.c_str ());
+
+  console_translation_mode = maint_console_translation_mode;
+}
+
+/* Shows the console translation mode.  */
+
+static void
+show_maint_console_translation_mode (struct ui_file *file, int from_tty,
+				     struct cmd_list_element *c,
+				     const char *value)
+{
+  gdb_printf (file, _("Console translation mode is %s.\n"),
+	      console_translation_mode.c_str ());
+}
+
+INIT_GDB_FILE (mingw_hdep)
+{
+  add_setshow_string_cmd ("console-translation-mode",
+			  class_maintenance,
+			  &maint_console_translation_mode, _("\
+Set the translation mode of stdout/stderr."), _("\
+Show the translation mode of stdout/stderr."), _("\
+Use \"binary\", or \"text\""),
+			   set_maint_console_translation_mode,
+			   show_maint_console_translation_mode,
+			   &maintenance_set_cmdlist,
+			   &maintenance_show_cmdlist);
 }

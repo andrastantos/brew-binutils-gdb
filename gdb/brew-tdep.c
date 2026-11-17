@@ -838,15 +838,16 @@ static CORE_ADDR brew_frame_base_address (const frame_info_ptr &this_frame, void
   return frame_info->prev_sp;
 }
 
-static const struct frame_unwind brew_frame_unwind = {
+static const struct frame_unwind_legacy brew_frame_unwind(
   "brew prologue",
   NORMAL_FRAME,
+  FRAME_UNWIND_ARCH,
   default_frame_unwind_stop_reason,
   brew_frame_this_id,
   brew_frame_prev_register,
   NULL,
   default_frame_sniffer
-};
+);
 
 static const struct frame_base brew_frame_base = {
   &brew_frame_unwind,
@@ -1140,7 +1141,7 @@ static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbar
   frame_unwind_append_unwinder(gdbarch, &brew_frame_unwind);
 
   // Single stepping.
-  set_gdbarch_software_single_step(gdbarch, brew_software_single_step);
+  set_gdbarch_get_next_pcs(gdbarch, brew_software_single_step);
 
   // Support simple overlay manager.
   set_gdbarch_overlay_update(gdbarch, simple_overlay_update);
@@ -1152,14 +1153,7 @@ static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbar
 }
 
 // Register this machine's init routine.
-// NOTE: It is *very* important that the function is declared on a
-//       new line, with a space between it's name and the parens.
-//       The `make-init-c` script depends on this, and without it,
-//       the generated `init.c` will not contain a reference to this
-//       function.
-void _initialize_brew_tdep();
-void
-_initialize_brew_tdep ()
+INIT_GDB_FILE (brew_tdep)
 {
   gdbarch_register(bfd_arch_brew, brew_gdbarch_init);
 }

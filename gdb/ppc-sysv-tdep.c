@@ -1,7 +1,7 @@
 /* Target-dependent code for PowerPC systems using the SVR4 ABI
    for GDB, the GNU debugger.
 
-   Copyright (C) 2000-2024 Free Software Foundation, Inc.
+   Copyright (C) 2000-2025 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -2060,10 +2060,12 @@ ppc64_sysv_abi_return_value (struct gdbarch *gdbarch, struct value *function,
     }
 
   /* Small character arrays are returned, right justified, in r3.  */
-  if (valtype->code () == TYPE_CODE_ARRAY
+  if (tdep->elf_abi == POWERPC_ELF_V1
+      && valtype->code () == TYPE_CODE_ARRAY
       && !valtype->is_vector ()
       && valtype->length () <= 8
-      && valtype->target_type ()->code () == TYPE_CODE_INT
+      && (valtype->target_type ()->code () == TYPE_CODE_INT
+	  || valtype->target_type ()->code () == TYPE_CODE_CHAR)
       && valtype->target_type ()->length () == 1)
     {
       int regnum = tdep->ppc_gp0_regnum + 3;
@@ -2112,6 +2114,7 @@ ppc64_sysv_abi_return_value (struct gdbarch *gdbarch, struct value *function,
   /* In the ELFv2 ABI, aggregate types of up to 16 bytes are
      returned in registers r3:r4.  */
   if (tdep->elf_abi == POWERPC_ELF_V2
+      && !TYPE_HAS_DYNAMIC_LENGTH (valtype)
       && valtype->length () <= 16
       && (valtype->code () == TYPE_CODE_STRUCT
 	  || valtype->code () == TYPE_CODE_UNION
