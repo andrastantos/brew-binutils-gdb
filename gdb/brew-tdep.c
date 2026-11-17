@@ -106,6 +106,21 @@ static const char *brew_register_name(struct gdbarch *gdbarch, int reg_nr)
   return brew_virtual_reg_names[reg_nr];
 }
 
+// Map a DWARF register number (gcc's hard register number, see REGISTER_NAMES
+// in gcc/config/brew/brew.h) to a gdb register number. $r0-$r14 are the same
+// in both. gcc's 15 and 16 are soft frame/arg pointers that are always
+// eliminated, so they never appear in debug info, and gdb uses those numbers
+// for $tpc/$spc. Anything else is invalid; returning -1 makes gdb report a bad
+// register number instead of passing it on to the register callbacks.
+static int brew_dwarf2_reg_to_regnum(struct gdbarch *gdbarch, int reg)
+{
+  if (reg >= 0 && reg < 15)
+    return reg;
+  if (reg == 17) // gcc's $pc
+    return BREW_GDB_REG_PC;
+  return -1;
+}
+
 // TODO: we should handle true target register types here
 static struct type *brew_register_type (struct gdbarch *gdbarch, int reg_nr)
 {
@@ -1106,6 +1121,7 @@ static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbar
   set_gdbarch_pc_regnum(gdbarch, BREW_GDB_REG_PC);
   set_gdbarch_register_name(gdbarch, brew_register_name);
   set_gdbarch_register_type(gdbarch, brew_register_type);
+  set_gdbarch_dwarf2_reg_to_regnum(gdbarch, brew_dwarf2_reg_to_regnum);
 
   set_gdbarch_return_value(gdbarch, brew_return_value);
 
