@@ -107,7 +107,7 @@ collect::putenv_libcollector_ld_preloads ()
   // for those data types that get extra libs LD_PRELOAD'd, add them
   if (cc->get_synctrace_mode () != 0)
     add_ld_preload ("libgp-sync.so");
-  if (cc->get_heaptrace_mode () != 0)
+  if (cc->get_heaptrace_mode () != NULL)
     add_ld_preload ("libgp-heap.so");
   if (cc->get_iotrace_mode () != 0)
     add_ld_preload ("libgp-iotrace.so");
@@ -136,7 +136,7 @@ int
 collect::putenv_libcollector_ld_misc ()
 {
 #if 0 // XXX 1 turns on LD_DEBUG
-  putenv (strdup ("LD_DEBUG=audit,bindings,detail"));
+  putenv (xstrdup ("LD_DEBUG=audit,bindings,detail"));
 #endif
   // workaround to have the dynamic linker use absolute names
   if (add_env (dbe_strdup ("LD_ORIGIN=yes")))
@@ -156,7 +156,7 @@ collect::putenv_libcollector_ld_misc ()
   if (ev)
     { /* GPROFNG_PRELOAD_LIBDIRS is used only in the gprofng testing.
        * Use these directories first.  */
-      ev = strdup (ev);
+      ev = xstrdup (ev);
       for (char *s = ev; s;)
 	{
 	  char *s1 = strchr (s, ':');
@@ -246,7 +246,7 @@ collect::add_ld_preload (const char *lib)
     {
       char *old_sp = sp_preload_list[ii];
       if (old_sp == NULL)
-	sp_preload_list[ii] = strdup (lib);
+	sp_preload_list[ii] = xstrdup (lib);
       else
 	{
 	  sp_preload_list[ii] = dbe_sprintf ("%s %s", old_sp, lib);

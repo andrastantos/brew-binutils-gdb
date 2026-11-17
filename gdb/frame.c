@@ -2584,7 +2584,7 @@ inside_main_func (const frame_info_ptr &this_frame)
   CORE_ADDR sym_addr = 0;
   const char *name = main_name ();
   bound_minimal_symbol msymbol
-    = lookup_minimal_symbol (name, NULL,
+    = lookup_minimal_symbol (current_program_space, name,
 			     current_program_space->symfile_object_file);
 
   if (msymbol.minsym != nullptr)
@@ -2628,7 +2628,7 @@ inside_entry_func (const frame_info_ptr &this_frame)
 {
   CORE_ADDR entry_point;
 
-  if (!entry_point_address_query (&entry_point))
+  if (!entry_point_address_query (current_program_space, &entry_point))
     return false;
 
   return get_frame_func (this_frame) == entry_point;
@@ -2859,7 +2859,7 @@ find_frame_sal (const frame_info_ptr &frame)
 
   if (frame_inlined_callees (frame) > 0)
     {
-      struct symbol *sym;
+      const symbol *sym;
 
       /* If the current frame has some inlined callees, and we have a next
 	 frame, then that frame must be an inlined frame.  In this case

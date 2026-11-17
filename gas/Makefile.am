@@ -187,7 +187,6 @@ TARGET_CPU_CFILES = \
 	config/tc-msp430.c \
 	config/tc-mt.c \
 	config/tc-nds32.c \
-	config/tc-nios2.c \
 	config/tc-ns32k.c \
 	config/tc-or1k.c \
 	config/tc-pdp11.c \
@@ -261,7 +260,6 @@ TARGET_CPU_HFILES = \
 	config/tc-msp430.h \
 	config/tc-mt.h \
 	config/tc-nds32.h \
-	config/tc-nios2.h \
 	config/tc-ns32k.h \
 	config/tc-or1k.h \
 	config/tc-pdp11.h \
@@ -363,9 +361,6 @@ TARG_ENV_CFILES = \
 MULTI_CFILES = \
 	config/e-crisaout.c \
 	config/e-criself.c \
-	config/e-i386aout.c \
-	config/e-i386coff.c \
-	config/e-i386elf.c \
 	config/e-mipself.c
 
 CONFIG_ATOF_CFILES = \

@@ -107,6 +107,7 @@ extern cpu_info_t *read_cpuinfo();
 #define CPC_INTEL_HASWELL       2060
 #define CPC_INTEL_BROADWELL     2070
 #define CPC_INTEL_SKYLAKE       2080
+#define CPC_INTEL_ICELAKE       2081
 #define CPC_INTEL_UNKNOWN       2499
 #define CPC_AMD_K8C             2500 /* Opteron, Athlon... */
 #define CPC_AMD_FAM_10H         2501 /* Barcelona, Shanghai... */
@@ -126,6 +127,12 @@ extern cpu_info_t *read_cpuinfo();
 #define CPC_SPARC64_VII     4004 /* Jupiter */
 #define CPC_SPARC64_X       4006 /* Athena */
 #define CPC_SPARC64_XII     4010 /* Athena++ */
+
+// Arm
+#define CPC_ARM_GENERIC     3500
+#define CPC_ARM64_AMCC      3501 /* Applied Micro Circuits Corporation (ARM) */
+#define CPC_ARM_NEOVERSE_N1 3502
+#define CPC_ARM_AMPERE_1    3503
 
 #define	AMD_FAM_19H_ZEN3_NAME	"AMD Family 19h (Zen3)"
 #define	AMD_FAM_19H_ZEN4_NAME	"AMD Family 19h (Zen4)"
@@ -165,6 +172,13 @@ enum {
     ARM_CPU_IMP_QCOM    = 0x51,
     ARM_CPU_IMP_APPLE   = 0x61,
     ARM_CPU_IMP_AMPERE  = 0xC0
+};
+
+// riscv Constants from arch/riscv/include/asm/vendorid_list.h
+enum {
+    ANDES_VENDOR_ID		= 0x31e,
+    SIFIVE_VENDOR_ID	        = 0x489,
+    THEAD_VENDOR_ID		= 0x5b7
 };
 
 #define	AARCH64_VENDORSTR_ARM	"ARM"

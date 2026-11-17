@@ -1721,7 +1721,8 @@ resolve_symbol_value (symbolS *symp)
 
 	  switch (symp->x->value.X_op)
 	    {
-	    case O_multiply:		left *= right; break;
+	    /* See expr() for reasons of the use of valueT casts here.  */
+	    case O_multiply:		left *= (valueT) right; break;
 	    case O_divide:		left /= right; break;
 	    case O_modulus:		left %= right; break;
 	    case O_left_shift:
@@ -2185,11 +2186,11 @@ decode_local_label_name (char *s)
 {
   char *p;
   char *symbol_decode;
-  int label_number;
-  int instance_number;
+  unsigned int label_number;
+  unsigned int instance_number;
   const char *type;
   const char *message_format;
-  int lindex = 0;
+  unsigned int lindex = 0;
 
 #ifdef LOCAL_LABEL_PREFIX
   if (s[lindex] == LOCAL_LABEL_PREFIX)
@@ -2212,7 +2213,7 @@ decode_local_label_name (char *s)
   for (instance_number = 0, p++; ISDIGIT (*p); ++p)
     instance_number = (10 * instance_number) + *p - '0';
 
-  message_format = _("\"%d\" (instance number %d of a %s label)");
+  message_format = _("\"%u\" (instance number %u of a %s label)");
   symbol_decode = notes_alloc (strlen (message_format) + 30);
   sprintf (symbol_decode, message_format, label_number, instance_number, type);
 

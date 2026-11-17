@@ -183,7 +183,7 @@ const pseudo_typeS md_pseudo_table[] =
   { NULL, NULL, 0 }
 };
 
-const char *md_shortopts = "";
+const char md_shortopts[] = "";
 
 enum options
 {
@@ -229,7 +229,7 @@ enum options
   OPTION_RTSC
 };
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   { "EB",		no_argument,	   NULL, OPTION_EB },
   { "EL",		no_argument,	   NULL, OPTION_EL },
@@ -292,7 +292,7 @@ struct option md_longopts[] =
   { NULL,		no_argument, NULL, 0 }
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 /* Local data and data types.  */
 
@@ -1152,8 +1152,8 @@ parse_reloc_symbol (expressionS *resultP)
       return;
     }
 
-  *input_line_pointer = c;
-  SKIP_WHITESPACE_AFTER_NAME ();
+  restore_line_pointer (c);
+  SKIP_WHITESPACE ();
   /* Extra check for TLS: base.  */
   if (*input_line_pointer == '@')
     {

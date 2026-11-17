@@ -130,10 +130,6 @@ static long start_time;
 #ifdef USE_EMULATIONS
 #define EMULATION_ENVIRON "AS_EMULATION"
 
-extern struct emulation mipsbelf, mipslelf, mipself;
-extern struct emulation i386coff, i386elf, i386aout;
-extern struct emulation crisaout, criself;
-
 static struct emulation *const emulations[] = { EMULATIONS };
 static const int n_emulations = sizeof (emulations) / sizeof (emulations[0]);
 
@@ -180,13 +176,6 @@ select_emulation_mode (int argc, char **argv)
     this_emulation = emulations[0];
 
   this_emulation->init ();
-}
-
-const char *
-default_emul_bfd_name (void)
-{
-  abort ();
-  return NULL;
 }
 
 void
@@ -333,7 +322,7 @@ Options:\n\
   fprintf (stream, _("\
   -f                      skip whitespace and comment preprocessing\n"));
   fprintf (stream, _("\
-  -g --gen-debug          generate debugging information\n"));
+  -g, --gen-debug         generate debugging information\n"));
   fprintf (stream, _("\
   --gstabs                generate STABS debugging information\n"));
   fprintf (stream, _("\
@@ -361,9 +350,9 @@ Options:\n\
   fprintf (stream, _("\
   -K                      warn when differences altered for long displacements\n"));
   fprintf (stream, _("\
-  -L,--keep-locals        keep local symbols (e.g. starting with `L')\n"));
+  -L, --keep-locals       keep local symbols (e.g. starting with `L')\n"));
   fprintf (stream, _("\
-  -M,--mri                assemble in MRI compatibility mode\n"));
+  -M, --mri               assemble in MRI compatibility mode\n"));
   fprintf (stream, _("\
   --MD FILE               write dependency information in FILE (default none)\n"));
   fprintf (stream, _("\
@@ -388,11 +377,15 @@ Options:\n\
   fprintf (stream, _("\
   --version               print assembler version number and exit\n"));
   fprintf (stream, _("\
-  -W  --no-warn           suppress warnings\n"));
+  -W, --no-warn           suppress warnings\n"));
   fprintf (stream, _("\
   --warn                  don't suppress warnings\n"));
   fprintf (stream, _("\
   --fatal-warnings        treat warnings as errors\n"));
+  fprintf (stream, _("\
+  --no-info               suppress information messages\n"));
+  fprintf (stream, _("\
+  --info                  don't suppress information messages\n"));
 #ifdef HAVE_ITBL_CPU
   fprintf (stream, _("\
   --itbl INSTTBL          extend instruction set to include instructions\n\
@@ -449,7 +442,6 @@ parse_args (int * pargc, char *** pargv)
      the ordering of the two.  We describe each non-option ARGV-element
      as if it were the argument of an option with character code 1.  */
   char *shortopts;
-  extern const char *md_shortopts;
   static const char std_shortopts[] =
   {
     '-', 'J',
@@ -457,13 +449,8 @@ parse_args (int * pargc, char *** pargv)
     /* -K is not meaningful if .word is not being hacked.  */
     'K',
 #endif
-    'L', 'M', 'R', 'W', 'Z', 'a', ':', ':', 'D', 'f', 'g', ':',':', 'I', ':', 'o', ':',
-#ifndef VMS
-    /* -v takes an argument on VMS, so we don't make it a generic
-       option.  */
-    'v',
-#endif
-    'w', 'X',
+    'L', 'M', 'R', 'W', 'Z', 'a', ':', ':', 'D', 'f', 'g', ':',':', 'I', ':',
+    'o', ':', 'v', 'w', 'X',
 #ifdef HAVE_ITBL_CPU
     /* New option for extending instruction set (see also --itbl below).  */
     't', ':',
@@ -471,8 +458,6 @@ parse_args (int * pargc, char *** pargv)
     '\0'
   };
   struct option *longopts;
-  extern struct option md_longopts[];
-  extern size_t md_longopts_size;
   /* Codes used for the long options with no short synonyms.  */
   enum option_values
     {
@@ -481,7 +466,6 @@ parse_args (int * pargc, char *** pargv)
       OPTION_STATISTICS,
       OPTION_VERSION,
       OPTION_DUMPCONFIG,
-      OPTION_VERBOSE,
       OPTION_EMULATION,
       OPTION_DEBUG_PREFIX_MAP,
       OPTION_DEFSYM,
@@ -519,7 +503,9 @@ parse_args (int * pargc, char *** pargv)
       OPTION_NO_PAD_SECTIONS,
       OPTION_MULTIBYTE_HANDLING,  /* = STD_BASE + 40 */
       OPTION_SFRAME,
-      OPTION_SCFI
+      OPTION_SCFI,
+      OPTION_INFO,
+      OPTION_NOINFO
     /* When you add options here, check that they do
        not collide with OPTION_MD_BASE.  See as.h.  */
     };
@@ -595,14 +581,16 @@ parse_args (int * pargc, char *** pargv)
     ,{"mri", no_argument, NULL, 'M'}
     ,{"nocpp", no_argument, NULL, OPTION_NOCPP}
     ,{"no-pad-sections", no_argument, NULL, OPTION_NO_PAD_SECTIONS}
+    ,{"no-info", no_argument, NULL, OPTION_NOINFO}
     ,{"no-warn", no_argument, NULL, 'W'}
     ,{"reduce-memory-overheads", no_argument, NULL, OPTION_REDUCE_MEMORY_OVERHEADS}
     ,{"statistics", no_argument, NULL, OPTION_STATISTICS}
     ,{"strip-local-absolute", no_argument, NULL, OPTION_STRIP_LOCAL_ABSOLUTE}
     ,{"version", no_argument, NULL, OPTION_VERSION}
-    ,{"verbose", no_argument, NULL, OPTION_VERBOSE}
+    ,{"verbose", no_argument, NULL, 'v'}
     ,{"target-help", no_argument, NULL, OPTION_TARGET_HELP}
     ,{"traditional-format", no_argument, NULL, OPTION_TRADITIONAL_FORMAT}
+    ,{"info", no_argument, NULL, OPTION_INFO}
     ,{"warn", no_argument, NULL, OPTION_WARN}
     ,{"multibyte-handling", required_argument, NULL, OPTION_MULTIBYTE_HANDLING}
   };
@@ -650,24 +638,17 @@ parse_args (int * pargc, char *** pargv)
 	     it explicitly here before deciding we've gotten a bad argument.  */
 	  if (optc == 'v')
 	    {
-#ifdef VMS
-	      /* Telling getopt to treat -v's value as optional can result
-		 in it picking up a following filename argument here.  The
-		 VMS code in md_parse_option can return 0 in that case,
-		 but it has no way of pushing the filename argument back.  */
-	      if (optarg && *optarg)
-		new_argv[new_argc++] = optarg, new_argv[new_argc] = NULL;
-	      else
-#else
-	      case 'v':
-#endif
-	      case OPTION_VERBOSE:
-		print_version_id ();
-		verbose = 1;
+	case 'v':
+	      print_version_id ();
+	      verbose = 1;
 	      break;
 	    }
+	  else if (is_a_char (optc))
+	    as_bad (_("unrecognized option `-%c%s'"), optc, optarg ? optarg : "");
+	  else if (optarg)
+	    as_bad (_("unrecognized option `--%s=%s'"), longopts[longind].name, optarg);
 	  else
-	    as_bad (_("unrecognized option -%c%s"), optc, optarg ? optarg : "");
+	    as_bad (_("unrecognized option `--%s'"), longopts[longind].name);
 	  /* Fall through.  */
 
 	case '?':
@@ -982,6 +963,14 @@ This program has absolutely no warranty.\n"));
 	  flag_fatal_warnings = 1;
 	  break;
 
+	case OPTION_NOINFO:
+	  flag_no_information = true;
+	  break;
+
+	case OPTION_INFO:
+	  flag_no_information = false;
+	  break;
+
 #if defined OBJ_ELF || defined OBJ_MAYBE_ELF
 	case OPTION_EXECSTACK:
 	  flag_execstack = 1;
@@ -1203,34 +1192,8 @@ static void
 perform_an_assembly_pass (int argc, char ** argv)
 {
   int saw_a_file = 0;
-#ifndef OBJ_MACH_O
-  flagword applicable;
-#endif
 
   need_pass_2 = 0;
-
-#ifndef OBJ_MACH_O
-  /* Create the standard sections, and those the assembler uses
-     internally.  */
-  text_section = subseg_new (TEXT_SECTION_NAME, 0);
-  data_section = subseg_new (DATA_SECTION_NAME, 0);
-  bss_section = subseg_new (BSS_SECTION_NAME, 0);
-  /* @@ FIXME -- we're setting the RELOC flag so that sections are assumed
-     to have relocs, otherwise we don't find out in time.  */
-  applicable = bfd_applicable_section_flags (stdoutput);
-  bfd_set_section_flags (text_section,
-			 applicable & (SEC_ALLOC | SEC_LOAD | SEC_RELOC
-				       | SEC_CODE | SEC_READONLY));
-  bfd_set_section_flags (data_section,
-			 applicable & (SEC_ALLOC | SEC_LOAD | SEC_RELOC
-				       | SEC_DATA));
-  bfd_set_section_flags (bss_section, applicable & SEC_ALLOC);
-  seg_info (bss_section)->bss = 1;
-#endif
-  subseg_new (BFD_ABS_SECTION_NAME, 0);
-  subseg_new (BFD_UND_SECTION_NAME, 0);
-  reg_section = subseg_new ("*GAS `reg' section*", 0);
-  expr_section = subseg_new ("*GAS `expr' section*", 0);
 
 #ifndef OBJ_MACH_O
   subseg_set (text_section, 0);
@@ -1319,6 +1282,17 @@ gas_early_init (int *argcp, char ***argvp)
 #endif
 }
 
+/* Tack on format specific section data and create a proper section
+   symbol for one of the standard bfd sections.  */
+
+static void
+bfd_std_section_init (const char *name)
+{
+  asection *sec = bfd_make_section_old_way (stdoutput, name);
+  gas_assert (BFD_SEND (stdoutput, _new_section_hook, (stdoutput, sec)));
+  subseg_new (name, 0);
+}
+
 /* The bulk of gas initialisation.  This is after args are parsed.  */
 
 static void
@@ -1380,6 +1354,29 @@ gas_init (void)
       free (defsyms);
       defsyms = next;
     }
+
+#ifndef OBJ_MACH_O
+  /* Create the standard sections, and those the assembler uses
+     internally.  */
+  text_section = subseg_new (TEXT_SECTION_NAME, 0);
+  data_section = subseg_new (DATA_SECTION_NAME, 0);
+  bss_section = subseg_new (BSS_SECTION_NAME, 0);
+  /* @@ FIXME -- we're setting the RELOC flag so that sections are assumed
+     to have relocs, otherwise we don't find out in time.  */
+  flagword applicable = bfd_applicable_section_flags (stdoutput);
+  bfd_set_section_flags (text_section,
+			 applicable & (SEC_ALLOC | SEC_LOAD | SEC_RELOC
+				       | SEC_CODE | SEC_READONLY));
+  bfd_set_section_flags (data_section,
+			 applicable & (SEC_ALLOC | SEC_LOAD | SEC_RELOC
+				       | SEC_DATA));
+  bfd_set_section_flags (bss_section, applicable & SEC_ALLOC);
+  seg_info (bss_section)->bss = 1;
+#endif
+  bfd_std_section_init (BFD_ABS_SECTION_NAME);
+  bfd_std_section_init (BFD_UND_SECTION_NAME);
+  reg_section = subseg_new ("*GAS `reg' section*", 0);
+  expr_section = subseg_new ("*GAS `expr' section*", 0);
 }
 
 int

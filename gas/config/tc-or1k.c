@@ -49,20 +49,20 @@ typedef struct
 }
 or1k_insn;
 
-const char comment_chars[]        = "#";
+const char comment_chars[]        = ";#";
 const char line_comment_chars[]   = "#";
 const char line_separator_chars[] = ";";
 const char EXP_CHARS[]            = "eE";
 const char FLT_CHARS[]            = "dD";
 
 #define OR1K_SHORTOPTS "m:"
-const char * md_shortopts = OR1K_SHORTOPTS;
+const char md_shortopts[] = OR1K_SHORTOPTS;
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {NULL, no_argument, NULL, 0}
 };
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 unsigned long or1k_machine = 0; /* default */
 
@@ -89,8 +89,6 @@ s_nodelay (int val ATTRIBUTE_UNUSED)
 {
   nodelay = true;
 }
-
-const char or1k_comment_chars [] = ";#";
 
 /* The target specific pseudo-ops which we support.  */
 const pseudo_typeS md_pseudo_table[] =

@@ -71,20 +71,28 @@ enum riscv_csr_class
   CSR_CLASS_I_32,	/* rv32 only */
   CSR_CLASS_F,		/* f-ext only */
   CSR_CLASS_ZKR,	/* zkr only */
+  CSR_CLASS_ZCMT,	/* zcmt only */
   CSR_CLASS_V,		/* rvv only */
   CSR_CLASS_DEBUG,	/* debug CSR */
   CSR_CLASS_H,		/* hypervisor */
   CSR_CLASS_H_32,	/* hypervisor, rv32 only */
   CSR_CLASS_SMAIA,		/* Smaia */
   CSR_CLASS_SMAIA_32,		/* Smaia, rv32 only */
+  CSR_CLASS_SMAIA_OR_SMCSRIND,		/* Smaia/Smcsrind */
+  CSR_CLASS_SMCSRIND,		/* Smcsrind */
   CSR_CLASS_SMCNTRPMF,		/* Smcntrpmf */
   CSR_CLASS_SMCNTRPMF_32,	/* Smcntrpmf, rv32 only */
+  CSR_CLASS_SMRNMI,		/* Smrnmi */
   CSR_CLASS_SMSTATEEN,		/* Smstateen only */
   CSR_CLASS_SMSTATEEN_32,	/* Smstateen RV32 only */
   CSR_CLASS_SSAIA,		/* Ssaia */
   CSR_CLASS_SSAIA_AND_H,	/* Ssaia with H */
   CSR_CLASS_SSAIA_32,		/* Ssaia, rv32 only */
   CSR_CLASS_SSAIA_AND_H_32,	/* Ssaia with H, rv32 only */
+  CSR_CLASS_SSAIA_OR_SSCSRIND,		/* Ssaia/Smcsrind */
+  CSR_CLASS_SSAIA_OR_SSCSRIND_AND_H,	/* Ssaia/Smcsrind with H */
+  CSR_CLASS_SSCSRIND,		/* Sscsrind */
+  CSR_CLASS_SSCSRIND_AND_H,	/* Sscsrind with H */
   CSR_CLASS_SSSTATEEN,		/* S[ms]stateen only */
   CSR_CLASS_SSSTATEEN_AND_H,	/* S[ms]stateen only (with H) */
   CSR_CLASS_SSSTATEEN_AND_H_32,	/* S[ms]stateen RV32 only (with H) */
@@ -156,6 +164,7 @@ struct riscv_ip_error
 
 static const char default_arch[] = DEFAULT_ARCH;
 static const char *default_arch_with_ext = DEFAULT_RISCV_ARCH_WITH_EXT;
+static const char *file_arch_str = NULL;
 static enum riscv_spec_class default_isa_spec = ISA_SPEC_CLASS_NONE;
 static enum riscv_spec_class default_priv_spec = PRIV_SPEC_CLASS_NONE;
 
@@ -176,6 +185,9 @@ static enum float_abi float_abi = FLOAT_ABI_DEFAULT;
 #define ADD32_INSN (xlen == 64 ? "addiw" : "addi")
 
 static unsigned elf_flags = 0;
+
+/* Indicate whether we are already assembling any instructions.  */
+static bool start_assemble = false;
 
 static bool probing_insn_operands;
 
@@ -274,6 +286,16 @@ riscv_set_rvc (bool rvc_value)
   if (rvc_value)
     elf_flags |= EF_RISCV_RVC;
 
+  if (start_assemble && subseg_text_p (now_seg)
+      && riscv_opts.rvc && !rvc_value)
+    {
+      struct riscv_segment_info_type *info
+	= &seg_info(now_seg)->tc_segment_info_data;
+
+      info->last_insn16 = true;
+      info->rvc = rvc_value;
+    }
+
   riscv_opts.rvc = rvc_value;
 }
 
@@ -299,15 +321,17 @@ static riscv_parse_subset_t riscv_rps_as =
   true,			/* check_unknown_prefixed_ext.  */
 };
 
-/* Update the architecture string in the subset_list.  */
+/* Update file/function-level architecture string according to the
+   subset_list.  */
 
 static void
-riscv_reset_subsets_list_arch_str (void)
+riscv_set_arch_str (const char **arch_str_p)
 {
   riscv_subset_list_t *subsets = riscv_rps_as.subset_list;
-  if (subsets->arch_str != NULL)
-    free ((void *) subsets->arch_str);
-  subsets->arch_str = riscv_arch_str (xlen, subsets);
+  const char *arch_str = *arch_str_p;
+  if (arch_str != NULL)
+    free ((void *) arch_str);
+  *arch_str_p = riscv_arch_str (xlen, subsets);
 }
 
 /* This structure is used to hold a stack of .option values.  */
@@ -341,12 +365,11 @@ riscv_set_arch (const char *s)
     }
   riscv_release_subset_list (riscv_rps_as.subset_list);
   riscv_parse_subset (&riscv_rps_as, s);
-  riscv_reset_subsets_list_arch_str ();
+  riscv_set_arch_str (&file_arch_str);
+  riscv_set_arch_str (&riscv_rps_as.subset_list->arch_str);
 
-  riscv_set_rvc (false);
-  if (riscv_subset_supports (&riscv_rps_as, "c")
-      || riscv_subset_supports (&riscv_rps_as, "zca"))
-    riscv_set_rvc (true);
+  riscv_set_rvc (riscv_subset_supports (&riscv_rps_as, "c")
+		 || riscv_subset_supports (&riscv_rps_as, "zca"));
 
   if (riscv_subset_supports (&riscv_rps_as, "ztso"))
     riscv_set_tso ();
@@ -445,9 +468,6 @@ const char EXP_CHARS[] = "eE";
 /* Chars that mean this number is a floating point constant.
    As in 0f12.456 or 0d1.2345e12.  */
 const char FLT_CHARS[] = "rRsSfFdDxXpPhH";
-
-/* Indicate we are already assemble any instructions or not.  */
-static bool start_assemble = false;
 
 /* Indicate ELF attributes are explicitly set.  */
 static bool explicit_attr = false;
@@ -560,19 +580,19 @@ make_mapping_symbol (enum riscv_seg_mstate state,
     }
   frag->tc_frag_data.last_map_symbol = symbol;
 
-  if (removed == NULL)
-    return;
-
   if (odd_data_padding)
     {
       /* If the removed mapping symbol is $x+arch, then add it back to
 	 the next $x.  */
-      const char *str = strncmp (S_GET_NAME (removed), "$xrv", 4) == 0
+      const char *str = removed != NULL
+			&& strncmp (S_GET_NAME (removed), "$xrv", 4) == 0
 			? S_GET_NAME (removed) + 2 : NULL;
       make_mapping_symbol (MAP_INSN, frag->fr_fix + 1, frag, str,
 			   false/* odd_data_padding */);
     }
-  symbol_remove (removed, &symbol_rootP, &symbol_lastP);
+
+  if (removed != NULL)
+    symbol_remove (removed, &symbol_rootP, &symbol_lastP);
 }
 
 /* Set the mapping state for frag_now.  */
@@ -616,6 +636,7 @@ riscv_mapping_state (enum riscv_seg_mstate to_state,
 
   valueT value = (valueT) (frag_now_fix () - max_chars);
   seg_info (now_seg)->tc_segment_info_data.map_state = to_state;
+  seg_info (now_seg)->tc_segment_info_data.last_insn16 = false;
   const char *arch_str = reset_seg_arch_str
 			 ? riscv_rps_as.subset_list->arch_str : NULL;
   make_mapping_symbol (to_state, value, frag_now, arch_str,
@@ -1050,6 +1071,9 @@ riscv_csr_address (const char *csr_name,
     case CSR_CLASS_ZKR:
       extension = "zkr";
       break;
+    case CSR_CLASS_ZCMT:
+      extension = "zcmt";
+      break;
     case CSR_CLASS_V:
       extension = "zve32x";
       break;
@@ -1059,12 +1083,21 @@ riscv_csr_address (const char *csr_name,
     case CSR_CLASS_SMAIA:
       extension = "smaia";
       break;
+    case CSR_CLASS_SMAIA_OR_SMCSRIND:
+      extension = "smaia or smcsrind";
+      break;
+    case CSR_CLASS_SMCSRIND:
+      extension = "smcsrind";
+      break;
     case CSR_CLASS_SMCNTRPMF_32:
       is_rv32_only = true;
       /* Fall through.  */
     case CSR_CLASS_SMCNTRPMF:
       need_check_version = true;
       extension = "smcntrpmf";
+      break;
+    case CSR_CLASS_SMRNMI:
+      extension = "smrnmi";
       break;
     case CSR_CLASS_SMSTATEEN_32:
       is_rv32_only = true;
@@ -1081,6 +1114,16 @@ riscv_csr_address (const char *csr_name,
       is_h_required = (csr_class == CSR_CLASS_SSAIA_AND_H
 		       || csr_class == CSR_CLASS_SSAIA_AND_H_32);
       extension = "ssaia";
+      break;
+    case CSR_CLASS_SSAIA_OR_SSCSRIND:
+    case CSR_CLASS_SSAIA_OR_SSCSRIND_AND_H:
+      is_h_required = (csr_class == CSR_CLASS_SSAIA_OR_SSCSRIND_AND_H);
+      extension = "ssaia or sscsrind";
+      break;
+    case CSR_CLASS_SSCSRIND:
+    case CSR_CLASS_SSCSRIND_AND_H:
+      is_h_required = (csr_class == CSR_CLASS_SSCSRIND_AND_H);
+      extension = "sscsrind";
       break;
     case CSR_CLASS_SSSTATEEN_AND_H_32:
       is_rv32_only = true;
@@ -1600,6 +1643,9 @@ validate_riscv_insn (const struct riscv_opcode *opc, int length)
 	    case 'c':
 	      switch (*++oparg)
 		{
+		/* sreg operators in cm.mvsa01 and cm.mva01s.  */
+		case '1': USE_BITS (OP_MASK_SREG1, OP_SH_SREG1); break;
+		case '2': USE_BITS (OP_MASK_SREG2, OP_SH_SREG2); break;
 		/* byte immediate operators, load/store byte insns.  */
 		case 'h': used_bits |= ENCODE_ZCB_HALFWORD_UIMM (-1U); break;
 		/* halfword immediate operators, load/store halfword insns.  */
@@ -1608,6 +1654,9 @@ validate_riscv_insn (const struct riscv_opcode *opc, int length)
 		case 'p': used_bits |= ENCODE_ZCMP_SPIMM (-1U); break;
 		/* Register list operand for cm.push and cm.pop.  */
 		case 'r': USE_BITS (OP_MASK_REG_LIST, OP_SH_REG_LIST); break;
+		/* Table jump used by cm.jt or cm.jalt.  */
+		case 'i':
+		case 'I': used_bits |= ENCODE_ZCMT_INDEX (-1U); break;
 		case 'f': break;
 		default:
 		  goto unknown_validate_operand;
@@ -1660,11 +1709,24 @@ validate_riscv_insn (const struct riscv_opcode *opc, int length)
 	      switch (*++oparg)
 		{
 		  case '2':
-		    /* ls2[4:0] */
+		  case '4':
 		    used_bits |= ENCODE_CV_IS2_UIMM5 (-1U);
 		    break;
 		  case '3':
 		    used_bits |= ENCODE_CV_IS3_UIMM5 (-1U);
+		    break;
+		  case '5':
+		    used_bits |= ENCODE_CV_SIMD_IMM6(-1U);
+		    break;
+		  case '6':
+		    used_bits |= ENCODE_CV_BITMANIP_UIMM5(-1U);
+		    break;
+		  case '7':
+		    used_bits |= ENCODE_CV_BITMANIP_UIMM2(-1U);
+		    break;
+		  case '8':
+		    used_bits |= ENCODE_CV_SIMD_UIMM6(-1U);
+		    ++oparg;
 		    break;
 		  default:
 		    goto unknown_validate_operand;
@@ -1762,6 +1824,7 @@ init_opcode_hash (const struct riscv_opcode *opcodes,
    help us resolve the corresponding low-part relocation later.  */
 typedef struct
 {
+  const asection *sec;
   bfd_vma address;
   symbolS *symbol;
   bfd_vma target;
@@ -1776,7 +1839,13 @@ static hashval_t
 riscv_pcrel_fixup_hash (const void *entry)
 {
   const riscv_pcrel_hi_fixup *e = entry;
-  return (hashval_t) (e->address);
+
+  /* the pcrel_hi with same address may reside in different segments,
+     to ensure uniqueness, the segment ID needs to be included in the
+     hash key calculation.
+     Temporarily using the prime number 499 as a multiplier, but it
+     might not be large enough.  */
+  return e->address + 499 * e->sec->id;
 }
 
 /* Compare the keys between two entries fo the pcrel_hi hash table.  */
@@ -1785,16 +1854,17 @@ static int
 riscv_pcrel_fixup_eq (const void *entry1, const void *entry2)
 {
   const riscv_pcrel_hi_fixup *e1 = entry1, *e2 = entry2;
-  return e1->address == e2->address;
+  return e1->sec->id == e2->sec->id
+	  && e1->address == e2->address;
 }
 
 /* Record the pcrel_hi relocation.  */
 
 static bool
-riscv_record_pcrel_fixup (htab_t p, bfd_vma address, symbolS *symbol,
-			  bfd_vma target)
+riscv_record_pcrel_fixup (htab_t p, const asection *sec, bfd_vma address,
+			  symbolS *symbol, bfd_vma target)
 {
-  riscv_pcrel_hi_fixup entry = {address, symbol, target};
+  riscv_pcrel_hi_fixup entry = {sec, address, symbol, target};
   riscv_pcrel_hi_fixup **slot =
 	(riscv_pcrel_hi_fixup **) htab_find_slot (p, &entry, INSERT);
   if (slot == NULL)
@@ -2044,17 +2114,12 @@ macro_build (expressionS *ep, const char *name, const char *fmt, ...)
 static void
 md_assemblef (const char *format, ...)
 {
-  char *buf = NULL;
+  char *buf;
   va_list ap;
-  int r;
 
   va_start (ap, format);
 
-  r = vasprintf (&buf, format, ap);
-
-  if (r < 0)
-    as_fatal (_("internal: vasprintf failed"));
-
+  buf = xvasprintf (format, ap);
   md_assemble (buf);
   free(buf);
 
@@ -3852,6 +3917,40 @@ riscv_ip (char *str, struct riscv_cl_insn *ip, expressionS *imm_expr,
 		      asarg = expr_parse_end;
 		      imm_expr->X_op = O_absent;
 		      continue;
+		    case '1':
+		      if (!reg_lookup (&asarg, RCLASS_GPR, &regno)
+			  || !RISCV_SREG_0_7 (regno))
+			break;
+		      INSERT_OPERAND (SREG1, *ip, regno % 8);
+		      continue;
+		    case '2':
+		      if (!reg_lookup (&asarg, RCLASS_GPR, &regno)
+			  || !RISCV_SREG_0_7 (regno))
+			break;
+		      INSERT_OPERAND (SREG2, *ip, regno % 8);
+		      continue;
+		    case 'I': /* index operand of cm.jt. The range is from 0 to 31.  */
+		      my_getSmallExpression (imm_expr, imm_reloc, asarg, p);
+		      if (imm_expr->X_op != O_constant
+			  || imm_expr->X_add_number < 0
+			  || imm_expr->X_add_number > 31)
+			{
+			  as_bad ("bad index value for cm.jt, range: [0, 31]");
+			  break;
+			}
+		      ip->insn_opcode |= ENCODE_ZCMT_INDEX (imm_expr->X_add_number);
+		      goto rvc_imm_done;
+		    case 'i': /* index operand of cm.jalt. The range is from 32 to 255.  */
+		      my_getSmallExpression (imm_expr, imm_reloc, asarg, p);
+		      if (imm_expr->X_op != O_constant
+			  || imm_expr->X_add_number < 32
+			  || imm_expr->X_add_number > 255)
+			{
+			  as_bad ("bad index value for cm.jalt, range: [32, 255]");
+			  break;
+			}
+		      ip->insn_opcode |= ENCODE_ZCMT_INDEX (imm_expr->X_add_number);
+		      goto rvc_imm_done;
 		    default:
 		      goto unknown_riscv_ip_operand;
 		    }
@@ -3955,6 +4054,69 @@ riscv_ip (char *str, struct riscv_cl_insn *ip, expressionS *imm_expr,
 			  break;
 			ip->insn_opcode
 			    |= ENCODE_CV_IS3_UIMM5 (imm_expr->X_add_number);
+			continue;
+		      case '4':
+			my_getExpression (imm_expr, asarg);
+			check_absolute_expr (ip, imm_expr, FALSE);
+			asarg = expr_parse_end;
+			if (imm_expr->X_add_number < -16
+			    || imm_expr->X_add_number > 15)
+			  break;
+			ip->insn_opcode
+			    |= ENCODE_CV_IS2_UIMM5 (imm_expr->X_add_number);
+			continue;
+		      case '5':
+			my_getExpression (imm_expr, asarg);
+			check_absolute_expr (ip, imm_expr, FALSE);
+			asarg = expr_parse_end;
+			if (imm_expr->X_add_number < -32
+			    || imm_expr->X_add_number > 31)
+			  break;
+			ip->insn_opcode
+			    |= ENCODE_CV_SIMD_IMM6 (imm_expr->X_add_number);
+			continue;
+		      case '6':
+			my_getExpression (imm_expr, asarg);
+			check_absolute_expr (ip, imm_expr, FALSE);
+			asarg = expr_parse_end;
+			if (imm_expr->X_add_number < 0
+			    || imm_expr->X_add_number > 31)
+			  break;
+			ip->insn_opcode
+			    |= ENCODE_CV_BITMANIP_UIMM5 (imm_expr->X_add_number);
+			continue;
+		      case '7':
+			my_getExpression (imm_expr, asarg);
+			check_absolute_expr (ip, imm_expr, FALSE);
+			asarg = expr_parse_end;
+			if (imm_expr->X_add_number < 0
+			    || imm_expr->X_add_number > 3)
+			  break;
+			ip->insn_opcode
+			    |= ENCODE_CV_BITMANIP_UIMM2 (imm_expr->X_add_number);
+			continue;
+		      case '8':
+			my_getExpression (imm_expr, asarg);
+			check_absolute_expr (ip, imm_expr, FALSE);
+			asarg = expr_parse_end;
+			++oparg;
+			if (imm_expr->X_add_number < 0
+			    || imm_expr->X_add_number > 63)
+			  break;
+			else if (*oparg == '1'
+			    && imm_expr->X_add_number > 1)
+			  break;
+			else if (*oparg == '2'
+			    && imm_expr->X_add_number > 3)
+			  break;
+			else if (*oparg == '3'
+			    && imm_expr->X_add_number > 7)
+			  break;
+			else if (*oparg == '4'
+			    && imm_expr->X_add_number > 15)
+			  break;
+			ip->insn_opcode
+			    |= ENCODE_CV_SIMD_UIMM6 (imm_expr->X_add_number);
 			continue;
 		      default:
 			goto unknown_riscv_ip_operand;
@@ -4108,11 +4270,12 @@ riscv_ip_hardcode (char *str,
 	    generic_bignum[num],
 	    llen);
       memset(ip->insn_long_opcode + repr_bytes, 0, bytes - repr_bytes);
-      return NULL;
     }
-
-  if (bytes < sizeof(values[0]) && values[num - 1] >> (8 * bytes) != 0)
+  else if (bytes < sizeof(values[0]) && values[num - 1] >> (8 * bytes) != 0)
     return _("value conflicts with instruction length");
+
+  if (!riscv_opts.rvc && (bytes & 2))
+    seg_info (now_seg)->tc_segment_info_data.last_insn16 = true;
 
   return NULL;
 }
@@ -4171,7 +4334,7 @@ md_number_to_chars (char *buf, valueT val, int n)
     number_to_chars_littleendian (buf, val, n);
 }
 
-const char *md_shortopts = "O::g::G:";
+const char md_shortopts[] = "O::g::G:";
 
 enum options
 {
@@ -4192,7 +4355,7 @@ enum options
   OPTION_END_OF_ENUM
 };
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {"march", required_argument, NULL, OPTION_MARCH},
   {"fPIC", no_argument, NULL, OPTION_PIC},
@@ -4212,7 +4375,7 @@ struct option md_longopts[] =
 
   {NULL, no_argument, NULL, 0}
 };
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 int
 md_parse_option (int c, const char *arg)
@@ -4394,7 +4557,7 @@ md_pcrel_from (fixS *fixP)
 /* Apply a fixup to the object file.  */
 
 void
-md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
+md_apply_fix (fixS *fixP, valueT *valP, segT seg)
 {
   unsigned int subtype;
   bfd_byte *buf = (bfd_byte *) (fixP->fx_frag->fr_literal + fixP->fx_where);
@@ -4645,6 +4808,7 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 
 	  /* Record PCREL_HI20.  */
 	  if (!riscv_record_pcrel_fixup (riscv_pcrel_hi_fixup_hash,
+					 (const asection *) seg,
 					 md_pcrel_from (fixP),
 					 fixP->fx_addsy,
 					 target))
@@ -4666,7 +4830,8 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	 and set fx_done for -mno-relax.  */
       {
 	bfd_vma location_pcrel_hi = S_GET_VALUE (fixP->fx_addsy) + *valP;
-	riscv_pcrel_hi_fixup search = {location_pcrel_hi, 0, 0};
+	riscv_pcrel_hi_fixup search =
+		{(const asection *) seg, location_pcrel_hi, 0, 0};
 	riscv_pcrel_hi_fixup *entry = htab_find (riscv_pcrel_hi_fixup_hash,
 						 &search);
 	if (entry && entry->symbol
@@ -4675,7 +4840,10 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	  {
 	    bfd_vma target = entry->target;
 	    bfd_vma value = target - entry->address;
-	    bfd_putl32 (bfd_getl32 (buf) | ENCODE_ITYPE_IMM (value), buf);
+	    if (fixP->fx_r_type == BFD_RELOC_RISCV_PCREL_LO12_S)
+	      bfd_putl32 (bfd_getl32 (buf) | ENCODE_STYPE_IMM (value), buf);
+	    else
+	      bfd_putl32 (bfd_getl32 (buf) | ENCODE_ITYPE_IMM (value), buf);
 	    /* Relaxations should never be enabled by `.option relax'.  */
 	    if (!riscv_opts.relax)
 	      fixP->fx_done = 1;
@@ -4766,13 +4934,13 @@ s_riscv_option (int x ATTRIBUTE_UNUSED)
   if (strcmp (name, "rvc") == 0)
     {
       riscv_update_subset (&riscv_rps_as, "+c");
-      riscv_reset_subsets_list_arch_str ();
+      riscv_set_arch_str (&riscv_rps_as.subset_list->arch_str);
       riscv_set_rvc (true);
     }
   else if (strcmp (name, "norvc") == 0)
     {
       riscv_update_subset (&riscv_rps_as, "-c");
-      riscv_reset_subsets_list_arch_str ();
+      riscv_set_arch_str (&riscv_rps_as.subset_list->arch_str);
       riscv_set_rvc (false);
     }
   else if (strcmp (name, "pic") == 0)
@@ -4793,12 +4961,10 @@ s_riscv_option (int x ATTRIBUTE_UNUSED)
       if (ISSPACE (*name) && *name != '\0')
 	name++;
       riscv_update_subset (&riscv_rps_as, name);
-      riscv_reset_subsets_list_arch_str ();
+      riscv_set_arch_str (&riscv_rps_as.subset_list->arch_str);
 
-      riscv_set_rvc (false);
-      if (riscv_subset_supports (&riscv_rps_as, "c")
-	  || riscv_subset_supports (&riscv_rps_as, "zca"))
-	riscv_set_rvc (true);
+      riscv_set_rvc (riscv_subset_supports (&riscv_rps_as, "c")
+		     || riscv_subset_supports (&riscv_rps_as, "zca"));
 
       if (riscv_subset_supports (&riscv_rps_as, "ztso"))
 	riscv_set_tso ();
@@ -4906,14 +5072,26 @@ riscv_frag_align_code (int n)
   char *nops;
   expressionS ex;
 
-  /* If we are moving to a smaller alignment than the instruction size, then no
-     alignment is required. */
+  /* If we are moving to alignment no larger than the instruction size, then
+     no special alignment handling is required. */
   if (bytes <= insn_alignment)
-    return true;
+    {
+      if (bytes == insn_alignment)
+	seg_info (now_seg)->tc_segment_info_data.last_insn16 = false;
+      return false;
+    }
 
   /* When not relaxing, riscv_handle_align handles code alignment.  */
   if (!riscv_opts.relax)
     return false;
+
+  /* If the last item emitted was not an ordinary insn, first align back to
+     insn granularity.  Don't do this unconditionally, to avoid altering frags
+     when that's not actually needed.  */
+  if (seg_info (now_seg)->tc_segment_info_data.map_state != MAP_INSN
+      || seg_info (now_seg)->tc_segment_info_data.last_insn16)
+    frag_align_code (riscv_opts.rvc ? 1 : 2, 0);
+  seg_info (now_seg)->tc_segment_info_data.last_insn16 = false;
 
   /* Maybe we should use frag_var to create a new rs_align_code fragment,
      rather than just use frag_more to handle an alignment here?  So that we
@@ -4948,40 +5126,37 @@ riscv_handle_align (fragS *fragP)
   switch (fragP->fr_type)
     {
     case rs_align_code:
-      /* When relaxing, riscv_frag_align_code handles code alignment.  */
-      if (!riscv_opts.relax)
-	{
-	  bfd_signed_vma bytes = (fragP->fr_next->fr_address
-				  - fragP->fr_address - fragP->fr_fix);
-	  /* We have 4 byte uncompressed nops.  */
-	  bfd_signed_vma size = 4;
-	  bfd_signed_vma excess = bytes % size;
-	  bfd_boolean odd_padding = (excess % 2 == 1);
-	  char *p = fragP->fr_literal + fragP->fr_fix;
+      {
+	bfd_signed_vma bytes = (fragP->fr_next->fr_address
+				- fragP->fr_address - fragP->fr_fix);
+	/* We have 4 byte uncompressed nops.  */
+	bfd_signed_vma size = 4;
+	bfd_signed_vma excess = bytes % size;
+	char *p = fragP->fr_literal + fragP->fr_fix;
 
-	  if (bytes <= 0)
-	    break;
+	if (bytes <= 0)
+	  break;
 
-	  /* Insert zeros or compressed nops to get 4 byte alignment.  */
-	  if (excess)
-	    {
-	      if (odd_padding)
-		riscv_add_odd_padding_symbol (fragP);
-	      riscv_make_nops (p, excess);
-	      fragP->fr_fix += excess;
-	      p += excess;
-	    }
+	/* Insert zeros or compressed nops to get 4 byte alignment.  */
+	if (excess)
+	  {
+	    if (excess % 2)
+	      riscv_add_odd_padding_symbol (fragP);
+	    riscv_make_nops (p, excess);
+	    fragP->fr_fix += excess;
+	    p += excess;
+	  }
 
-	  /* The frag will be changed to `rs_fill` later.  The function
-	     `write_contents` will try to fill the remaining spaces
-	     according to the patterns we give.  In this case, we give
-	     a 4 byte uncompressed nop as the pattern, and set the size
-	     of the pattern into `fr_var`.  The nop will be output to the
-	     file `fr_offset` times.  However, `fr_offset` could be zero
-	     if we don't need to pad the boundary finally.  */
-	  riscv_make_nops (p, size);
-	  fragP->fr_var = size;
-	}
+	/* The frag will be changed to `rs_fill` later.  The function
+	   `write_contents` will try to fill the remaining spaces
+	   according to the patterns we give.  In this case, we give
+	   a 4 byte uncompressed nop as the pattern, and set the size
+	   of the pattern into `fr_var`.  The nop will be output to the
+	   file `fr_offset` times.  However, `fr_offset` could be zero
+	   if we don't need to pad the boundary finally.  */
+	riscv_make_nops (p, size);
+	fragP->fr_var = size;
+      }
       break;
 
     default:
@@ -5235,6 +5410,18 @@ tc_riscv_regname_to_dw2regnum (char *regname)
 }
 
 void
+riscv_elf_section_change_hook (void)
+{
+  struct riscv_segment_info_type *info
+    = &seg_info(now_seg)->tc_segment_info_data;
+
+  if (info->rvc && !riscv_opts.rvc)
+    info->last_insn16 = true;
+
+  info->rvc = riscv_opts.rvc;
+}
+
+void
 riscv_elf_final_processing (void)
 {
   riscv_set_abi_by_arch ();
@@ -5318,7 +5505,7 @@ s_riscv_insn (int x ATTRIBUTE_UNUSED)
 static void
 riscv_write_out_attrs (void)
 {
-  const char *arch_str, *priv_str, *p;
+  const char *priv_str, *p;
   /* versions[0]: major version.
      versions[1]: minor version.
      versions[2]: revision version.  */
@@ -5326,10 +5513,10 @@ riscv_write_out_attrs (void)
   unsigned int i;
 
   /* Re-write architecture elf attribute.  */
-  arch_str = riscv_rps_as.subset_list->arch_str;
-  if (!bfd_elf_add_proc_attr_string (stdoutput, Tag_RISCV_arch, arch_str))
+  if (!bfd_elf_add_proc_attr_string (stdoutput, Tag_RISCV_arch, file_arch_str))
     as_fatal (_("error adding attribute: %s"),
 	      bfd_errmsg (bfd_get_error ()));
+  free ((void *) file_arch_str);
 
   /* For the file without any instruction, we don't set the default_priv_spec
      according to the privileged elf attributes since the md_assemble isn't

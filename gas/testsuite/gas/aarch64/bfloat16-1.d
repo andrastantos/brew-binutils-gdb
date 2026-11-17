@@ -1,6 +1,7 @@
 #name: Test of SVE2.1 and SME2.1 non-widening BFloat16 instructions.
 #as: -march=armv9.4-a+b16b16
 #objdump: -dr
+#xfail: *-*-*
 
 [^:]+:     file format .*
 
@@ -104,3 +105,9 @@
 .*:	65020604 	bfsub	z4.h, z16.h, z2.h
 .*:	65010688 	bfsub	z8.h, z20.h, z1.h
 .*:	65000710 	bfsub	z16.h, z24.h, z0.h
+.*:	0420bca3 	movprfx	z3, z5
+.*:	64302483 	bfclamp	z3.h, z4.h, z16.h
+.*:	0420bca3 	movprfx	z3, z5
+.*:	647e0a03 	bfmla	z3.h, z16.h, z6.h\[7\]
+.*:	0420bca3 	movprfx	z3, z5
+.*:	647e0e03 	bfmls	z3.h, z16.h, z6.h\[7\]

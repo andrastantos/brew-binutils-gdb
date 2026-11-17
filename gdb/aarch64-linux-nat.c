@@ -78,12 +78,6 @@ public:
 
   int can_do_single_step () override;
 
-  /* Override the GNU/Linux inferior startup hook.  */
-  void post_startup_inferior (ptid_t) override;
-
-  /* Override the GNU/Linux post attach hook.  */
-  void post_attach (int pid) override;
-
   /* These three defer to common nat/ code.  */
   void low_new_thread (struct lwp_info *lp) override
   { aarch64_linux_new_thread (lp); }
@@ -93,6 +87,7 @@ public:
   { aarch64_linux_prepare_to_resume (lp); }
 
   void low_new_fork (struct lwp_info *parent, pid_t child_pid) override;
+  void low_init_process (pid_t pid) override;
   void low_forget_process (pid_t pid) override;
 
   /* Add our siginfo layout converter.  */
@@ -501,12 +496,11 @@ fetch_tlsregs_from_thread (struct regcache *regcache)
   gdb_assert (regno != -1);
   gdb_assert (tdep->tls_register_count > 0);
 
-  uint64_t tpidrs[tdep->tls_register_count];
-  memset(tpidrs, 0, sizeof(tpidrs));
+  std::vector<uint64_t> tpidrs (tdep->tls_register_count);
 
   struct iovec iovec;
-  iovec.iov_base = tpidrs;
-  iovec.iov_len = sizeof (tpidrs);
+  iovec.iov_base = tpidrs.data ();
+  iovec.iov_len = tpidrs.size () * sizeof (tpidrs[0]);
 
   int tid = get_ptrace_pid (regcache->ptid ());
   if (ptrace (PTRACE_GETREGSET, tid, NT_ARM_TLS, &iovec) != 0)
@@ -529,8 +523,7 @@ store_tlsregs_to_thread (struct regcache *regcache)
   gdb_assert (regno != -1);
   gdb_assert (tdep->tls_register_count > 0);
 
-  uint64_t tpidrs[tdep->tls_register_count];
-  memset(tpidrs, 0, sizeof(tpidrs));
+  std::vector<uint64_t> tpidrs (tdep->tls_register_count);
 
   for (int i = 0; i < tdep->tls_register_count; i++)
     {
@@ -541,8 +534,8 @@ store_tlsregs_to_thread (struct regcache *regcache)
     }
 
   struct iovec iovec;
-  iovec.iov_base = &tpidrs;
-  iovec.iov_len = sizeof (tpidrs);
+  iovec.iov_base = tpidrs.data ();
+  iovec.iov_len = tpidrs.size () * sizeof (tpidrs[0]);
 
   int tid = get_ptrace_pid (regcache->ptid ());
   if (ptrace (PTRACE_SETREGSET, tid, NT_ARM_TLS, &iovec) != 0)
@@ -844,29 +837,18 @@ ps_get_thread_area (struct ps_prochandle *ph,
 }
 
 
-/* Implement the virtual inf_ptrace_target::post_startup_inferior method.  */
+/* Implement the "low_init_process" target_ops method.  */
 
 void
-aarch64_linux_nat_target::post_startup_inferior (ptid_t ptid)
-{
-  low_forget_process (ptid.pid ());
-  aarch64_linux_get_debug_reg_capacity (ptid.pid ());
-  linux_nat_target::post_startup_inferior (ptid);
-}
-
-/* Implement the "post_attach" target_ops method.  */
-
-void
-aarch64_linux_nat_target::post_attach (int pid)
+aarch64_linux_nat_target::low_init_process (pid_t pid)
 {
   low_forget_process (pid);
-  /* Set the hardware debug register capacity.  If
-     aarch64_linux_get_debug_reg_capacity is not called
-     (as it is in aarch64_linux_child_post_startup_inferior) then
-     software watchpoints will be used instead of hardware
-     watchpoints when attaching to a target.  */
+  /* Set the hardware debug register capacity.  This requires the process to be
+     ptrace-stopped, otherwise detection will fail and software watchpoints will
+     be used instead of hardware.  If we allow this to be done lazily, we
+     cannot guarantee that it's called when the process is ptrace-stopped, so
+     do it now.  */
   aarch64_linux_get_debug_reg_capacity (pid);
-  linux_nat_target::post_attach (pid);
 }
 
 /* Implement the "read_description" target_ops method.  */
@@ -961,7 +943,7 @@ aarch64_linux_nat_target::stopped_data_address (CORE_ADDR *addr_p)
      kernel can potentially be tagged addresses.  */
   struct gdbarch *gdbarch = thread_architecture (inferior_ptid);
   const CORE_ADDR addr_trap
-    = gdbarch_remove_non_address_bits (gdbarch, (CORE_ADDR) siginfo.si_addr);
+    = aarch64_remove_non_address_bits (gdbarch, (CORE_ADDR) siginfo.si_addr);
 
   /* Check if the address matches any watched address.  */
   state = aarch64_get_debug_reg_state (inferior_ptid.pid ());

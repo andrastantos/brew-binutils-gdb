@@ -30,7 +30,6 @@
 @set MMIX
 @set MSP430
 @set NDS32
-@set NIOSII
 @set PDP11
 @set POWERPC
 @set POWERPC64
@@ -994,6 +993,28 @@ Use @var{output} as the name for the program produced by @command{ld}; if this
 option is not specified, the name @file{a.out} is used by default.  The
 script command @code{OUTPUT} can also specify the output file name.
 
+Note - the linker will delete the output file before it starts to
+write to it.  It will do this even if it turns out that the link
+cannot be completed due to errors.
+
+Note - the linker will check to make sure that the output file name
+does not match the name of any of the input files, but that is all.
+In particular it will not complain if the output file might overwrite
+a source file or some other important file.  Therefore in build
+systems it is recommended to use the @option{-o} option as the last
+option on the linker command line.  For example consider:
+
+@smallexample
+  ld -o $(EXE) $(OBJS)
+  ld $(OBJS) -o $(EXE)
+@end smallexample
+
+If the @samp{EXE} variable is not defined for some reason, the first
+version of the linker command could end up deleting one of the object
+files (the first one in the @samp{OBJS} list) whereas the second
+version of the linker command will generate an error message and not
+delete anything.
+
 @kindex --dependency-file=@var{depfile}
 @cindex dependency file
 @item --dependency-file=@var{depfile}
@@ -1120,6 +1141,21 @@ programs.  You may use this option more than once.
 For compatibility with other ELF linkers, if the @option{-R} option is
 followed by a directory name, rather than a file name, it is treated as
 the @option{-rpath} option.
+
+@item --rosegment
+@itemx --no-rosegment
+Attempt to ensure that only a single read-only, non-code segment is
+created.  Only useful when used in conjunction with the @option{-z
+separate-code} option.  The resulting binaries should be smaller than
+if @option{-z separate-code} is used on its own.  Without this option,
+or if @option{--no-rosegment} is specified, the @option{-z separate-code}
+option will create two read-only segments, one before the code segment
+and one after it.
+
+The name of the options are misleading, but they have been chosen in
+order for the linker to be compatible with the LLD and GOLD linkers.
+
+Thse options are only supported by ELF targets.
 
 @kindex -s
 @kindex --strip-all
@@ -1666,6 +1702,21 @@ Specify the x86-64 ISA level needed in .note.gnu.property section.
 @option{x86-64-v2} generates @code{GNU_PROPERTY_X86_ISA_1_V2}.
 @option{x86-64-v3} generates @code{GNU_PROPERTY_X86_ISA_1_V3}.
 @option{x86-64-v4} generates @code{GNU_PROPERTY_X86_ISA_1_V4}.
+Supported for Linux/i386 and Linux/x86_64.
+
+@item isa-level-report=none
+@itemx isa-level-report=all
+@itemx isa-level-report=needed
+@itemx isa-level-report=used
+Specify how to report x86-64 ISA levels in input relocatable files.
+@option{isa-level-report=none}, which is the default, will make the
+linker not report x86-64 ISA levels in input files.
+@option{isa-level-report=all} will make the linker report needed and
+used x86-64 ISA levels in input files.
+@option{isa-level-report=needed} will make the linker report needed
+x86-64 ISA levels in input files.
+@option{isa-level-report=used} will make the linker report used
+x86-64 ISA levels in input files.
 Supported for Linux/i386 and Linux/x86_64.
 
 @end table
@@ -2354,9 +2405,6 @@ This option is only supported on a few targets.
 @ifset M68HC11
 @xref{M68HC11/68HC12,,@command{ld} and the 68HC11 and 68HC12}.
 @end ifset
-@ifset NIOSII
-@xref{Nios II,,@command{ld} and the Altera Nios II}.
-@end ifset
 @ifset POWERPC
 @xref{PowerPC ELF32,,@command{ld} and PowerPC 32-bit ELF Support}.
 @end ifset
@@ -2680,6 +2728,19 @@ for compatibility with other linkers, you may omit the leading
 should be no white space between @var{sectionname}, the equals
 sign (``@key{=}''), and @var{org}.
 
+@kindex --image-base=@var{org}
+@item --image-base=@var{org}
+@cindex image base address, cmd line
+When using ELF, same as @option{-Ttext-segment}, with both options effectively
+setting the base address of the ELF executable.
+
+When using PE, use @var{value} as the base address of your program or dll.
+This is the lowest memory location that will be used when your program or
+dll is loaded.  To reduce the need to relocate and improve performance of
+your dlls, each should have a unique base address and not overlap any
+other dlls.  The default is 0x400000 for executables, and 0x10000000
+for dlls.
+
 @kindex -Tbss=@var{org}
 @kindex -Tdata=@var{org}
 @kindex -Ttext=@var{org}
@@ -2694,7 +2755,7 @@ Same as @option{--section-start}, with @code{.bss}, @code{.data} or
 @item -Ttext-segment=@var{org}
 @cindex text segment origin, cmd line
 When creating an ELF executable, it will set the address of the first
-byte of the text segment.  Note that when @option{-pie} is used with
+byte of the first segment.  Note that when @option{-pie} is used with
 @option{-Ttext-segment=@var{org}}, the output executable is marked
 ET_EXEC so that the address of the first byte of the text segment will
 be guaranteed to be @var{org} at run time.
@@ -3164,20 +3225,20 @@ maximum cache size to @var{size}.
 Request the creation of a @code{.note.gnu.build-id} ELF note section
 or a @code{.buildid} COFF section.  The contents of the note are
 unique bits identifying this linked file.  @var{style} can be
-@code{uuid} to use 128 random bits, @code{sha1} to use a 160-bit
-@sc{SHA1} hash on the normative parts of the output contents,
-@code{md5} to use a 128-bit @sc{MD5} hash on the normative parts of
-the output contents, or @code{0x@var{hexstring}} to use a chosen bit
-string specified as an even number of hexadecimal digits (@code{-} and
+@code{uuid} to use 128 random bits; @code{sha1} to use a 160-bit
+@sc{SHA1} hash, @code{md5} to use a 128-bit @sc{MD5} hash, or @code{xx}
+to use a 128-bit @sc{XXHASH} on the normative parts of the output
+contents; or @code{0x@var{hexstring}} to use a chosen bit string
+specified as an even number of hexadecimal digits (@code{-} and
 @code{:} characters between digit pairs are ignored).  If @var{style}
 is omitted, @code{sha1} is used.
 
-The @code{md5} and @code{sha1} styles produces an identifier
-that is always the same in an identical output file, but will be
-unique among all nonidentical output files.  It is not intended
-to be compared as a checksum for the file's contents.  A linked
-file may be changed later by other tools, but the build ID bit
-string identifying the original linked file does not change.
+The @code{md5}, @code{sha1}, and @code{xx} styles produces an
+identifier that is always the same in an identical output file, but
+are almost certainly unique among all nonidentical output files.  It
+is not intended to be compared as a checksum for the file's contents.
+A linked file may be changed later by other tools, but the build ID
+bit string identifying the original linked file does not change.
 
 Passing @code{none} for @var{style} disables the setting from any
 @code{--build-id} options earlier on the command line.
@@ -3188,6 +3249,11 @@ Request the creation of a @code{.note.package} ELF note section.  The
 contents of the note are in JSON format, as per the package metadata
 specification.  For more information see:
 https://systemd.io/ELF_PACKAGE_METADATA/
+The JSON argument support percent-encoding and following %[string]
+(where string refers to the name in HTML's Named Character References)
+encoding: @samp{%[comma]} for @samp{,}, @samp{%[lbrace]} for @samp{@{},
+@samp{%[quot]} for @samp{"}, @samp{%[rbrace]} for @samp{@}}, and
+@samp{%[space]} for space character.
 If the JSON argument is missing/empty then this will disable the
 creation of the metadata note, if one had been enabled by an earlier
 occurrence of the --package-metadata option.
@@ -3338,17 +3404,6 @@ file offsets which are multiples of this number.  This defaults to
 Specify the number of bytes of memory to reserve (and optionally commit)
 to be used as heap for this program.  The default is 1MB reserved, 4K
 committed.
-[This option is specific to the i386 PE targeted port of the linker]
-
-@cindex image base
-@kindex --image-base
-@item --image-base @var{value}
-Use @var{value} as the base address of your program or dll.  This is
-the lowest memory location that will be used when your program or dll
-is loaded.  To reduce the need to relocate and improve performance of
-your dlls, each should have a unique base address and not overlap any
-other dlls.  The default is 0x400000 for executables, and 0x10000000
-for dlls.
 [This option is specific to the i386 PE targeted port of the linker]
 
 @kindex --kill-at
@@ -3995,6 +4050,13 @@ default to not demangling symbols.  This environment variable is used in
 a similar fashion by the @code{gcc} linker wrapper program.  The default
 may be overridden by the @samp{--demangle} and @samp{--no-demangle}
 options.
+
+@kindex SOURCE_DATE_EPOCH
+@cindex timestamps
+If the PE/COFF specific @option{--insert-timestamp} is active and the
+@env{SOURCE_DATE_EPOCH} environment variable is defined, then the
+timestamp value in this variable will be inserted into the COFF header
+instead of the current time.
 
 @c man end
 @end ifset
@@ -5908,19 +5970,19 @@ special requirements of the section type are met.
 Note - the TYPE only is used if some or all of the contents of the
 section do not have an implicit type of their own.  So for example:
 @smallexample
-  .foo . TYPE = SHT_PROGBITS @{ *(.bar) @}
+  .foo . (TYPE = SHT_PROGBITS) : @{ *(.bar) @}
 @end smallexample
 will set the type of section @samp{.foo} to the type of the section
 @samp{.bar} in the input files, which may not be the SHT_PROGBITS
 type.  Whereas:
 @smallexample
-  .foo . TYPE = SHT_PROGBITS @{ BYTE(1) @}
+  .foo . (TYPE = SHT_PROGBITS) : @{ BYTE(1) @}
 @end smallexample
 will set the type of @samp{.foo} to SHT_PROGBBITS.  If it is necessary
 to override the type of incoming sections and force the output section
 type then an extra piece of untyped data will be needed:
 @smallexample
-  .foo . TYPE = SHT_PROGBITS @{ BYTE(1); *(.bar) @}
+  .foo . (TYPE = SHT_PROGBITS) : @{ BYTE(1); *(.bar) @}
 @end smallexample
 
 @item READONLY ( TYPE = @var{type} )
@@ -7682,9 +7744,6 @@ functionality are not listed.
 @ifset NDS32
 * NDS32::			@command{ld} and NDS32
 @end ifset
-@ifset NIOSII
-* Nios II::			@command{ld} and the Altera Nios II
-@end ifset
 @ifset POWERPC
 * PowerPC ELF32::		@command{ld} and PowerPC 32-bit ELF Support
 @end ifset
@@ -8132,6 +8191,64 @@ library have disappeared from the executable.  This option is only effective
 for Secure Gateway import libraries, ie. when @samp{--cmse-implib} is
 specified.
 
+@kindex -z force-bti
+@cindex Protect PLTs with Branch Target Identification
+The @samp{-z force-bti} option turns on the verification of Branch Target
+Identification (BTI) in input objects, generates PLTs with BTI, and marks the
+output with BTI.  If this option is omitted, but all input objects belonging to
+the link unit have the BTI marking, the linker implicitly generates PLTs with
+BTI, and marks the output with BTI.
+
+@kindex -z bti-report[=none|warning|error]
+@cindex Control warnings for missing BTI markings.
+The @samp{-z bti-report[=none|warning|error]} option specifies how to report
+missing BTI markings on inputs, i.e. the GNU_PROPERTY_AARCH64_FEATURE_1_BTI
+property.
+By default, if the option is omitted and @samp{-z force-bti} is provided,
+warnings are emitted.
+@itemize
+@item @samp{none} disables any warning messages.
+@item @samp{warning} (the default value) emits warning messages when input objects
+composing the link unit are missing BTI markings.
+@item @samp{error} turns the warning messages into errors.
+@end itemize
+If issues are found, a maximum of 20 messages will be emitted, and then a summary
+with the total number of issues will be displayed at the end.
+
+@kindex -z pac-plt
+@cindex Protect PLTs with Returned Pointer Authentication
+The @samp{-z pac-plt} option enables the usage of pointer authentication in PLTs.
+
+@kindex -z gcs=[always|never|implicit]
+@cindex Controls whether the output object supports the Guarded Control Stack (GCS) mechanism.
+The @samp{-z gcs} option controls the verification of Guarded Control Stack (GCS)
+markings on input objects and marks the output with GCS if all conditions are
+validated.
+@itemize
+@item @samp{implicit} (default if @samp{-z gcs} is omitted) enables GCS marking
+on the output if, and only if, all input objects composing the link unit are
+marked with GCS.
+@item @samp{always} forces the marking of the output with GCS.
+@item @samp{never} ignores any GCS marking on the input objects, and does not
+mark the output with GCS.
+@end itemize
+
+@kindex -z gcs-report[=none|warning|error]
+@cindex Control warnings for missing GCS markings.
+The @samp{-z gcs-report[=none|warning|error]} specifies how to report the missing
+GCS markings on inputs, i.e. the GNU_PROPERTY_AARCH64_FEATURE_1_GCS property.
+By default, if the option is omitted and @samp{-z gcs} is provided, warnings are
+emitted.
+@itemize
+@item @samp{none} disables any warning messages.
+@item @samp{warning} (the default value) emits warning messages when input objects
+composing the link unit are missing GCS markings, or dynamic objects containing
+external symbols used in the link unit.
+@item @samp{error} turns the warning messages into errors.
+@end itemize
+If issues are found, a maximum of 20 messages will be emitted, and then a summary
+with the total number of issues will be displayed at the end.
+
 @ifclear GENERIC
 @lowersections
 @end ifclear
@@ -8384,43 +8501,6 @@ Disable/enable the link-time IFC optimization.
 @item @samp{--mifc-loop-aware}
 Avoid generating the IFC instruction inside the loop.
 @end table
-
-@ifclear GENERIC
-@lowersections
-@end ifclear
-@end ifset
-
-@ifset NIOSII
-@ifclear GENERIC
-@raisesections
-@end ifclear
-
-@node Nios II
-@section @command{ld} and the Altera Nios II
-@cindex Nios II call relaxation
-@kindex --relax on Nios II
-
-Call and immediate jump instructions on Nios II processors are limited to
-transferring control to addresses in the same 256MB memory segment,
-which may result in @command{ld} giving
-@samp{relocation truncated to fit} errors with very large programs.
-The command-line option @option{--relax} enables the generation of
-trampolines that can access the entire 32-bit address space for calls
-outside the normal @code{call} and @code{jmpi} address range.  These
-trampolines are inserted at section boundaries, so may not themselves
-be reachable if an input section and its associated call trampolines are
-larger than 256MB.
-
-The @option{--relax} option is enabled by default unless @option{-r}
-is also specified.  You can disable trampoline generation by using the
-@option{--no-relax} linker option.  You can also disable this optimization
-locally by using the @samp{set .noat} directive in assembly-language
-source files, as the linker-inserted trampolines use the @code{at}
-register as a temporary.
-
-Note that the linker @option{--relax} option is independent of assembler
-relaxation options, and that using the GNU assembler's @option{-relax-all}
-option interferes with the linker's more selective call instruction relaxation.
 
 @ifclear GENERIC
 @lowersections

@@ -31,6 +31,10 @@
    when a .note-GNU-stack section is missing. */
 #undef DEFAULT_LD_EXECSTACK
 
+/* Define to 1 if you want to enable --rosegment in the ELF linker by default.
+   */
+#undef DEFAULT_LD_ROSEGMENT
+
 /* The default method for DT_TEXTREL check in ELF linker. */
 #undef DEFAULT_LD_TEXTREL_CHECK
 
@@ -90,10 +94,6 @@
 /* Define if the GNU dcgettext() function is already present or preinstalled.
    */
 #undef HAVE_DCGETTEXT
-
-/* Define to 1 if you have the declaration of `asprintf', and to 0 if you
-   don't. */
-#undef HAVE_DECL_ASPRINTF
 
 /* Define to 1 if you have the declaration of `environ', and to 0 if you
    don't. */
@@ -264,6 +264,9 @@
 
 /* Version number of package */
 #undef VERSION
+
+/* whether to use inline xxhash */
+#undef WITH_XXHASH
 
 /* Define to 1 if `lex' declares `yytext' as a `char *' by default, not a
    `char[]'. */

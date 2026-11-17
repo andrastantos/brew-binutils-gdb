@@ -75,7 +75,7 @@ struct pru_opt_s
 
 static struct pru_opt_s pru_opt = { true, true };
 
-const char *md_shortopts = "r";
+const char md_shortopts[] = "r";
 
 enum options
 {
@@ -84,7 +84,7 @@ enum options
   OPTION_NO_WARN_REGNAME_LABEL,
 };
 
-struct option md_longopts[] = {
+const struct option md_longopts[] = {
   { "mlink-relax",  no_argument, NULL, OPTION_LINK_RELAX  },
   { "mno-link-relax",  no_argument, NULL, OPTION_NO_LINK_RELAX  },
   { "mno-warn-regname-label",  no_argument, NULL,
@@ -92,7 +92,7 @@ struct option md_longopts[] = {
   { NULL, no_argument, NULL, 0 }
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 typedef struct pru_insn_reloc
 {
@@ -1401,6 +1401,7 @@ pru_parse_args (pru_insn_infoS *insn ATTRIBUTE_UNUSED, char *argstr,
   char *p;
   char *end = NULL;
   int i;
+  size_t len;
   p = argstr;
   i = 0;
   bool terminate = false;
@@ -1436,6 +1437,13 @@ pru_parse_args (pru_insn_infoS *insn ATTRIBUTE_UNUSED, char *argstr,
 	  if (end != NULL)
 	    as_bad (_("too many arguments"));
 	}
+
+      /* Strip trailing whitespace.  */
+      len = strlen (parsed_args[i]);
+      for (char *temp = parsed_args[i] + len - 1;
+	   len && ISSPACE (*temp);
+	   temp--, len--)
+	*temp = '\0';
 
       if (*parsestr == '\0' || (p != NULL && *p == '\0'))
 	terminate = true;

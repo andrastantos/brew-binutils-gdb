@@ -77,8 +77,8 @@ static unsigned long tic4x_oplevel = 0;   /* Opcode level */
 #define OPTION_ENHANCED (OPTION_MD_BASE + 7)
 #define OPTION_REV      (OPTION_MD_BASE + 8)
 
-const char *md_shortopts = "bm:prs";
-struct option md_longopts[] =
+const char md_shortopts[] = "bm:prs";
+const struct option md_longopts[] =
 {
   { "mcpu",   required_argument, NULL, OPTION_CPU },
   { "mdsp",   required_argument, NULL, OPTION_CPU },
@@ -93,8 +93,7 @@ struct option md_longopts[] =
   { NULL, no_argument, NULL, 0 }
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
-
+const size_t md_longopts_size = sizeof (md_longopts);
 
 typedef enum
   {
@@ -800,8 +799,8 @@ tic4x_globl (int ignore ATTRIBUTE_UNUSED)
     {
       c = get_symbol_name (&name);
       symbolP = symbol_find_or_make (name);
-      *input_line_pointer = c;
-      SKIP_WHITESPACE_AFTER_NAME ();
+      restore_line_pointer (c);
+      SKIP_WHITESPACE ();
       S_SET_STORAGE_CLASS (symbolP, C_EXT);
       S_SET_EXTERNAL (symbolP);
       if (c == ',')

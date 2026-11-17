@@ -269,13 +269,14 @@ call_target_sbrk (int sbrk_arg)
   struct value *sbrk_fn, *ret;
   bfd_vma tmp;
 
-  if (lookup_minimal_symbol ("sbrk", NULL, NULL).minsym != NULL)
+  if (lookup_minimal_symbol (current_program_space, "sbrk").minsym != nullptr)
     {
       sbrk_fn = find_function_in_inferior ("sbrk", &sbrk_objf);
       if (sbrk_fn == NULL)
 	return (bfd_vma) 0;
     }
-  else if (lookup_minimal_symbol ("_sbrk", NULL, NULL).minsym != NULL)
+  else if (lookup_minimal_symbol (current_program_space, "_sbrk").minsym
+	   != nullptr)
     {
       sbrk_fn = find_function_in_inferior ("_sbrk", &sbrk_objf);
       if (sbrk_fn == NULL)
@@ -528,7 +529,7 @@ objfile_find_memory_regions (struct target_ops *self,
 			     find_memory_region_ftype func, void *obfd)
 {
   /* Use objfile data to create memory sections.  */
-  bfd_vma temp_bottom, temp_top;
+  bfd_vma temp_bottom = 0, temp_top = 0;
 
   /* Call callback function for each objfile section.  */
   for (objfile *objfile : current_program_space->objfiles ())

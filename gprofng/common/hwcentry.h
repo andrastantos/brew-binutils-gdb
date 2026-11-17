@@ -118,6 +118,7 @@ extern "C"
     unsigned int use_perf_event_type : 16; /* Set 1 to use two fields below */
     unsigned int type : 16; /* Type of perf_event_attr */
     long long config;   /* perf_event_type -specific configuration */
+    long long config1;  /* perf_event_type -specific configuration */
     int sort_order;     /* "tag" to associate experiment record with HWC def */
     hrtime_t min_time;  /* target minimum time between overflow events.  0 is off.  See HWCTIME_* macros */
     hrtime_t min_time_default; /* if min_time==HWCTIME_AUTO, use this value instead.  0 is off. */
@@ -199,17 +200,12 @@ extern "C"
   extern char *hwc_get_docref (char *buf, size_t buflen);
   /* Return a CPU HWC document reference, or NULL. */
 
-  // TBR
-  extern char *hwc_get_default_cntrs ();
-  /* Return a default HW counter string; may be NULL, or zero-length */
-  /* NULL means none is defined in the table; or zero-length means string defined could not be loaded */
-
   extern char *hwc_get_default_cntrs2 (int forKernel, int style);
   /* like hwc_get_default_cntrs() for style==1 */
   /* but allows other styles of formatting as well */
   /* deprecate and eventually remove hwc_get_default_cntrs() */
 
-  extern char *hwc_get_orig_default_cntrs ();
+  extern char *hwc_get_orig_default_cntrs (int forKernel);
   /* Get the default HW counter string as set in the table */
   /* NULL means none is defined in the table */
 

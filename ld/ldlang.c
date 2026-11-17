@@ -2047,13 +2047,25 @@ lang_insert_orphan (asection *s,
 		 place orphan note section after non-note sections.  */
 
 	      first_orphan_note = NULL;
+
+	      /* NB: When --rosegment is used, the .note.gnu.build-id
+		 section is placed before text sections.  Ignore the
+		 .note.gnu.build-id section if -z separate-code and
+		 --rosegment are used together to avoid putting any
+		 note sections between the .note.gnu.build-id section
+		 and text sections in the same PT_LOAD segment.  */
+	      bool ignore_build_id = (link_info.separate_code
+				      && link_info.one_rosegment);
+
 	      for (sec = link_info.output_bfd->sections;
 		   (sec != NULL
 		    && !bfd_is_abs_section (sec));
 		   sec = sec->next)
 		if (sec != snew
 		    && elf_section_type (sec) == SHT_NOTE
-		    && (sec->flags & SEC_LOAD) != 0)
+		    && (sec->flags & SEC_LOAD) != 0
+		    && (!ignore_build_id
+			|| strcmp (sec->name, ".note.gnu.build-id") != 0))
 		  {
 		    if (!first_orphan_note)
 		      first_orphan_note = sec;
@@ -4881,9 +4893,6 @@ ld_is_local_symbol (asymbol * sym)
   const char * name = bfd_asymbol_name (sym);
 
   if (name == NULL || *name == 0)
-    return false;
-
-  if (strcmp (name, "(null)") == 0)
     return false;
 
   /* Skip .Lxxx and such like.  */
@@ -8417,7 +8426,8 @@ lang_process (void)
 	 sections, so that GCed sections are not merged, but before
 	 assigning dynamic symbols, since removing whole input sections
 	 is hard then.  */
-      bfd_merge_sections (link_info.output_bfd, &link_info);
+      if (!bfd_merge_sections (link_info.output_bfd, &link_info))
+	einfo (_("%F%P: bfd_merge_sections failed: %E\n"));
 
       /* Look for a text section and set the readonly attribute in it.  */
       found = bfd_get_section_by_name (link_info.output_bfd, ".text");
@@ -9000,7 +9010,7 @@ lang_record_phdrs (void)
 		continue;
 
 	      /* Don't add orphans to PT_INTERP header.  */
-	      if (l->type == 3)
+	      if (l->type == PT_INTERP)
 		continue;
 
 	      if (last == NULL)
@@ -9185,12 +9195,7 @@ void
 lang_leave_overlay_section (fill_type *fill,
 			    lang_output_section_phdr_list *phdrs)
 {
-  const char *name;
-  char *clean, *s2;
-  const char *s1;
-  char *buf;
-
-  name = current_section->name;
+  const char *name = current_section->name;;
 
   /* For now, assume that DEFAULT_MEMORY_REGION is the run-time memory
      region and that no load-time region has been specified.  It doesn't
@@ -9200,21 +9205,19 @@ lang_leave_overlay_section (fill_type *fill,
 
   /* Define the magic symbols.  */
 
-  clean = (char *) xmalloc (strlen (name) + 1);
-  s2 = clean;
-  for (s1 = name; *s1 != '\0'; s1++)
+  char *clean = xmalloc (strlen (name) + 1);
+  char *s2 = clean;
+  for (const char *s1 = name; *s1 != '\0'; s1++)
     if (ISALNUM (*s1) || *s1 == '_')
       *s2++ = *s1;
   *s2 = '\0';
 
-  buf = (char *) xmalloc (strlen (clean) + sizeof "__load_start_");
-  sprintf (buf, "__load_start_%s", clean);
+  char *buf = xasprintf ("__load_start_%s", clean);
   lang_add_assignment (exp_provide (buf,
 				    exp_nameop (LOADADDR, name),
 				    false));
 
-  buf = (char *) xmalloc (strlen (clean) + sizeof "__load_stop_");
-  sprintf (buf, "__load_stop_%s", clean);
+  buf = xasprintf ("__load_stop_%s", clean);
   lang_add_assignment (exp_provide (buf,
 				    exp_binop ('+',
 					       exp_nameop (LOADADDR, name),

@@ -189,7 +189,7 @@ allow_m32rx (int on)
 
 #define M32R_SHORTOPTS "O::K:"
 
-const char *md_shortopts = M32R_SHORTOPTS;
+const char md_shortopts[] = M32R_SHORTOPTS;
 
 enum md_option_enums
 {
@@ -212,7 +212,7 @@ enum md_option_enums
   OPTION_NO_WARN_UNMATCHED
 };
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {"m32r",  no_argument, NULL, OPTION_M32R},
   {"m32rx", no_argument, NULL, OPTION_M32RX},
@@ -243,7 +243,7 @@ struct option md_longopts[] =
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 static void
 little (int on)
@@ -725,7 +725,6 @@ md_begin (void)
   scom_section.flags          = SEC_IS_COMMON | SEC_SMALL_DATA;
   scom_section.output_section = & scom_section;
   scom_section.symbol         = & scom_symbol;
-  scom_section.symbol_ptr_ptr = & scom_section.symbol;
   scom_symbol                 = * bfd_com_section_ptr->symbol;
   scom_symbol.name            = ".scommon";
   scom_symbol.section         = & scom_section;
@@ -1483,8 +1482,8 @@ m32r_scomm (int ignore ATTRIBUTE_UNUSED)
 
   /* Just after name is now '\0'.  */
   p = input_line_pointer;
-  *p = c;
-  SKIP_WHITESPACE_AFTER_NAME ();
+  restore_line_pointer (c);
+  SKIP_WHITESPACE ();
   if (*input_line_pointer != ',')
     {
       as_bad (_("Expected comma after symbol-name: rest of line ignored."));

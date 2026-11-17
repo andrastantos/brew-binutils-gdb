@@ -65,7 +65,8 @@ EXTERNAL
 .  {
 .    bfd_plugin_unknown = 0,
 .    bfd_plugin_yes = 1,
-.    bfd_plugin_no = 2
+.    bfd_plugin_yes_unused = 2,
+.    bfd_plugin_no = 3
 .  };
 .
 .struct bfd_build_id
@@ -1956,6 +1957,23 @@ static bfd_lock_unlock_fn_type unlock_fn;
 static void *lock_data;
 
 /*
+INTERNAL_FUNCTION
+	_bfd_threading_enabled
+
+SYNOPSIS
+	bool _bfd_threading_enabled (void);
+
+DESCRIPTION
+	Return true if threading is enabled, false if not.
+*/
+
+bool
+_bfd_threading_enabled (void)
+{
+  return lock_fn != NULL;
+}
+
+/*
 FUNCTION
 	bfd_thread_init
 
@@ -1973,7 +1991,9 @@ DESCRIPTION
 	success and false on error.  DATA is passed verbatim to the
 	lock and unlock functions.  The lock and unlock functions
 	should return true on success, or set the BFD error and return
-	false on failure.
+	false on failure.  Note also that the lock must be a recursive
+	lock: BFD may attempt to acquire the lock when it is already
+	held by the current thread.
 */
 
 bool

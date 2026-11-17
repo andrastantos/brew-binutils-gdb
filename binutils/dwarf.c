@@ -677,7 +677,6 @@ fetch_indexed_string (uint64_t idx,
 
   str_offset = byte_get (index_section->start + index_offset, offset_size);
 
-  str_offset -= str_section->address;
   if (str_offset >= str_section->size)
     {
       warn (_("indirect offset too big: %#" PRIx64 "\n"), str_offset);
@@ -2035,7 +2034,7 @@ skip_attr_bytes (unsigned long form,
 
 static abbrev_entry *
 get_type_abbrev_from_form (unsigned long form,
-			   unsigned long uvalue,
+			   uint64_t uvalue,
 			   uint64_t cu_offset,
 			   unsigned char *cu_end,
 			   const struct dwarf_section *section,
@@ -2043,16 +2042,6 @@ get_type_abbrev_from_form (unsigned long form,
 			   unsigned char **data_return,
 			   abbrev_map **map_return)
 {
-  unsigned long   abbrev_number;
-  abbrev_map *    map;
-  abbrev_entry *  entry;
-  unsigned char * data;
-
-  if (abbrev_num_return != NULL)
-    * abbrev_num_return = 0;
-  if (data_return != NULL)
-    * data_return = NULL;
-
   switch (form)
     {
     case DW_FORM_GNU_ref_alt:
@@ -2063,8 +2052,8 @@ get_type_abbrev_from_form (unsigned long form,
     case DW_FORM_ref_addr:
       if (uvalue >= section->size)
 	{
-	  warn (_("Unable to resolve ref_addr form: uvalue %lx "
-		  "> section size %" PRIx64 " (%s)\n"),
+	  warn (_("Unable to resolve ref_addr form: uvalue %" PRIx64
+		  " >= section size %" PRIx64 " (%s)\n"),
 		uvalue, section->size, section->name);
 	  return NULL;
 	}
@@ -2082,8 +2071,8 @@ get_type_abbrev_from_form (unsigned long form,
       if (uvalue + cu_offset < uvalue
 	  || uvalue + cu_offset > (size_t) (cu_end - section->start))
 	{
-	  warn (_("Unable to resolve ref form: uvalue %lx + cu_offset %" PRIx64
-		  " > CU size %tx\n"),
+	  warn (_("Unable to resolve ref form: uvalue %" PRIx64
+		  " + cu_offset %" PRIx64 " > CU size %tx\n"),
 		uvalue, cu_offset, cu_end - section->start);
 	  return NULL;
 	}
@@ -2097,17 +2086,18 @@ get_type_abbrev_from_form (unsigned long form,
       return NULL;
     }
 
-  data = (unsigned char *) section->start + uvalue;
-  map = find_abbrev_map_by_offset (uvalue);
+  abbrev_map *map = find_abbrev_map_by_offset (uvalue);
 
   if (map == NULL)
     {
-      warn (_("Unable to find abbreviations for CU offset %#lx\n"), uvalue);
+      warn (_("Unable to find abbreviations for CU offset %" PRIx64 "\n"),
+	    uvalue);
       return NULL;
     }
   if (map->list == NULL)
     {
-      warn (_("Empty abbreviation list encountered for CU offset %lx\n"), uvalue);
+      warn (_("Empty abbreviation list encountered for CU offset %" PRIx64 "\n"),
+	    uvalue);
       return NULL;
     }
 
@@ -2119,17 +2109,23 @@ get_type_abbrev_from_form (unsigned long form,
 	*map_return = NULL;
     }
 
-  READ_ULEB (abbrev_number, data, section->start + section->size);
+  unsigned char *data = section->start + uvalue;
+  if (form == DW_FORM_ref_addr)
+    cu_end = section->start + map->end;
 
+  unsigned long abbrev_number;
+  READ_ULEB (abbrev_number, data, cu_end);
+
+  if (abbrev_num_return != NULL)
+    *abbrev_num_return = abbrev_number;
+
+  if (data_return != NULL)
+    *data_return = data;
+
+  abbrev_entry *entry;
   for (entry = map->list->first_abbrev; entry != NULL; entry = entry->next)
     if (entry->number == abbrev_number)
       break;
-
-  if (abbrev_num_return != NULL)
-    * abbrev_num_return = abbrev_number;
-
-  if (data_return != NULL)
-    * data_return = data;
 
   if (entry == NULL)
     warn (_("Unable to find entry for abbreviation %lu\n"), abbrev_number);
@@ -2393,6 +2389,31 @@ display_lang (uint64_t uvalue)
     case DW_LANG_Fortran03:		printf ("Fortran 03"); break;
     case DW_LANG_Fortran08:		printf ("Fortran 08"); break;
     case DW_LANG_RenderScript:		printf ("RenderScript"); break;
+    case DW_LANG_C17:                   printf ("C17"); break;
+    case DW_LANG_Fortran18:             printf ("Fortran 18"); break;
+    case DW_LANG_Ada2005:               printf ("Ada 2005"); break;
+    case DW_LANG_Ada2012:               printf ("Ada 2012"); break;
+    case DW_LANG_HIP:                   printf ("Hip"); break;
+    case DW_LANG_Assembly:              printf ("Assembler"); break;
+    case DW_LANG_C_sharp:               printf ("C Sharp"); break;
+    case DW_LANG_Mojo:                  printf ("Mojo"); break;
+    case DW_LANG_GLSL:                  printf ("GLSL"); break;
+    case DW_LANG_GLSL_ES:               printf ("GLSL_ES"); break;
+    case DW_LANG_HLSL:                  printf ("HLSL"); break;
+    case DW_LANG_OpenCL_CPP:            printf ("OpenCL C++"); break;
+    case DW_LANG_CPP_for_OpenCL:        printf ("C++ for OpenCL"); break;
+    case DW_LANG_SYCL:                  printf ("SYCL"); break;
+    case DW_LANG_C_plus_plus_17:        printf ("C++17"); break;
+    case DW_LANG_C_plus_plus_20:        printf ("C++20"); break;
+    case DW_LANG_C_plus_plus_23:	printf ("C++23"); break;
+    case DW_LANG_Odin:                  printf ("Odin"); break;
+    case DW_LANG_P4:                    printf ("P4"); break;
+    case DW_LANG_Metal:                 printf ("C23"); break;
+    case DW_LANG_C23:                   printf ("C23"); break;
+    case DW_LANG_Fortran23:             printf ("Fortran 23"); break;
+    case DW_LANG_Ruby:                  printf ("Ruby"); break;
+    case DW_LANG_Move:                  printf ("Move"); break;
+    case DW_LANG_Hylo:                  printf ("Hylo"); break;
 
       /* MIPS extension.  */
     case DW_LANG_Mips_Assembler:	printf ("MIPS assembler"); break;
@@ -3574,15 +3595,15 @@ skip_attribute (unsigned long    form,
 		int              dwarf_version)
 {
   uint64_t temp;
-  int64_t stemp;
+  size_t inc;
 
   switch (form)
     {
     case DW_FORM_ref_addr:
-      data += dwarf_version == 2 ? pointer_size : offset_size;
+      inc = dwarf_version == 2 ? pointer_size : offset_size;
       break;
     case DW_FORM_addr:
-      data += pointer_size;
+      inc = pointer_size;
       break;
     case DW_FORM_strp_sup:
     case DW_FORM_strp:
@@ -3590,44 +3611,44 @@ skip_attribute (unsigned long    form,
     case DW_FORM_sec_offset:
     case DW_FORM_GNU_ref_alt:
     case DW_FORM_GNU_strp_alt:
-      data += offset_size;
+      inc = offset_size;
       break;
     case DW_FORM_ref1:
     case DW_FORM_flag:
     case DW_FORM_data1:
     case DW_FORM_strx1:
     case DW_FORM_addrx1:      
-      data += 1;
+      inc = 1;
       break;
     case DW_FORM_ref2:
     case DW_FORM_data2:
     case DW_FORM_strx2:
     case DW_FORM_addrx2:      
-      data += 2;
+      inc = 2;
       break;
     case DW_FORM_strx3:
     case DW_FORM_addrx3:      
-      data += 3;
+      inc = 3;
       break;
     case DW_FORM_ref_sup4:
     case DW_FORM_ref4:
     case DW_FORM_data4:
     case DW_FORM_strx4:
     case DW_FORM_addrx4:
-      data += 4;
+      inc = 4;
       break;
     case DW_FORM_ref_sup8:
     case DW_FORM_ref8:
     case DW_FORM_data8:
     case DW_FORM_ref_sig8:
-      data += 8;
+      inc = 8;
       break;
     case DW_FORM_data16:      
-      data += 16;
+      inc = 16;
       break;
     case DW_FORM_sdata:
-      READ_SLEB (stemp, data, end);
-      break;
+      SKIP_SLEB (data, end);
+      return data;
     case DW_FORM_GNU_str_index:
     case DW_FORM_strx:
     case DW_FORM_ref_udata:
@@ -3636,41 +3657,45 @@ skip_attribute (unsigned long    form,
     case DW_FORM_addrx:
     case DW_FORM_loclistx:
     case DW_FORM_rnglistx:
-      READ_ULEB (temp, data, end);
-      break;
-
+      SKIP_ULEB (data, end);
+      return data;
     case DW_FORM_indirect:
       while (form == DW_FORM_indirect)
         READ_ULEB (form, data, end);
-      return skip_attribute (form, data, end, pointer_size, offset_size, dwarf_version);
+      return skip_attribute (form, data, end, pointer_size, offset_size,
+			     dwarf_version);
 
     case DW_FORM_string:
-      data += strnlen ((char *) data, end - data);    
+      inc = strnlen ((char *) data, end - data);
       break;
     case DW_FORM_block:
     case DW_FORM_exprloc:
       READ_ULEB (temp, data, end);
-      data += temp;
+      inc = temp;
       break;
     case DW_FORM_block1:
       SAFE_BYTE_GET_AND_INC (temp, data, 1, end);
-      data += temp;
+      inc = temp;
       break;
     case DW_FORM_block2:
       SAFE_BYTE_GET_AND_INC (temp, data, 2, end);
-      data += temp;
+      inc = temp;
       break;
     case DW_FORM_block4:
       SAFE_BYTE_GET_AND_INC (temp, data, 4, end);
-      data += temp;
+      inc = temp;
       break;
     case DW_FORM_implicit_const:
     case DW_FORM_flag_present:
-      break;
+      return data;
     default:
       warn (_("Unexpected form in top DIE\n"));
-      break;
+      return data;
     }
+  if (inc <= (size_t) (end - data))
+    data += inc;
+  else
+    data = end;
   return data;
 }
 
@@ -3701,7 +3726,8 @@ read_bases (abbrev_entry *   entry,
 	  else
 	    warn (_("Unexpected form of DW_AT_rnglists_base in the top DIE\n"));
 	}
-      else if (attr->attribute == DW_AT_addr_base || attr->attribute == DW_AT_GNU_addr_base)
+      else if (attr->attribute == DW_AT_addr_base
+	       || attr->attribute == DW_AT_GNU_addr_base)
 	{
 	  if (attr->form == DW_FORM_sec_offset)
 	    {
@@ -8145,7 +8171,7 @@ display_debug_rnglists_list (unsigned char * start,
 	  READ_ULEB (base_address, start, finish);
 	  print_hex (base_address, pointer_size);
 	  printf (_("(base address index) "));
-	  base_address = fetch_indexed_addr ((base_address * pointer_size) + addr_base,
+	  base_address = fetch_indexed_addr (base_address * pointer_size + addr_base,
 					     pointer_size);
 	  print_hex (base_address, pointer_size);
 	  printf (_("(base address)\n"));
@@ -8153,15 +8179,15 @@ display_debug_rnglists_list (unsigned char * start,
 	case DW_RLE_startx_endx:
 	  READ_ULEB (begin, start, finish);
 	  READ_ULEB (end, start, finish);
-	  begin = fetch_indexed_addr ((begin * pointer_size) + addr_base,
+	  begin = fetch_indexed_addr (begin * pointer_size + addr_base,
 				      pointer_size);
-	  end   = fetch_indexed_addr ((begin * pointer_size) + addr_base,
+	  end   = fetch_indexed_addr (end * pointer_size + addr_base,
 				      pointer_size);
 	  break;
 	case DW_RLE_startx_length:
 	  READ_ULEB (begin, start, finish);
 	  READ_ULEB (length, start, finish);
-	  begin = fetch_indexed_addr ((begin * pointer_size) + addr_base,
+	  begin = fetch_indexed_addr (begin * pointer_size + addr_base,
 				      pointer_size);
 	  end = begin + length;
 	  break;
@@ -8795,6 +8821,27 @@ init_dwarf_regnames_riscv (void)
   dwarf_regnames_lookup_func = regname_internal_riscv;
 }
 
+static const char *const dwarf_regnames_loongarch[] =
+{
+  "$zero", "$ra", "$tp", "$sp", "$a0", "$a1", "$a2", "$a3",  /* 0-7   */
+  "$a4",   "$a5", "$a6", "$a7", "$t0", "$t1", "$t2", "$t3",  /* 8-15  */
+  "$t4",   "$t5", "$t6", "$t7", "$t8", "$r21","$fp", "$s0",  /* 16-23 */
+  "$s1",   "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$s8",  /* 24-31 */
+  "$fa0", "$fa1", "$fa2", "$fa3", "$fa4",  "$fa5",  "$fa6",  /* 32-38 */
+  "$fa7", "$ft0", "$ft1", "$ft2", "$ft3",  "$ft4",  "$ft5",  /* 39-45 */
+  "$ft6", "$ft7", "$ft8", "$ft9", "$ft10", "$ft11", "$ft12", /* 46-52 */
+  "$ft13", "$ft14", "$ft15", "$fs0", "$fs1", "$fs2", "$fs3", /* 53-59 */
+  "$fs4",  "$fs5",  "$fs6",  "$fs7",			     /* 60-63 */
+};
+
+static void
+init_dwarf_regnames_loongarch (void)
+{
+  dwarf_regnames = dwarf_regnames_loongarch;
+  dwarf_regnames_count = ARRAY_SIZE (dwarf_regnames_loongarch);
+  dwarf_regnames_lookup_func = regname_internal_by_table_only;
+}
+
 void
 init_dwarf_regnames_by_elf_machine_code (unsigned int e_machine)
 {
@@ -8827,6 +8874,10 @@ init_dwarf_regnames_by_elf_machine_code (unsigned int e_machine)
 
     case EM_RISCV:
       init_dwarf_regnames_riscv ();
+      break;
+
+    case EM_LOONGARCH:
+      init_dwarf_regnames_loongarch ();
       break;
 
     default:
@@ -8876,6 +8927,10 @@ init_dwarf_regnames_by_bfd_arch_and_mach (enum bfd_architecture arch,
 
     case bfd_arch_riscv:
       init_dwarf_regnames_riscv ();
+      break;
+
+    case bfd_arch_loongarch:
+      init_dwarf_regnames_loongarch ();
       break;
 
     default:
@@ -12316,34 +12371,14 @@ load_debug_sup_file (const char * main_filename, void * file)
     }
 
   if (filename[0] != '/' && strchr (main_filename, '/'))
-    {
-      char * new_name;
-      int new_len;
-
-      new_len = asprintf (& new_name, "%.*s/%s",
+    filename = xasprintf ("%.*s/%s",
 			  (int) (strrchr (main_filename, '/') - main_filename),
 			  main_filename,
 			  filename);
-      if (new_len < 3)
-	{
-	  warn (_("unable to construct path for supplementary debug file\n"));
-	  if (new_len > -1)
-	    free (new_name);
-	  return;
-	}
-      filename = new_name;
-    }
   else
-    {
-      /* PR 27796: Make sure that we pass a filename that can be free'd to
-	 add_separate_debug_file().  */
-      filename = strdup (filename);
-      if (filename == NULL)
-	{
-	  warn (_("out of memory constructing filename for .debug_sup link\n"));
-	  return;
-	}
-    }
+    /* PR 27796: Make sure that we pass a filename that can be free'd to
+       add_separate_debug_file().  */
+    filename = xstrdup (filename);
 
   void * handle = open_debug_file (filename);
   if (handle == NULL)

@@ -1742,9 +1742,9 @@ const pseudo_typeS md_pseudo_table[] =
   {NULL, NULL, 0}
 };
 
-const char *md_shortopts = "mm:,mP,mQ,ml,mN,mn,my,mY,mu,mU";
+const char md_shortopts[] = "mm:,mP,mQ,ml,mN,mn,my,mY,mu,mU";
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {"msilicon-errata", required_argument, NULL, OPTION_SILICON_ERRATA},
   {"msilicon-errata-warn", required_argument, NULL, OPTION_SILICON_ERRATA_WARN},
@@ -1764,7 +1764,7 @@ struct option md_longopts[] =
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 void
 md_show_usage (FILE * stream)
@@ -4541,7 +4541,7 @@ md_apply_fix (fixS * fixp, valueT * valuep, segT seg)
 	  break;
 
 	case BFD_RELOC_32:
-	  bfd_putl16 ((bfd_vma) value, where);
+	  bfd_putl32 ((bfd_vma) value, where);
 	  break;
 
 	case BFD_RELOC_MSP430_ABS8:
@@ -4697,7 +4697,7 @@ tc_gen_reloc (asection * seg ATTRIBUTE_UNUSED, fixS * fixp)
 	  reloc2->addend = - S_GET_VALUE (fixp->fx_subsy);
 
 	  if (ssec == absolute_section)
-	    reloc2->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
+	    reloc2->sym_ptr_ptr = &bfd_abs_section_ptr->symbol;
 	  else
 	    {
 	      reloc2->sym_ptr_ptr = XNEW (asymbol *);
@@ -4708,7 +4708,7 @@ tc_gen_reloc (asection * seg ATTRIBUTE_UNUSED, fixS * fixp)
 	  if (asec == absolute_section)
 	    {
 	      reloc->addend += S_GET_VALUE (fixp->fx_addsy);
-	      reloc->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
+	      reloc->sym_ptr_ptr = &bfd_abs_section_ptr->symbol;
 	    }
 	  else
 	    {
@@ -4746,8 +4746,7 @@ tc_gen_reloc (asection * seg ATTRIBUTE_UNUSED, fixS * fixp)
 	      break;
 
 	    default:
-	      reloc->sym_ptr_ptr
-		= (asymbol **) bfd_abs_section_ptr->symbol_ptr_ptr;
+	      reloc->sym_ptr_ptr = &bfd_abs_section_ptr->symbol;
 	      return relocs;
 	    }
 

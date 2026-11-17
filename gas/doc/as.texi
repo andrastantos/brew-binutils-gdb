@@ -243,6 +243,7 @@ gcc(1), ld(1), and the Info entries for @file{binutils} and @file{ld}.
  [@b{--gsframe}]
  [@b{--hash-size}=@var{N}]
  [@b{--help}] [@b{--target-help}]
+ [@b{--info}] [@b{--no-info}]
  [@b{-I} @var{dir}]
  [@b{-J}]
  [@b{-K}]
@@ -260,7 +261,8 @@ gcc(1), ld(1), and the Info entries for @file{binutils} and @file{ld}.
  [@b{--size-check=[error|warning]}]
  [@b{--statistics}]
  [@b{-v}] [@b{-version}] [@b{--version}]
- [@b{-W}] [@b{--warn}] [@b{--fatal-warnings}] [@b{-w}] [@b{-x}]
+ [@b{-W}] [@b{--no-warn}] [@b{--warn}] [@b{--fatal-warnings}]
+ [@b{-w}] [@b{-x}]
  [@b{-Z}] [@b{@@@var{FILE}}]
  [@var{target-options}]
  [@b{--}|@var{files} @dots{}]
@@ -494,12 +496,6 @@ gcc(1), ld(1), and the Info entries for @file{binutils} and @file{ld}.
    [@b{--gnu-syntax}] [@b{--relax}] [@b{--no-predefined-symbols}]
    [@b{--no-expand}] [@b{--no-merge-gregs}] [@b{-x}]
    [@b{--linker-allocated-gregs}]
-@end ifset
-@ifset NIOSII
-
-@emph{Target Nios II options:}
-   [@b{-relax-all}] [@b{-relax-section}] [@b{-no-relax}]
-   [@b{-EB}] [@b{-EL}]
 @end ifset
 @ifset NDS32
 
@@ -872,6 +868,12 @@ Print a summary of the command-line options and exit.
 @item --target-help
 Print a summary of all target specific options and exit.
 
+@item --info
+Don't suppress informational messages.
+
+@item --no-info
+Suppress informational messages.
+
 @item -I @var{dir}
 Add directory @var{dir} to the search list for @code{.include} directives.
 
@@ -936,7 +938,7 @@ Name the object-file output from @command{@value{AS}} @var{objfile}.
 Fold the data section into the text section.
 
 @item --reduce-memory-overheads
-Ignored.  Supported for compatibility with tools that apss the same option to
+Ignored.  Supported for compatibility with tools that pass the same option to
 both the assembler and the linker.
 
 @ifset ELF
@@ -983,11 +985,11 @@ Print the @command{as} version and exit.
 @itemx --no-warn
 Suppress warning messages.
 
-@item --fatal-warnings
-Treat warnings as errors.
-
 @item --warn
 Don't suppress warning messages or treat them as errors.
+
+@item --fatal-warnings
+Treat warnings as errors.
 
 @item -w
 Ignored.
@@ -1325,24 +1327,6 @@ The target machine does (or does not) have a memory-management
 unit coprocessor.  The default is to assume an MMU for 68020 and up.
 
 @end table
-@end ifset
-
-@ifset NIOSII
-
-@ifclear man
-@xref{Nios II Options}, for the options available when @value{AS} is configured
-for an Altera Nios II processor.
-@end ifclear
-
-@ifset man
-@c man begin OPTIONS
-The following options are available when @value{AS} is configured for an
-Altera Nios II processor.
-@c man end
-@c man begin INCLUDE
-@include c-nios2.texi
-@c ended inside the included file
-@end ifset
 @end ifset
 
 @ifset PDP11
@@ -1960,7 +1944,7 @@ Specify which s390 processor variant is the target, @samp{g5} (or
 @samp{arch6}), @samp{z9-109}, @samp{z9-ec} (or @samp{arch7}), @samp{z10} (or
 @samp{arch8}), @samp{z196} (or @samp{arch9}), @samp{zEC12} (or @samp{arch10}),
 @samp{z13} (or @samp{arch11}), @samp{z14} (or @samp{arch12}), @samp{z15}
-(or @samp{arch13}), or @samp{z16} (or @samp{arch14}).
+(or @samp{arch13}), @samp{z16} (or @samp{arch14}), or @samp{arch15}.
 @item -mregnames
 @itemx -mno-regnames
 Allow or disallow symbolic names for registers.
@@ -2445,6 +2429,7 @@ assembler.)
 * alternate::     --alternate enable alternate macro syntax
 * D::             -D for compatibility and debugging
 * f::             -f to work faster
+* info::          --info, --no-info to control informational messages
 * I::             -I for .include search path
 @ifclear DIFF-TBL-KLUGE
 * K::             -K for compatibility
@@ -2556,6 +2541,32 @@ the input file(s) before assembling them.  @xref{Preprocessing,
 preprocessed (if they contain comments, for example), @command{@value{AS}} does
 not work correctly.
 @end quotation
+
+@node info
+@section Control Informational Messages: @option{--info}, @option{--no-info}
+
+In some cases, @command{@value{AS}} might give additional informational messages
+associated to a context that generated a warning or error message when assembling.
+The informational message provides additional details about an earlier diagnostic
+message, usually in the form of some context (such as when the earlier diagnostic
+was within a macro).
+All such information are directed to the standard error file.
+This flag only affects the informational messages, it does not change any particular
+of how @command{@value{AS}} assembles your file.
+
+@kindex --info
+@cindex diagnostic information, switching on (default behavior)
+The option @option{--info} is enabled by default, and enables printing of additional
+diagnostic information.
+
+@kindex --no-info
+@cindex diagnostic informations, switching off
+You can switch the option @option{--info} off by specifying @option{--no-info},
+which disables printing of additional information in the context of an earlier
+diagnostic.
+
+Specifying @option{--info} after @option{--no-info} will turn on again printing
+of additional diagnostic information.
 
 @node I
 @section @code{.include} Search Path: @option{-I} @var{path}
@@ -2863,7 +2874,7 @@ option @samp{-v} (which you can also spell as @samp{-version}) on the
 command line.
 
 @node W
-@section Control Warnings: @option{-W}, @option{--warn}, @option{--no-warn}, @option{--fatal-warnings}
+@section Control Warnings: @option{-W}, @option{--no-warn}, @option{--warn}, @option{--fatal-warnings}
 
 @command{@value{AS}} should never give a warning or error message when
 assembling compiler output.  But programs written by people often
@@ -2874,21 +2885,23 @@ made.  All such warnings are directed to the standard error file.
 @kindex --no-warn
 @cindex suppressing warnings
 @cindex warnings, suppressing
-If you use the @option{-W} and @option{--no-warn} options, no warnings are issued.
+If you use the @option{-W} or @option{--no-warn} option, no warnings are issued.
 This only affects the warning messages: it does not change any particular of
 how @command{@value{AS}} assembles your file.  Errors, which stop the assembly,
 are still reported.
+
+@kindex --warn
+@cindex outputing warnings
+@cindex warnings, switching on
+Warnings are switched on by default. They can be switched off with @option{-W} or
+@option{--no-warn}. Specifying the @option{--warn} again later on the command line
+will switch on warnings again, and cause them to be output as usual.
 
 @kindex --fatal-warnings
 @cindex errors, caused by warnings
 @cindex warnings, causing error
 If you use the @option{--fatal-warnings} option, @command{@value{AS}} considers
 files that generate warnings to be in error.
-
-@kindex --warn
-@cindex warnings, switching on
-You can switch these options off again by specifying @option{--warn}, which
-causes warnings to be output as usual.
 
 @node Z
 @section Generate Object File in Spite of Errors: @option{-Z}
@@ -2987,11 +3000,11 @@ as exactly one space.
 @section Comments
 
 @cindex comments
-There are two ways of rendering comments to @command{@value{AS}}.  In both
-cases the comment is equivalent to one space.
+There are two ways of rendering comments to @command{@value{AS}}.
 
 Anything from @samp{/*} through the next @samp{*/} is a comment.
-This means you may not nest these comments.
+This means you may not nest these comments.  Such a comment is equivalent to
+one space, plus bumping the line counter accordingly.
 
 @smallexample
 /*
@@ -4497,6 +4510,7 @@ Some machine configurations provide additional directives.
 * Asciz::                       @code{.asciz "@var{string}"}@dots{}
 * Attach_to_group::             @code{.attach_to_group @var{name}}
 * Balign::                      @code{.balign [@var{abs-expr}[, @var{abs-expr}]]}
+* Base64::                      @code{.base64 "@var{string}"[, @dots{}]}
 @ifset ELF
 * Bss::                         @code{.bss @var{subsection}}
 @end ifset
@@ -4784,7 +4798,7 @@ and use the result as a string.
 
 @item No passing arguments to macros based upon keyword assignment.
 In altmacro mode arguments cannot be passed to macros by keyword assignment.
-See @xref{altmacro-keyword-arguments} for more details
+See @xref{altmacro-keyword-arguments}.
 @end ftable
 
 @node Ascii
@@ -4850,6 +4864,24 @@ fill pattern as a four byte longword value.  For example, @code{.balignw
 filled in with the value 0x368d (the exact placement of the bytes depends upon
 the endianness of the processor).  If it skips 1 or 3 bytes, the fill value is
 undefined.
+
+@node Base64
+@section @code{.base64 "@var{string}"[, @dots{}]}
+Allows binary data to be entered into a section encoded as a base64 string.
+There is no maximum length to the strings, but they must be a multiple of four
+bytes long.  If necessary the ends of the strings can be padded with @code{=}
+characters.  Line breaks, control characters and escaped characters are not
+allowed in the strings.  The strings must be enclosed between double quote
+characters.  Multiple strings are allowed, but they must be separated by
+commas.
+
+As an example of how to create a base64 encoded string, see the
+@command{base64} program (with its @option{-w0} option to disable line breaks).
+
+Note: for targets where the size of a byte is larger than the size of an octet
+the @code{.base64} directive will, if necessary, pad the end of the @emph{last}
+string so that the total number of octets generated are a multiple the number
+of octets in a byte.
 
 @ifset ELF
 @node Bss
@@ -6183,7 +6215,12 @@ With that definition, @samp{SUM 0,5} is equivalent to this assembly input:
 @item .macro @var{macname}
 @itemx .macro @var{macname} @var{macargs} @dots{}
 @cindex @code{macro} directive
-Begin the definition of a macro called @var{macname}.  If your macro
+Begin the definition of a macro called @var{macname}.  Macro names are case
+insensitive.  Macro definitions can be nested, although their behaviour is
+sometimes counter intuitive.  Nested macros only have scope within their
+defining macro.
+
+If your macro
 definition requires arguments, specify their names after the macro name,
 separated by commas or spaces.  You can qualify the macro argument to
 indicate whether all invocations must specify a non-blank value (through
@@ -6348,6 +6385,29 @@ adjacent string literals - even if separated only by a blank - will not be
 concatenated when determining macro arguments, even if they're only separated
 by white space.  This is unlike certain other pseudo ops, e.g. @code{.ascii}.
 
+Nested macros can access the arguments of their parents.  But also if their
+argument names clash with those of their parents, their versions are used.  So
+for example:
+
+@smallexample
+.macro OUTER arg1, arg2, arg3:vararg
+     .macro INNER arg4 arg2
+        .dc.a \arg2
+	.dc.a \arg3
+     .endm
+     INNER \arg1 bert
+	.dc.a \arg2
+.endm
+
+OUTER fred, jim, harry\arg4
+@end smallexample
+
+This will generate references to symbols called @samp{jim} - from the
+definition of the OUTER macro, @samp{bert} - from the definition in INNER
+where arg2 has been overridden and @samp{harryfred} - from the definition in
+INNER where the value of arg3 from OUTER is used, but with the value of arg4
+substituted into the symbol.
+
 @item .endm
 @cindex @code{endm} directive
 Mark the end of a macro definition.
@@ -6362,6 +6422,33 @@ Exit early from the current macro definition.
 @command{@value{AS}} maintains a counter of how many macros it has
 executed in this pseudo-variable; you can copy that number to your
 output with @samp{\@@}, but @emph{only within a macro definition}.
+
+Note - the @samp{\@@} counter is incremented at the end of the expansion of a
+macro, but before the contents of any nested macros are evaluated.  This can
+lead to counter-intuitive behaviour when nested macros are used.  For example:
+
+@smallexample
+  .macro o
+    .macro i
+    _i\@@_:
+    .endm
+    i
+    _o\@@_:
+  .endm
+  o
+@end smallexample
+
+Produces two symbols @samp{_o0_} and @samp{_i1_}.  This happens because the
+@samp{o} macro executes entirely first, putting the definition and invocation
+of the @samp{i} macro into the input buffer.  It also puts the definition of
+the @samp{_o\@@_} symbol into the input buffer, evaluating the @samp{\@@}
+counter in the process and so generating a symbol called @samp{_o0_}.
+
+That finishes the invocation of @samp{o} so the @samp{\@@} counter is
+incremented.  Then the input buffer is re-evaluated and the definition and
+invocation of macro @samp{i} is found.  This results in @samp{_i\@@_} being put
+into the input buffer and this time @samp{\@@} evaluates to 1, so the symbol
+created is @samp{_i1_}.
 
 @cindex number of times a macro has been executed
 @cindex macro, execution count
@@ -6649,6 +6736,9 @@ those explicitly specified with @code{.eject}.
 Undefine the macro @var{name}, so that later uses of the string will not be
 expanded.  @xref{Macro}.
 
+Note - nested macros are automatically purged at the end of the macro that
+defines them.
+
 @ifset ELF
 @node PushSection
 @section @code{.pushsection @var{name} [, @var{subsection}] [, "@var{flags}"[, @@@var{type}[,@var{arguments}]]]}
@@ -6738,6 +6828,13 @@ is equivalent to assembling
 
 A count of zero is allowed, but nothing is generated.  Negative counts are not
 allowed and if encountered will be treated as if they were zero.
+
+Much like for macros, @code{.irp}, and @code{.irpc} the @samp{\+} sequence can
+be used to substitute in the number of iterations done so far.  In such cases,
+i.e. when any @samp{\+} character sequence is present between @code{.rept} and
+the corresponding @code{.endr}, other backslashes also need escaping by
+backslashes.  Naturally the amount of escaping necessary may increase when
+using nested constructs.
 
 @node Sbttl
 @section @code{.sbttl "@var{subheading}"}
@@ -6972,17 +7069,18 @@ Note - some sections, eg @code{.text} and @code{.data} are considered to be
 special and have fixed types.  Any attempt to declare them with a different
 type will generate an error from the assembler.
 
-If @var{flags} contains the @code{M} symbol then the @var{type} argument must
-be specified as well as an extra argument---@var{entsize}---like this:
+If @var{flags} contains the @code{M} and/or @code{S} symbol then the @var{type}
+argument must be specified as well as an extra argument---@var{entsize}---like
+this:
 
 @smallexample
 .section @var{name} , "@var{flags}"M, @@@var{type}, @var{entsize}
 @end smallexample
 
 Sections with the @code{M} flag but not @code{S} flag must contain fixed size
-constants, each @var{entsize} octets long. Sections with both @code{M} and
-@code{S} must contain zero terminated strings where each character is
-@var{entsize} bytes long. The linker may remove duplicates within sections with
+constants, each @var{entsize} octets long. Sections with @code{S} must contain
+zero terminated strings where each character is @var{entsize} bytes long. For
+@code{M} sections the linker may remove duplicates within sections with
 the same name, same entity size and same flags.  @var{entsize} must be an
 absolute expression.  For sections with both @code{M} and @code{S}, a string
 which is a suffix of a larger string is considered a duplicate.  Thus
@@ -7002,8 +7100,8 @@ is not generally a good idea as section indices are rarely known at assembly
 time, but the facility is provided for testing purposes.  An index of zero is
 allowed.  It indicates that the linked-to section has already been discarded.
 
-Note: If both the @var{M} and @var{o} flags are present, then the fields
-for the Merge flag should come first, like this:
+Note: If both one of @var{M} or @var{S} and @var{o} flags are present, then the
+fields for the Merge/String flag should come first, like this:
 
 @smallexample
 .section @var{name},"@var{flags}"Mo,@@@var{type},@var{entsize},@var{SymbolName}
@@ -7026,8 +7124,8 @@ indicates that only one copy of this section should be retained
 an alias for comdat
 @end table
 
-Note: if both the @var{M} and @var{G} flags are present then the fields for
-the Merge flag should come first, like this:
+Note: Uf both one of @var{M} or @var{S} and @var{G} flags are present then the
+fields for the Merge/String flag should come first, like this:
 
 @smallexample
 .section @var{name} , "@var{flags}"MG, @@@var{type}, @var{entsize}, @var{GroupName}[, @var{linkage}]
@@ -7778,7 +7876,7 @@ section, using the endian model of the target.  If an expression will not fit
 in two bytes, a warning message is displayed and the least significant two
 bytes of the expression's value are used.  If an expression cannot be evaluated
 at assembly time then relocations will be generated in order to compute the
-value at link time.  
+value at link time.
 
 This directive does not apply any alignment before or after inserting the
 values.  As a result of this, if relocations are generated, they may be
@@ -8143,9 +8241,6 @@ subject, see the hardware manufacturer's manual.
 @ifset NDS32
 * NDS32-Dependent::             Andes NDS32 Dependent Features
 @end ifset
-@ifset NIOSII
-* NiosII-Dependent::            Altera Nios II Dependent Features
-@end ifset
 @ifset NS32K
 * NS32K-Dependent::		NS32K Dependent Features
 @end ifset
@@ -8381,10 +8476,6 @@ family.
 
 @ifset NDS32
 @include c-nds32.texi
-@end ifset
-
-@ifset NIOSII
-@include c-nios2.texi
 @end ifset
 
 @ifset NS32K

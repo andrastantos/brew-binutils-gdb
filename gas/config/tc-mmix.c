@@ -80,7 +80,7 @@ static void mmix_cons (int);
    }						\
  while (0)
 
-const char *md_shortopts = "x";
+const char md_shortopts[] = "x";
 static int current_fb_label = -1;
 static char *pending_label = NULL;
 
@@ -189,7 +189,7 @@ static int doing_bspec = 0;
 static const char *bspec_file;
 static unsigned int bspec_line;
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
  {
 #define OPTION_RELAX  (OPTION_MD_BASE)
 #define OPTION_NOEXPAND  (OPTION_RELAX + 1)
@@ -215,7 +215,7 @@ struct option md_longopts[] =
    {NULL, no_argument, NULL, 0}
  };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 static htab_t mmix_opcode_hash;
 
@@ -382,7 +382,7 @@ const pseudo_typeS md_pseudo_table[] =
    {NULL, 0, 0}
  };
 
-const char mmix_comment_chars[] = "%!";
+const char comment_chars[] = "%!";
 
 /* A ':' is a valid symbol character in mmixal.  It's the prefix
    delimiter, but other than that, it works like a symbol character,
@@ -439,16 +439,6 @@ mmix_fill_nops (char *opcodep, int n)
 
   for (i = 0; i < n; i++)
     md_number_to_chars (opcodep + i * 4, SWYM_INSN_BYTE << 24, 4);
-}
-
-/* See macro md_parse_name in tc-mmix.h.  */
-
-int
-mmix_current_location (void (*fn) (expressionS *), expressionS *exp)
-{
-  (*fn) (exp);
-
-  return 1;
 }
 
 /* Get up to three operands, filling them into the exp array.

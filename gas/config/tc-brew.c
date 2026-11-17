@@ -2017,7 +2017,7 @@ enum options
   OPTION_T,
   OPTION_NT,
 };
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   { "F",           no_argument, NULL, OPTION_F},
   { "NF",          no_argument, NULL, OPTION_NF},
@@ -2026,9 +2026,9 @@ struct option md_longopts[] =
   { NULL,          no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof(md_longopts);
+const size_t md_longopts_size = sizeof(md_longopts);
 
-const char *md_shortopts = "";
+const char md_shortopts[] = "";
 
 int
 md_parse_option (int c ATTRIBUTE_UNUSED, const char *arg ATTRIBUTE_UNUSED)

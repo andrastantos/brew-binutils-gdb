@@ -64,7 +64,7 @@ responsibility among the other maintainers.
 
   AARCH64	   Richard Earnshaw <rearnsha@arm.com>
   AARCH64	   Marcus Shawcroft <marcus.shawcroft@arm.com>
-  ARC		   Claudiu Zissulescu <claziss@synopsys.com>
+  ARC		   Claudiu Zissulescu <claziss@gmail.com>
   ARM		   Nick Clifton <nickc@redhat.com>
   ARM		   Richard Earnshaw <rearnsha@arm.com>
   ARM		   Ramana Radhakrishnan <ramana.radhakrishnan@arm.com>
@@ -73,9 +73,7 @@ responsibility among the other maintainers.
   BFIN		   Jie Zhang <jzhang918@gmail.com>
   BFIN		   Mike Frysinger <vapier@gentoo.org>
   BPF		   Jose E. Marchesi <jose.marchesi@oracle.com>
-  CR16		   M R Swami Reddy <MR.Swami.Reddy@nsc.com>
   CRIS		   Hans-Peter Nilsson <hp@axis.com>
-  CRX		   M R Swami Reddy <MR.Swami.Reddy@nsc.com>
   CTF		   Nick Alcock <nick.alcock@oracle.com>
   C-SKY		   Lifang Xia <lifang_xia@linux.alibaba.com>
   C-SKY		   Yunhai Shang <yunhai@linux.alibaba.com>
@@ -119,13 +117,10 @@ responsibility among the other maintainers.
   Moxie		   Anthony Green <green@moxielogic.com>
   NDS32		   Kuan-Lin Chen <kuanlinchentw@gmail.com>
   NDS32		   Wei-Cheng Wang <cole945@gmail.com>
-  NetBSD support   Matt Thomas <matt@netbsd.org>
-  Nios II	   Sandra Loosemore <sloosemore@baylibre.com>
-  Nios II	   Andrew Jenner <andrew@codesourcery.com>
   OR1K		   Christian Svensson <blue@cmd.nu>
   OR1K		   Stefan Kristiansson <stefan.kristiansson@saunalahti.fi>
   OR1K		   Stafford Horne <shorne@gmail.com>
-  PPC		   Peter Bergner <bergner@vnet.ibm.com>
+  PPC		   Peter Bergner <bergner@linux.ibm.com>
   PPC vector ext   Aldy Hernandez <aldyh@redhat.com>
   RISC-V	   Palmer Dabbelt <palmer@dabbelt.com>
   RISC-V	   Andrew Waterman <andrew@sifive.com>
@@ -140,9 +135,6 @@ responsibility among the other maintainers.
   SPU		   Alan Modra <amodra@gmail.com>
   TIC54X           Timothy Wall <twall@alum.mit.edu>
   TIC6X            Joseph Myers <josmyers@redhat.com>
-  TILE-Gx          Walter Lee <walt@tilera.com>
-  TILEPro          Walter Lee <walt@tilera.com>
-  VAX		   Matt Thomas <matt@netbsd.org>
   VAX		   Jan-Benedict Glaw <jbglaw@lug-owl.de>
   Visium	   Eric Botcazou <ebotcazou@libertysurf.fr>
   VMS		   Tristan Gingold <tgingold@free.fr>
@@ -167,12 +159,15 @@ goes with them.
   Jason Eckhardt
   Geoff Keating
   Mark Kettenis
+  Walter Lee
   Mei Ligang
   Arnold Metselaar
   Mark Mitchell
   Bernd Schmidt
   Svein Seldal
+  M R Swami Reddy
   Martin Schwidefsky
+  Matt Thomas
 
       --------- CGEN Maintainers -------------
 

@@ -209,11 +209,11 @@ operatorT i386_operator (const char *name, unsigned int operands, char *pc)
 	      || i386_types[j].sz[0] > 8
 	      || (i386_types[j].sz[0] & (i386_types[j].sz[0] - 1)))
 	    return O_illegal;
-	  switch (i.encoding)
+	  switch (pp.encoding)
 	    {
 	    case encoding_default:
 	    case encoding_egpr:
-	      i.encoding = encoding_evex;
+	      pp.encoding = encoding_evex;
 	      break;
 	    case encoding_evex:
 	    case encoding_evex512:
@@ -236,13 +236,15 @@ operatorT i386_operator (const char *name, unsigned int operands, char *pc)
   return O_absent;
 }
 
-static int i386_intel_parse_name (const char *name, expressionS *e)
+static int i386_intel_parse_name (const char *name,
+				  expressionS *e,
+				  enum expr_mode mode)
 {
   unsigned int j;
 
   if (! strcmp (name, "$"))
     {
-      current_location (e);
+      current_location (e, mode);
       return 1;
     }
 
@@ -907,7 +909,8 @@ i386_intel_operand (char *operand_string, int got_a_float)
   /* Operands for jump/call need special consideration.  */
   if (current_templates.start->opcode_modifier.jump == JUMP
       || current_templates.start->opcode_modifier.jump == JUMP_DWORD
-      || current_templates.start->opcode_modifier.jump == JUMP_INTERSEGMENT)
+      || current_templates.start->opcode_modifier.jump == JUMP_INTERSEGMENT
+      || current_templates.start->mnem_off == MN_jmpabs)
     {
       bool jumpabsolute = false;
 
@@ -1126,7 +1129,7 @@ i386_intel_operand (char *operand_string, int got_a_float)
 	  else
 	    i.types[this_operand].bitfield.disp16 = 1;
 
-#if defined (OBJ_AOUT) || defined (OBJ_MAYBE_AOUT)
+#ifdef OBJ_AOUT
 	  /*
 	   * exp_seg is used only for verification in
 	   * i386_finalize_displacement, and we can end up seeing reg_section

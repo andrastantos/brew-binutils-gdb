@@ -84,9 +84,7 @@ extern unsigned long i386_mach (void);
 #define ELF_TARGET_IAMCU_FORMAT	"elf32-iamcu"
 #endif
 
-#if ((defined (OBJ_MAYBE_COFF) && defined (OBJ_MAYBE_AOUT)) \
-     || defined (OBJ_ELF) || defined (OBJ_MAYBE_ELF) \
-     || defined (TE_PE) || defined (TE_PEP) || defined (OBJ_MACH_O))
+#if (defined (OBJ_ELF) || defined (TE_PE) || defined (OBJ_MACH_O))
 extern const char *i386_target_format (void);
 #define TARGET_FORMAT i386_target_format ()
 #else
@@ -141,7 +139,7 @@ int i386_validate_fix (struct fix *);
     if (!i386_validate_fix(FIX)) goto SKIP;      \
   } while (0)
 
-#if defined (OBJ_ELF) || defined (OBJ_MAYBE_ELF)
+#ifdef OBJ_ELF
 #define tc_fix_adjustable(X)  tc_i386_fix_adjustable(X)
 extern int tc_i386_fix_adjustable (struct fix *);
 #else
@@ -183,8 +181,18 @@ extern int tc_i386_fix_adjustable (struct fix *);
    || (FIX)->fx_r_type == BFD_RELOC_X86_64_REX_GOTPCRELX	\
    || (FIX)->fx_r_type == BFD_RELOC_X86_64_CODE_4_GOTPCRELX)
 
-extern int i386_parse_name (char *, expressionS *, char *);
-#define md_parse_name(s, e, m, c) i386_parse_name (s, e, c)
+extern void i386_start_line (void);
+#define md_start_line_hook i386_start_line
+
+extern bool i386_check_label (void);
+#define TC_START_LABEL(STR, NUL_CHAR, NEXT_CHAR) \
+  (NEXT_CHAR == ':' && i386_check_label ())
+
+extern int i386_unrecognized_line (int);
+#define tc_unrecognized_line i386_unrecognized_line
+
+extern int i386_parse_name (char *, expressionS *, enum expr_mode, char *);
+#define md_parse_name(s, e, m, c) i386_parse_name (s, e, m, c)
 
 extern operatorT i386_operator (const char *name, unsigned int operands, char *);
 #define md_operator i386_operator
@@ -223,7 +231,7 @@ if ((n)									\
 extern void i386_cons_align (int);
 #define md_cons_align(nbytes) i386_cons_align (nbytes)
 
-#if !defined (OBJ_AOUT) && !defined (OBJ_MAYBE_AOUT)
+#ifndef OBJ_AOUT
 #define md_section_align(seg, value) ((void)(seg), (value))
 #endif
 
@@ -416,7 +424,7 @@ extern void i386_solaris_fix_up_eh_frame (segT);
 extern bfd_vma x86_64_section_letter (int, const char **);
 #define md_elf_section_letter(LETTER, PTR_MSG)	x86_64_section_letter (LETTER, PTR_MSG)
 
-#if defined (OBJ_ELF) || defined (OBJ_MAYBE_ELF)
+#ifdef OBJ_ELF
 extern void x86_cleanup (void);
 #define md_cleanup() x86_cleanup ()
 
@@ -441,20 +449,20 @@ extern bool x86_scfi_callee_saved_p (uint32_t dw2reg_num);
 extern bool x86_support_sframe_p (void);
 #define support_sframe_p x86_support_sframe_p
 
-/* The stack-pointer register number for SFrame stack trace info.  */
+/* The stack pointer DWARF register number for SFrame CFA tracking.  */
 extern unsigned int x86_sframe_cfa_sp_reg;
 #define SFRAME_CFA_SP_REG x86_sframe_cfa_sp_reg
 
-/* The frame-pointer register number for SFrame stack trace info.  */
+/* The frame pointer DWARF register number for SFrame CFA and FP tracking.  */
 extern unsigned int x86_sframe_cfa_fp_reg;
 #define SFRAME_CFA_FP_REG x86_sframe_cfa_fp_reg
 
-/* Specify if RA tracking is needed.  */
+/* Whether SFrame return address tracking is needed.  */
 extern bool x86_sframe_ra_tracking_p (void);
 #define sframe_ra_tracking_p x86_sframe_ra_tracking_p
 
-/* Specify the fixed offset to recover RA from CFA.
-   (useful only when RA tracking is not needed).  */
+/* The fixed offset from CFA for SFrame to recover the return address.
+   (useful only when SFrame RA tracking is not needed).  */
 extern offsetT x86_sframe_cfa_ra_offset (void);
 #define sframe_cfa_ra_offset x86_sframe_cfa_ra_offset
 

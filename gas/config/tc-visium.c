@@ -53,9 +53,8 @@
 
 
 /* This string holds the chars that always start a comment. If the
-   pre-processor is disabled, these aren't very useful. The macro
-   tc_comment_chars points to this.  */
-const char *visium_comment_chars = "!;";
+   pre-processor is disabled, these aren't very useful.  */
+const char comment_chars[] = "!;";
 
 /* This array holds the chars that only start a comment at the beginning
    of a line.  If the line seems to have the form '# 123 filename' .line
@@ -219,14 +218,14 @@ md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
 }
 
 /* The parse options.  */
-const char *md_shortopts = "m:";
+const char md_shortopts[] = "m:";
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   {NULL, no_argument, NULL, 0}
 };
 
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 struct visium_option_table
 {

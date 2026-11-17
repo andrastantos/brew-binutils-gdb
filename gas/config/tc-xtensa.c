@@ -735,9 +735,9 @@ enum
   option_abi_call0,
 };
 
-const char *md_shortopts = "";
+const char md_shortopts[] = "";
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
 {
   { "density", no_argument, NULL, option_density },
   { "no-density", no_argument, NULL, option_no_density },
@@ -820,8 +820,7 @@ struct option md_longopts[] =
   { NULL, no_argument, NULL, 0 }
 };
 
-size_t md_longopts_size = sizeof md_longopts;
-
+const size_t md_longopts_size = sizeof md_longopts;
 
 int
 md_parse_option (int c, const char *arg)
@@ -1573,8 +1572,8 @@ xtensa_literal_pseudo (int ignored ATTRIBUTE_UNUSED)
   c = get_symbol_name (&base_name);
   /* Just after name is now '\0'.  */
   p = input_line_pointer;
-  *p = c;
-  SKIP_WHITESPACE_AFTER_NAME ();
+  restore_line_pointer (c);
+  SKIP_WHITESPACE ();
 
   if (*input_line_pointer != ',' && *input_line_pointer != ':')
     {

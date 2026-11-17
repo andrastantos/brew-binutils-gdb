@@ -321,6 +321,7 @@ run_dump_test "hidden2"
 run_dump_test "hidden3"
 run_dump_test "hidden4"
 run_dump_test "hidden5"
+run_dump_test "hidden6"
 run_dump_test "protected1"
 run_dump_test "protected2"
 run_dump_test "protected3"
@@ -531,10 +532,25 @@ run_dump_test "dt-relr-1b-x32"
 run_dump_test "pr30787"
 run_dump_test "pr31047"
 run_dump_test "pr31047-x32"
+run_dump_test "pr31868a"
+run_dump_test "pr31868a-x32"
+run_dump_test "pr31868b"
+run_dump_test "pr31868b-x32"
+run_dump_test "pr31868c"
+run_dump_test "pr31868c-x32"
+run_dump_test "tlsie5"
+run_dump_test "tlsdesc3"
+run_dump_test "tlsdesc4"
+run_dump_test "tlsdesc5"
+run_dump_test "pr32191"
+run_dump_test "pr32191-x32"
 
 if { ![skip_sframe_tests] } {
     run_dump_test "sframe-simple-1"
     run_dump_test "sframe-plt-1"
+    run_dump_test "sframe-ibt-plt-1"
+    run_dump_test "sframe-pltgot-1"
+    run_dump_test "sframe-pltgot-2"
 }
 
 if ![istarget "x86_64-*-linux*"] {
@@ -768,9 +784,9 @@ proc undefined_weak {cflags ldflags} {
 
     if { [string match "*-fPIE*" $cflags]
 	 && ![string match "*nodynamic-undefined-weak*" $ldflags] } {
-	set weak_symbol "Weak defined"
+	set weak_symbol "Weak defined\n"
     } else {
-	set weak_symbol "Weak undefined"
+	set weak_symbol "Weak undefined\n"
     }
 
     run_cc_link_tests [list \
@@ -1209,7 +1225,7 @@ if { [isnative] && [check_compiler_available] } {
 	] \
 	[list \
 	    "Build pr22393-3a.so" \
-	    "-shared -Wl,-z,separate-code,-z,max-page-size=0x1000" \
+	    "-shared -Wl,-z,separate-code,-z,max-page-size=0x1000,--no-rosegment" \
 	    "-fPIC -Wa,-mx86-used-note=yes" \
 	    {pr22393-3a.c} \
 	    {{readelf -lW pr22393-3a.rd} \
@@ -1218,7 +1234,7 @@ if { [isnative] && [check_compiler_available] } {
 	] \
 	[list \
 	    "Build pr22393-3a-now.so" \
-	    "-shared -Wl,-z,separate-code,-z,now,-z,max-page-size=0x1000" \
+	    "-shared -Wl,-z,separate-code,-z,now,-z,max-page-size=0x1000,--no-rosegment" \
 	    "-fPIC -Wa,-mx86-used-note=yes" \
 	    {pr22393-3a.c} \
 	    {{readelf -lW pr22393-3a.rd} \
@@ -1227,7 +1243,7 @@ if { [isnative] && [check_compiler_available] } {
 	] \
 	[list \
 	    "Build pr22393-3" \
-	    "$NOPIE_LDFLAGS -Wl,-z,separate-code,-z,max-page-size=0x1000,--no-as-needed tmpdir/pr22393-3a.so" \
+	    "$NOPIE_LDFLAGS -Wl,-z,separate-code,-z,max-page-size=0x1000,--no-rosegment,--no-as-needed tmpdir/pr22393-3a.so" \
 	    "$NOPIE_CFLAGS -Wa,-mx86-used-note=yes" \
 	    {pr22393-3b.c} \
 	    {{readelf -lW pr22393-3a.rd} \
@@ -1236,7 +1252,7 @@ if { [isnative] && [check_compiler_available] } {
 	] \
 	[list \
 	    "Build pr22393-3 (PIE)" \
-	    "-pie -Wl,-z,separate-code,-z,max-page-size=0x1000,--no-as-needed tmpdir/pr22393-3a-now.so" \
+	    "-pie -Wl,-z,separate-code,-z,max-page-size=0x1000,--no-rosegment,--no-as-needed tmpdir/pr22393-3a-now.so" \
 	    "-fPIE -Wa,-mx86-used-note=yes" \
 	    {pr22393-3b.c} \
 	    {{readelf -lW pr22393-3a.rd} \
@@ -1245,7 +1261,7 @@ if { [isnative] && [check_compiler_available] } {
 	] \
 	[list \
 	    "Build pr22393-3 (static)" \
-	    "-static -Wl,-z,separate-code,-z,max-page-size=0x1000" \
+	    "-static -Wl,-z,separate-code,-z,max-page-size=0x1000,--no-rosegment" \
 	    "-Wa,-mx86-used-note=yes" \
 	    {pr22393-3a.c pr22393-3b.c} \
 	    {{readelf -lW pr22393-3a.rd} \
@@ -1395,6 +1411,14 @@ if { [isnative] && [check_compiler_available] } {
 	    { protected-data-2a.S } \
 	    {{readelf -n indirect-extern-access.rd}}  \
 	    "libprotected-data-2b.so" \
+	] \
+	[list \
+	    "Build pr32067" \
+	    "-Wl,--oformat,binary -nostdlib -nostartfiles" \
+	    "" \
+	    { start.s pr32067.s } \
+	    {} \
+	    "pr32067" \
 	] \
     ]
 
@@ -1903,6 +1927,22 @@ if { [isnative] && [check_compiler_available] } {
 	    "pass.out" \
 	    "-fPIE" \
 	] \
+	[list \
+	    "Run pr32189" \
+	    "$NOPIE_LDFLAGS -nostdlib -nostartfiles" \
+	    "" \
+	    { pr32189.s } \
+	    "pr32189" \
+	    "pass.out" \
+	] \
+	[list \
+	    "Run plt3" \
+	    "$NOPIE_LDFLAGS -nostdlib -nostartfiles" \
+	    "" \
+	    { plt3.s } \
+	    "plt3" \
+	    "pass.out" \
+	] \
     ]
 
     # Run-time tests which require working ifunc attribute support.
@@ -2268,6 +2308,13 @@ run_dump_test "ibt-plt-3a-x32"
 run_dump_test "ibt-plt-3b-x32"
 run_dump_test "ibt-plt-3c-x32"
 run_dump_test "ibt-plt-3d-x32"
+
+# Skip -z mark-plt tests on MUSL.
+if { [istarget "x86_64-*-musl*"]} {
+    set ASFLAGS "$saved_ASFLAGS"
+    return
+}
+
 run_dump_test "mark-plt-1a"
 run_dump_test "mark-plt-1b"
 run_dump_test "mark-plt-1c"

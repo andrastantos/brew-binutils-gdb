@@ -48,7 +48,7 @@ const char line_separator_chars[] = "@";
 const char EXP_CHARS[] = "eE";
 const char FLT_CHARS[] = "dDfF";
 
-const char *md_shortopts = "";
+const char md_shortopts[] = "";
 
 enum
   {
@@ -63,7 +63,7 @@ enum
     OPTION_MGENERATE_REL
   };
 
-struct option md_longopts[] =
+const struct option md_longopts[] =
   {
     { "march", required_argument, NULL, OPTION_MARCH },
     { "mbig-endian", no_argument, NULL, OPTION_MBIG_ENDIAN },
@@ -76,7 +76,7 @@ struct option md_longopts[] =
     { "mgenerate-rel", no_argument, NULL, OPTION_MGENERATE_REL },
     { NULL, no_argument, NULL, 0 }
   };
-size_t md_longopts_size = sizeof (md_longopts);
+const size_t md_longopts_size = sizeof (md_longopts);
 
 /* The instructions enabled based only on the selected architecture
    (all instructions, if no architecture specified).  */
@@ -786,7 +786,6 @@ md_begin (void)
   scom_section.name           = ".scommon";
   scom_section.output_section = & scom_section;
   scom_section.symbol         = & scom_symbol;
-  scom_section.symbol_ptr_ptr = & scom_section.symbol;
   scom_symbol                 = * bfd_com_section_ptr->symbol;
   scom_symbol.name            = ".scommon";
   scom_symbol.section         = & scom_section;

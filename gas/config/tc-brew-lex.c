@@ -313,7 +313,7 @@ brew_lexer_tokenS *brew_tokenize(const char *str)
         {
           if (*tok_end == 0)
             break;
-          if (is_end_of_line[*tok_end & 0xff])
+          if (is_end_of_stmt(*tok_end))
             break;
           if (ISSPACE(*tok_end) && paren_cnt == 0)
             break;
