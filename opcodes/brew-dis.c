@@ -67,7 +67,10 @@ print_insn_brew (bfd_vma addrP, struct disassemble_info * infoP)
   void *stream;
   bfd_vma addr = addrP;
 
-  OPCODES_ASSERT(infoP->endian == BFD_ENDIAN_LITTLE);
+  // Brew instructions are always little-endian: get_uint16/get_uint32
+  // decode them with bfd_getl*, independent of infoP->endian (which
+  // follows gdb's "set endian" for data).  Don't reject a big-endian
+  // setting; that used to abort gdb on "set endian big" + disassemble.
 
   stream = infoP->stream;
   fpr = infoP->fprintf_func;
