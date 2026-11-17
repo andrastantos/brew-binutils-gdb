@@ -1069,11 +1069,18 @@ parse_scrolling_args (const char *arg,
 	      *win_to_scroll = tui_partial_win_by_name (wname);
 
 	      if (*win_to_scroll == NULL)
-		error (_("Unrecognized window `%s'"), wname);
+		error (_("Unrecognized window \"%s\""), wname);
 	      if (!(*win_to_scroll)->is_visible ())
 		error (_("Window is not visible"));
 	      else if (*win_to_scroll == tui_cmd_win ())
-		*win_to_scroll = *(tui_source_windows ().begin ());
+		{
+		  /* If there's a source window, pick the first one.
+		     Otherwise, let the command window ignore the scroll.  */
+		  auto range = tui_source_windows ();
+		  auto first = range.begin ();
+		  if (first != range.end ())
+		    *win_to_scroll = *first;
+		}
 	    }
 	}
     }

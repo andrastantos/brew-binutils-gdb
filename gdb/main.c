@@ -652,7 +652,6 @@ captured_main_1 (struct captured_main_args *context)
   std::vector<char *> dirarg;
 
   int i;
-  int save_auto_load;
   int ret = 1;
 
   /* Check for environment variables which might cause GDB to start with
@@ -968,7 +967,7 @@ captured_main_1 (struct captured_main_args *context)
 	    break;
 	  case 'D':
 	    if (optarg[0] == '\0')
-	      error (_("%s: empty path for `--data-directory'"),
+	      error (_("%s: empty path for \"--data-directory\""),
 		     gdb_program_name);
 	    set_gdb_data_directory (optarg);
 	    gdb_datadir_provided = 1;
@@ -1011,7 +1010,7 @@ captured_main_1 (struct captured_main_args *context)
 
 	      rate = strtol (optarg, &p, 0);
 	      if (rate == 0 && p == optarg)
-		warning (_("could not set baud rate to `%s'."),
+		warning (_("could not set baud rate to \"%s\"."),
 			 optarg);
 	      else
 		baud_rate = rate;
@@ -1024,7 +1023,7 @@ captured_main_1 (struct captured_main_args *context)
 
 	      timeout = strtol (optarg, &p, 0);
 	      if (timeout == 0 && p == optarg)
-		warning (_("could not set timeout limit to `%s'."),
+		warning (_("could not set timeout limit to \"%s\"."),
 			 optarg);
 	      else
 		remote_timeout = timeout;
@@ -1052,7 +1051,7 @@ captured_main_1 (struct captured_main_args *context)
 #endif
 
 	  case '?':
-	    error (_("Use `%s --help' for a complete list of options."),
+	    error (_("Use \"%s --help\" for a complete list of options."),
 		   gdb_program_name);
 	  }
       }
@@ -1107,7 +1106,7 @@ captured_main_1 (struct captured_main_args *context)
 	 inferior.  The first one is the sym/exec file, and the rest
 	 are arguments.  */
       if (optind >= argc)
-	error (_("%s: `--args' specified but no program specified"),
+	error (_("%s: \"--args\" specified but no program specified"),
 	       gdb_program_name);
 
       symarg = argv[optind];
@@ -1238,8 +1237,8 @@ captured_main_1 (struct captured_main_args *context)
   /* Skip auto-loading section-specified scripts until we've sourced
      local_gdbinit (which is often used to augment the source search
      path).  */
-  save_auto_load = global_auto_load;
-  global_auto_load = 0;
+  std::optional<scoped_restore_tmpl<bool>>
+    auto_load_restore (make_scoped_restore (&global_auto_load, false));
 
   if (execarg != nullptr && symarg != nullptr && streq (execarg, symarg))
     {
@@ -1333,7 +1332,7 @@ captured_main_1 (struct captured_main_args *context)
      processed, we can read any scripts mentioned in SYMARG.
      We wait until now because it is common to add to the source search
      path in local_gdbinit.  */
-  global_auto_load = save_auto_load;
+  auto_load_restore.reset ();
   for (objfile &objfile : current_program_space->objfiles ())
     load_auto_scripts_for_objfile (objfile);
 

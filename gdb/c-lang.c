@@ -174,7 +174,7 @@ void
 language_defn::printstr (struct ui_file *stream, struct type *type,
 			 const gdb_byte *string, unsigned int length,
 			 const char *user_encoding, int force_ellipses,
-			 const struct value_print_options *options) const
+			 const value_print_options &options) const
 {
   c_string_type str_type;
   const char *type_encoding;
@@ -365,7 +365,7 @@ c_get_string (struct value *value, gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
     std::string type_str = type_to_string (type);
     if (!type_str.empty ())
       {
-	error (_("Trying to read string with inappropriate type `%s'."),
+	error (_("Trying to read string with inappropriate type \"%s\"."),
 	       type_str.c_str ());
       }
     else
@@ -589,13 +589,13 @@ c_string_operation::evaluate (struct type *expect_type,
 					exp->gdbarch);
       break;
     case C_WIDE_STRING:
-      type = lookup_typename (exp->language_defn, "wchar_t", NULL, 0);
+      type = lookup_typename (exp->language_defn, "wchar_t", nullptr, false);
       break;
     case C_STRING_16:
-      type = lookup_typename (exp->language_defn, "char16_t", NULL, 0);
+      type = lookup_typename (exp->language_defn, "char16_t", nullptr, false);
       break;
     case C_STRING_32:
-      type = lookup_typename (exp->language_defn, "char32_t", NULL, 0);
+      type = lookup_typename (exp->language_defn, "char32_t", nullptr, false);
       break;
     default:
       internal_error (_("unhandled c_string_type"));
@@ -953,7 +953,8 @@ public:
 
   /* See language.h.  */
 
-  char *class_name_from_physname (const char *physname) const override
+  gdb::unique_xmalloc_ptr<char> class_name_from_physname
+    (const char *physname) const override
   {
     return cp_class_name_from_physname (physname);
   }

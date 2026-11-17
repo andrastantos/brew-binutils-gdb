@@ -1404,6 +1404,10 @@ tilepro_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
     return true;
 
   htab = tilepro_elf_hash_table (info);
+  if (htab->dynobj == NULL
+      && !_bfd_elf_link_dynobj (info))
+    return false;
+
   symtab_hdr = &elf_symtab_hdr (abfd);
   sym_hashes = elf_sym_hashes (abfd);
 
@@ -1412,9 +1416,6 @@ tilepro_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
   num_relocs = sec->reloc_count;
 
   BFD_ASSERT (is_tilepro_elf (abfd) || num_relocs == 0);
-
-  if (htab->dynobj == NULL)
-    htab->dynobj = abfd;
 
   rel_end = relocs + num_relocs;
   for (rel = relocs; rel < rel_end; rel++)
@@ -1426,14 +1427,6 @@ tilepro_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
 
       r_symndx = ELF32_R_SYM (rel->r_info);
       r_type = ELF32_R_TYPE (rel->r_info);
-
-      if (r_symndx >= NUM_SHDR_ENTRIES (symtab_hdr))
-	{
-	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: bad symbol index: %d"),
-			      abfd, r_symndx);
-	  return false;
-	}
 
       if (r_symndx < symtab_hdr->sh_info)
 	h = NULL;
@@ -1718,10 +1711,7 @@ tilepro_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
 		head = &h->dyn_relocs;
 	      else
 		{
-		  /* Track dynamic relocs needed for local syms too.
-		     We really need local syms available to do this
-		     easily.  Oh well.  */
-
+		  /* Track dynamic relocs needed for local syms too.  */
 		  asection *s;
 		  void *vpp;
 		  Elf_Internal_Sym *isym;
@@ -2549,7 +2539,7 @@ tilepro_elf_relocate_section (struct bfd_link_info *info,
       reloc_howto_type *howto;
       unsigned long r_symndx;
       struct elf_link_hash_entry *h;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       tilepro_create_func create_func;
       asection *sec;
       bfd_vma relocation;

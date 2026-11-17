@@ -30,6 +30,7 @@
 #  - tfaas
 #  - thread apply
 #  - taas
+#  - info locals
 
 load_lib compile-support.exp
 load_lib completion-support.exp
@@ -531,6 +532,25 @@ proc_with_prefix test-info-threads {} {
     test_gdb_complete_none "info threads I"
 }
 
+# Basic option-machinery + "info locals" command integration tests.
+proc_with_prefix test-info-locals {} {
+    clean_restart $::testfile
+
+    if {![runto_main]} {
+	return
+    }
+
+    test_gdb_complete_multiple "info locals " "-" "" {
+	"-q"
+	"-shadowed"
+	"-t"
+    }
+
+    test_gdb_complete_unique \
+	"info locals -s" \
+	"info locals -shadowed"
+}
+
 # Miscellaneous tests.
 proc_with_prefix test-misc {variant} {
     global all_options
@@ -836,9 +856,9 @@ proc_with_prefix test-boolean {variant} {
     gdb_test "$cmd -bool -1 999 --" \
 	"Unrecognized option at: -1 999 --"
     gdb_test "$cmd -bool xxx 999 --" \
-	"Value given for `-bool' is not a boolean: xxx"
+	"Value given for \"-bool\" is not a boolean: xxx"
     gdb_test "$cmd -bool o 999 --" \
-	"Value given for `-bool' is not a boolean: o"
+	"Value given for \"-bool\" is not a boolean: o"
 
     # Completing after a boolean option + "o" does list "on/off",
     # though.
@@ -1174,6 +1194,9 @@ test-thread-apply
 
 # Basic "info threads" integration tests.
 test-info-threads
+
+# Basic "info locals" integration tests.
+test-info-locals
 
 # There was a bug where the "metasyntactic variable" was glued to the
 # option.

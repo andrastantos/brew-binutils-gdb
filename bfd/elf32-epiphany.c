@@ -42,8 +42,6 @@ struct epiphany_opcode
   unsigned short mask;
 };
 
-static bool epiphany_relaxed = false;
-
 /* Relocation tables.  */
 static reloc_howto_type epiphany_elf_howto_table [] =
 {
@@ -198,10 +196,7 @@ epiphany_elf_relax_section (bfd *abfd, asection *sec,
   *again = false;
 
   if (first_section == NULL)
-    {
-      epiphany_relaxed = true;
-      first_section = sec;
-    }
+    first_section = sec;
 
   if (first_section == sec)
     {
@@ -491,7 +486,7 @@ epiphany_elf_relocate_section (struct bfd_link_info *info,
     {
       reloc_howto_type *	   howto;
       unsigned long		   r_symndx;
-      Elf_Internal_Sym *	   sym;
+      const Elf_Internal_Sym *	   sym;
       asection *		   sec;
       struct elf_link_hash_entry * h;
       bfd_vma			   relocation;

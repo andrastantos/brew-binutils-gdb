@@ -664,9 +664,7 @@ struct elf_link_hash_table
   /* TRUE if there are base symbols.  */
   bool has_base_symbols;
 
-  /* The BFD used to hold special sections created by the linker.
-     This will be the first BFD found which requires these sections to
-     be created.  */
+  /* The BFD used to hold special sections created by the linker.  */
   bfd *dynobj;
 
   /* The value to use when initialising got.refcount/offset and
@@ -1805,6 +1803,7 @@ struct elf_backend_data
   unsigned want_got_sym : 1;
   unsigned want_dynbss : 1;
   unsigned want_dynrelro : 1;
+  unsigned want_stub_bfd : 1;
 
   /* Targets which do not support physical addressing often require
      that the p_paddr field in the section header to be set to zero.
@@ -2274,6 +2273,10 @@ struct elf_obj_tdata
   /* Set if DT_FLAGS_1 has DF_1_PIE set.  */
   unsigned int is_pie : 1;
 
+  /* Set after the sym_hashes array has been assigned in
+     elf_link_input_bfd.  */
+  unsigned int sym_hashes_valid : 1;
+
   /* Information grabbed from an elf core file.  */
   struct core_elf_obj_tdata *core;
 
@@ -2316,6 +2319,8 @@ struct elf_obj_tdata
 #define elf_gp(bfd)		(elf_tdata(bfd) -> gp)
 #define elf_gp_size(bfd)	(elf_tdata(bfd) -> gp_size)
 #define elf_sym_hashes(bfd)	(elf_tdata(bfd) -> sym_hashes)
+#define elf_sym_hashes_valid(bfd) \
+				(elf_tdata(bfd) -> sym_hashes_valid)
 #define elf_loc_shndx(bfd)	(elf_tdata(bfd) -> loc_shndx)
 #define elf_local_got_refcounts(bfd) (elf_tdata(bfd) -> local_got.refcounts)
 #define elf_local_got_offsets(bfd) (elf_tdata(bfd) -> local_got.offsets)
@@ -2376,7 +2381,7 @@ extern Elf_Internal_Sym *bfd_elf_get_elf_syms
    Elf_External_Sym_Shndx *);
 extern char * bfd_elf_get_str_section (bfd *, unsigned int);
 extern const char *bfd_elf_sym_name
-  (bfd *, Elf_Internal_Shdr *, Elf_Internal_Sym *, asection *);
+  (bfd *, Elf_Internal_Shdr *, const Elf_Internal_Sym *, asection *);
 
 extern bool _bfd_elf_copy_private_bfd_data
   (bfd *, bfd *) ATTRIBUTE_HIDDEN;
@@ -2400,10 +2405,10 @@ extern enum elf_reloc_type_class _bfd_elf_reloc_type_class
   (const struct bfd_link_info *, const asection *,
    const Elf_Internal_Rela *) ATTRIBUTE_HIDDEN;
 extern bfd_vma _bfd_elf_rela_local_sym
-  (bfd *, Elf_Internal_Sym *, asection **, Elf_Internal_Rela *)
+  (bfd *, const Elf_Internal_Sym *, asection **, Elf_Internal_Rela *)
   ATTRIBUTE_HIDDEN;
 extern bfd_vma _bfd_elf_rel_local_sym
-  (bfd *, Elf_Internal_Sym *, asection **, bfd_vma) ATTRIBUTE_HIDDEN;
+  (bfd *, const Elf_Internal_Sym *, asection **, bfd_vma) ATTRIBUTE_HIDDEN;
 extern bfd_vma _bfd_elf_section_offset
   (bfd *, struct bfd_link_info *, asection *, bfd_vma) ATTRIBUTE_HIDDEN;
 
@@ -2530,6 +2535,8 @@ extern bool _bfd_elf_find_inliner_info
 extern asymbol *_bfd_elf_find_function
   (bfd *, asymbol **, asection *, bfd_vma, const char **, const char **)
   ATTRIBUTE_HIDDEN;
+extern bool _bfd_elf_relax_delete_range_ok
+  (const bfd *, const asection *, bfd_vma, bfd_vma, bfd_vma) ATTRIBUTE_HIDDEN;
 #define _bfd_elf_read_minisymbols _bfd_generic_read_minisymbols
 #define _bfd_elf_minisymbol_to_symbol _bfd_generic_minisymbol_to_symbol
 extern int _bfd_elf_sizeof_headers
@@ -2731,8 +2738,14 @@ extern unsigned int _bfd_elf_default_action_discarded
 extern struct bfd_section *bfd_elf_tls_setup
   (struct bfd_link_info *);
 
+extern bfd *_bfd_elf_link_dynobj_internal
+  (struct bfd_link_info *, bool) ATTRIBUTE_HIDDEN;
+static inline bfd *
+_bfd_elf_link_dynobj (struct bfd_link_info *info)
+{ return _bfd_elf_link_dynobj_internal (info, true); }
+
 extern bool bfd_elf_link_create_dynamic_sections
-  (bfd *, struct bfd_link_info *);
+  (struct bfd_link_info *);
 extern bool _bfd_elf_omit_section_dynsym_default
   (struct bfd_link_info *, asection *) ATTRIBUTE_HIDDEN;
 extern bool _bfd_elf_omit_section_dynsym_all
@@ -3100,6 +3113,8 @@ extern char *elfcore_write_ppc_tm_cppr
   (bfd *, char *, int *, const void *, int);
 extern char *elfcore_write_ppc_tm_cdscr
   (bfd *, char *, int *, const void *, int);
+extern char *elfcore_write_ppc_dmr
+  (bfd *, char *, int *, const void *, int);
 extern char *elfcore_write_s390_timer
   (bfd *, char *, int *, const void *, int);
 extern char *elfcore_write_s390_todcmp
@@ -3428,11 +3443,6 @@ extern asection bfd_elf_large_com_section;
 				unresolved_reloc, warned, ignored)	\
   do									\
     {									\
-      /* It seems this can happen with erroneous or unsupported		\
-	 input (mixing a.out and elf in an archive, for example.)  */	\
-      if (sym_hashes == NULL)						\
-	return false;							\
-									\
       h = sym_hashes[r_symndx - symtab_hdr->sh_info];			\
 									\
       if (info->wrap_hash != NULL					\

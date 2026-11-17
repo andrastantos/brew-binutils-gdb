@@ -1602,6 +1602,10 @@ tilegx_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
     return true;
 
   htab = tilegx_elf_hash_table (info);
+  if (htab->elf.dynobj == NULL
+      && !_bfd_elf_link_dynobj (info))
+    return false;
+
   symtab_hdr = &elf_symtab_hdr (abfd);
   sym_hashes = elf_sym_hashes (abfd);
 
@@ -1610,9 +1614,6 @@ tilegx_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
   num_relocs = sec->reloc_count;
 
   BFD_ASSERT (is_tilegx_elf (abfd) || num_relocs == 0);
-
-  if (htab->elf.dynobj == NULL)
-    htab->elf.dynobj = abfd;
 
   rel_end = relocs + num_relocs;
 
@@ -1651,14 +1652,6 @@ tilegx_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
 
       r_symndx = TILEGX_ELF_R_SYMNDX (htab, rel->r_info);
       r_type = TILEGX_ELF_R_TYPE (rel->r_info);
-
-      if (r_symndx >= NUM_SHDR_ENTRIES (symtab_hdr))
-	{
-	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: bad symbol index: %d"),
-			      abfd, r_symndx);
-	  return false;
-	}
 
       if (r_symndx < symtab_hdr->sh_info)
 	h = NULL;
@@ -1965,10 +1958,7 @@ tilegx_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
 		head = &h->dyn_relocs;
 	      else
 		{
-		  /* Track dynamic relocs needed for local syms too.
-		     We really need local syms available to do this
-		     easily.  Oh well.  */
-
+		  /* Track dynamic relocs needed for local syms too.  */
 		  asection *s;
 		  void *vpp;
 		  Elf_Internal_Sym *isym;
@@ -1989,9 +1979,7 @@ tilegx_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
 	      p = *head;
 	      if (p == NULL || p->sec != sec)
 		{
-		  size_t amt = sizeof *p;
-		  p = ((struct elf_dyn_relocs *)
-		       bfd_alloc (htab->elf.dynobj, amt));
+		  p = bfd_alloc (htab->elf.dynobj, sizeof (*p));
 		  if (p == NULL)
 		    return false;
 		  p->next = *head;
@@ -2833,7 +2821,7 @@ tilegx_elf_relocate_section (struct bfd_link_info *info,
       reloc_howto_type *howto;
       unsigned long r_symndx;
       struct elf_link_hash_entry *h;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       tilegx_create_func create_func;
       asection *sec;
       bfd_vma relocation;

@@ -524,7 +524,7 @@ rx_elf_relocate_section
     {
       reloc_howto_type *howto;
       unsigned long r_symndx;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma relocation;
@@ -2139,8 +2139,7 @@ elf32_rx_relax_section (bfd *abfd,
      because we are going to walk over them multiple times, adjusting them
      as bytes are deleted from the section, and with this relaxation
      function itself being called multiple times on the same section...  */
-  internal_relocs = _bfd_elf_link_read_relocs
-    (abfd, sec, NULL, (Elf_Internal_Rela *) NULL, true);
+  internal_relocs = _bfd_elf_link_read_relocs (abfd, sec, NULL, NULL, true);
   if (internal_relocs == NULL)
     goto error_return;
 
@@ -3126,8 +3125,6 @@ rx_elf_set_private_flags (bfd * abfd, flagword flags)
 static bool no_warn_mismatch = false;
 static bool ignore_lma = true;
 
-void bfd_elf32_rx_set_target_flags (bool, bool);
-
 void
 bfd_elf32_rx_set_target_flags (bool user_no_warn_mismatch,
 			       bool user_ignore_lma)
@@ -3521,7 +3518,7 @@ rx_get_section_contents (bfd *	       abfd,
 
 	  count -= cnt;
 	  offset += cnt;
-	  cloc += count;
+	  cloc += cnt;
 	}
 
       end_cnt = count % 4;

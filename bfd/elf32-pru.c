@@ -485,8 +485,8 @@ pru_elf32_do_s10_pcrel_relocate (bfd *input_bfd, reloc_howto_type *howto,
   BFD_ASSERT (bfd_get_reloc_size (howto) == 4);
   x = bfd_get_32 (input_bfd, location);
 
-  qboff = GET_BROFF_SIGNED (x) << howto->rightshift;
-  relocation += qboff;
+  qboff = GET_BROFF_SIGNED (x);
+  relocation += qboff << howto->rightshift;
 
   BFD_ASSERT (howto->complain_on_overflow == complain_overflow_bitfield);
 
@@ -708,7 +708,7 @@ pru_elf32_relocate_section (struct bfd_link_info *info,
     {
       reloc_howto_type *howto;
       unsigned long r_symndx;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma relocation;

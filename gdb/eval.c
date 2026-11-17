@@ -785,7 +785,7 @@ scope_operation::evaluate_funcall (struct type *expect_type,
 	{
 	  /* For the time being, we don't handle this.  */
 	  error (_("Call to overloaded function %ps requires "
-		   "`this' pointer"),
+		   "\"this\" pointer"),
 		 styled_string (function_name_style.style (),
 				function_name));
 	}
@@ -1250,9 +1250,8 @@ eval_op_structop_ptr (struct type *expect_type, struct expression *exp,
     struct type *real_type;
     int full, using_enc;
     LONGEST top;
-    struct value_print_options opts;
 
-    get_user_print_options (&opts);
+    const value_print_options &opts = get_user_print_options ();
     if (opts.objectprint && arg_type->target_type ()
 	&& (arg_type->target_type ()->code () == TYPE_CODE_STRUCT))
       {
@@ -1426,7 +1425,7 @@ eval_op_subscript (struct type *expect_type, struct expression *exp,
 	  && type->code () != TYPE_CODE_PTR)
 	{
 	  if (type->name ())
-	    error (_("cannot subscript something of type `%s'"),
+	    error (_("cannot subscript something of type \"%s\""),
 		   type->name ());
 	  else
 	    error (_("cannot subscript requested type"));
@@ -1938,7 +1937,7 @@ eval_multi_subscript (struct type *expect_type, struct expression *exp,
 
 	    default:
 	      if (type->name ())
-		error (_("cannot subscript something of type `%s'"),
+		error (_("cannot subscript something of type \"%s\""),
 		       type->name ());
 	      else
 		error (_("cannot subscript requested type"));

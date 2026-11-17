@@ -59,6 +59,7 @@
 #include "gdbsupport/pathstuff.h"
 #include "gdbsupport/gdb_tilde_expand.h"
 #include "gdbsupport/eintr.h"
+#include "gdbsupport/scoped_ignore_signal.h"
 
 #ifdef TUI
 #include "tui/tui.h"
@@ -1158,7 +1159,26 @@ pipe_command (const char *arg, int from_tty)
 
   int exit_status;
   {
-    SCOPE_EXIT { exit_status = pclose (to_shell_command); };
+    /* If GDB writes to the pipe after the sub-process has exited (for example,
+       with "lots-of-output | head -1"), GDB would receive a SIGPIPE, whose
+       default behavior is to end the process.  Ignore SIGPIPE for the duration
+       of the command.
+
+       With SIGPIPE ignored, the writes will fail with EPIPE, which stdio_file
+       ignores.
+
+       Note that if GDB is built with Python, SIGPIPE will already be ignored,
+       since that is done during Python initialization.  */
+    scoped_ignore_sigpipe ignore_sigpipe;
+
+    SCOPE_EXIT
+      {
+	/* Flush explicitly, ignoring errors, so that a failure to write
+	   buffered output (for instance, with EPIPE) doesn't make pclose fail
+	   and hide the exit status of the shell command.  */
+	fflush (to_shell_command);
+	exit_status = pclose (to_shell_command);
+      };
 
     stdio_file pipe_file (to_shell_command);
 
@@ -2703,11 +2723,10 @@ shell_internal_fn (struct gdbarch *gdbarch,
   if (!language->is_string_type_p (type))
     error (_("Argument must be a string."));
 
-  value_print_options opts;
-  get_no_prettyformat_print_options (&opts);
+  value_print_options opts = get_no_prettyformat_print_options ();
 
   string_file stream;
-  value_print (val, &stream, &opts);
+  value_print (val, &stream, opts);
 
   /* We should always have two quote chars, which we'll strip.  */
   gdb_assert (stream.size () >= 2);
@@ -2961,7 +2980,7 @@ $_shell - execute a shell command and return the result.\n\
 
   add_cmd ("commands", no_set_class, show_commands, _("\
 Show the history of commands you typed.\n\
-You can supply a command number to start with, or a `+' to start after\n\
+You can supply a command number to start with, or a \"+\" to start after\n\
 the previous command number shown."),
 	   &showlist);
 
@@ -3070,7 +3089,7 @@ you must type \"disassemble 'foo.c'::bar\" and not \"disassemble foo.c:bar\"."))
   set_cmd_completer_handle_brkchars (c, disassemble_command_completer);
 
   c = add_com ("make", class_support, make_command, _("\
-Run the ``make'' program using the rest of the line as arguments."));
+Run the \"make\" program using the rest of the line as arguments."));
   set_cmd_completer (c, deprecated_filename_completer);
 
   c = add_cmd ("user", no_class, show_user, _("\

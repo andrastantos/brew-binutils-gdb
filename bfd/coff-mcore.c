@@ -343,7 +343,8 @@ coff_mcore_rtype_to_howto (bfd * abfd ATTRIBUTE_UNUSED,
 static bool
 in_reloc_p (bfd * abfd ATTRIBUTE_UNUSED, reloc_howto_type * howto)
 {
-  return ! howto->pc_relative && howto->type != IMAGE_REL_MCORE_RVA;
+  return ! howto->pc_relative && howto->type != IMAGE_REL_MCORE_RVA
+	 && howto->type != IMAGE_REL_MCORE_ABSOLUTE;
 }
 
 /* The reloc processing routine for the optimized COFF linker.  */
@@ -405,6 +406,15 @@ coff_mcore_relocate_section (bfd * output_bfd,
 	{
 	  h = NULL;
 	  sym = NULL;
+	}
+      else if (! coff_symndx_in_range (input_bfd, symndx))
+	{
+	  _bfd_error_handler
+	    /* xgettext: c-format */
+	    (_("%pB: invalid symbol index %ld in relocs"),
+	     input_bfd, symndx);
+	  bfd_set_error (bfd_error_bad_value);
+	  return false;
 	}
       else
 	{

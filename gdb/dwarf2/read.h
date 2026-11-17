@@ -582,6 +582,10 @@ struct dwarf2_per_bfd
   const char *filename () const
   { return bfd_get_filename (this->obfd); }
 
+  /* Return the endianness of the BFD.  */
+  bfd_endian byte_order () const
+  { return bfd_big_endian (this->obfd) ? BFD_ENDIAN_BIG : BFD_ENDIAN_LITTLE; }
+
   /* Return the unit given its index.  */
   dwarf2_per_cu &get_unit (int index) const
   {
@@ -757,8 +761,11 @@ public:
     abstract_to_concrete;
 
   /* Current directory, captured at the moment that object this was
-     created.  */
-  std::string captured_cwd;
+     created.  If nullopt, the working directory was unavailable
+     which means getcwd failed either due to directory deletion or
+     permission issues. So paths should be treated as absolute.  */
+  std::optional<std::string> captured_cwd;
+
   /* Captured copy of debug_file_directory.  */
   std::string captured_debug_dir;
 };
@@ -1209,7 +1216,7 @@ struct type *dwarf2_get_die_type (cu_offset die_offset, dwarf2_per_cu *per_cu,
 
 unrelocated_addr dwarf2_read_addr_index (dwarf2_per_cu *per_cu,
 					 dwarf2_per_objfile *per_objfile,
-					 unsigned int addr_index);
+					 ULONGEST addr_index);
 
 /* Return DWARF block referenced by DW_AT_location of DIE at SECT_OFF at PER_CU.
    Returned value is intended for DW_OP_call*.  Returned

@@ -744,7 +744,7 @@ z80_breakpoint_kind_from_pc (struct gdbarch *gdbarch, CORE_ADDR *pcptr)
       else
 	{
 	  warning(_("Unable to determine inferior's software breakpoint type: "
-		    "couldn't find `_break_handler' function in inferior. Will "
+		    "couldn't find \"_break_handler\" function in inferior. Will "
 		    "be used default software breakpoint instruction RST 0x08."));
 	  addr = 0x0008;
 	}
@@ -922,8 +922,8 @@ z80_read_overlay_region_table ()
   if (! novly_regions_msym.minsym)
     {
       error (_("Error reading inferior's overlay table: "
-	       "couldn't find `_novly_regions'\n"
-	       "variable in inferior.  Use `overlay manual' mode."));
+	       "couldn't find \"_novly_regions\"\n"
+	       "variable in inferior.  Use \"overlay manual\" mode."));
       return 0;
     }
 
@@ -932,14 +932,14 @@ z80_read_overlay_region_table ()
   if (! ovly_region_table_msym.minsym)
     {
       error (_("Error reading inferior's overlay table: couldn't find "
-	       "`_ovly_region_table'\n"
-	       "array in inferior.  Use `overlay manual' mode."));
+	       "\"_ovly_region_table\"\n"
+	       "array in inferior.  Use \"overlay manual\" mode."));
       return 0;
     }
 
-  const enum overlay_debugging_state save_ovly_dbg = overlay_debugging;
   /* prevent infinite recurse */
-  overlay_debugging = ovly_off;
+  scoped_restore overlay_debugging_restore
+    = make_scoped_restore (&overlay_debugging, ovly_off);
 
   gdbarch = ovly_region_table_msym.objfile->arch ();
   word_size = gdbarch_long_bit (gdbarch) / TARGET_CHAR_BIT;
@@ -956,7 +956,6 @@ z80_read_overlay_region_table ()
 			  (unsigned int *) cache_ovly_region_table,
 			  cache_novly_regions * 3, word_size, byte_order);
 
-  overlay_debugging = save_ovly_dbg;
   return 1;                     /* SUCCESS */
 }
 

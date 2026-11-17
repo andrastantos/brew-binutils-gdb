@@ -35,6 +35,7 @@ to_string (cooked_index_flag flags)
     MAP_ENUM_FLAG (IS_PARENT_DEFERRED),
     MAP_ENUM_FLAG (IS_SYNTHESIZED),
     MAP_ENUM_FLAG (IS_INLINED),
+    MAP_ENUM_FLAG (IS_NAME_DEFERRED),
   };
 
   return flags.to_string (mapping);
@@ -46,12 +47,7 @@ int
 cooked_index_entry::compare (const char *stra, const char *strb,
 			     comparison_mode mode)
 {
-#if defined (__GNUC__) && !defined (__clang__) && __GNUC__ <= 7
-  /* Work around error with gcc 7.5.0.  */
   auto munge = [] (char c) -> unsigned char
-#else
-  auto munge = [] (char c) constexpr -> unsigned char
-#endif
     {
       /* Treat '<' as if it ended the string.  This lets something
 	 like "func<t>" match "func<t<int>>".  See the "Breakpoints in
@@ -60,6 +56,10 @@ cooked_index_entry::compare (const char *stra, const char *strb,
 	return '\0';
       return c_tolower (c);
     };
+
+  /* Optimization: entries with the same name often share the same string.  */
+  if (stra == strb)
+    return 0;
 
   unsigned char a = munge (*stra);
   unsigned char b = munge (*strb);
@@ -175,7 +175,7 @@ cooked_index_entry::full_name (struct obstack *storage,
 			       cooked_index_full_name_flag name_flags,
 			       const char *default_sep) const
 {
-  const char *local_name = ((name_flags & FOR_MAIN) != 0) ? name : canonical;
+  const char *local_name = ((name_flags & FOR_MAIN) != 0) ? name () : canonical;
 
   if ((flags & IS_LINKAGE) != 0 || get_parent () == nullptr)
     return local_name;
@@ -194,11 +194,11 @@ cooked_index_entry::full_name (struct obstack *storage,
 	 of writing), then we need to compute the linkage name here.
 	 However for traditional GNAT, the linkage name will be in
 	 'name'.  Detect this by looking for "__"; see also
-	 cooked_index_shard::finalize.  */
+	 cooked_index_shard::canonicalize_names.  */
       if ((name_flags & FOR_ADA_LINKAGE_NAME) != 0)
 	{
-	  if (strstr (name, "__") != nullptr)
-	    return name;
+	  if (strstr (name (), "__") != nullptr)
+	    return name ();
 	  sep = "__";
 	  break;
 	}
@@ -233,10 +233,15 @@ cooked_index_entry::write_scope (struct obstack *storage,
 {
   if (get_parent () != nullptr)
     get_parent ()->write_scope (storage, sep, flags);
+
+  /* Any entry with an unresolved name will have been filtered out by
+     cooked_index_shard::prune_nameless_entries.  */
+  gdb_assert (!name_is_deferred ());
+
   /* When computing the Ada linkage name, the entry might not have
      been canonicalized yet, so use the 'name'.  */
   const char *local_name = ((flags & (FOR_MAIN | FOR_ADA_LINKAGE_NAME)) != 0
-			    ? name
+			    ? name ()
 			    : canonical);
   obstack_grow (storage, local_name, strlen (local_name));
   obstack_grow (storage, sep, strlen (sep));

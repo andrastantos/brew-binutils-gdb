@@ -609,7 +609,7 @@ cp_lookup_symbol_imports (const char *scope,
 		  name_copy.erase (prefix_len);
 		  context = lookup_typename (lang,
 					     name_copy.c_str (),
-					     parent, 1);
+					     parent, true);
 		}
 
 	      if (context == NULL)
@@ -1004,7 +1004,7 @@ cp_lookup_nested_symbol (struct type *parent_type,
 static void
 maintenance_cplus_namespace (const char *args, int from_tty)
 {
-  gdb_printf (_("The `maint namespace' command was removed.\n"));
+  gdb_printf (_("The \"maint namespace\" command was removed.\n"));
 }
 
 INIT_GDB_FILE (cp_namespace)

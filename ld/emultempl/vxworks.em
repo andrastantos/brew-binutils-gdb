@@ -42,13 +42,13 @@ vxworks_after_open (void)
   if (force_dynamic
       && link_info.input_bfds
       && bfd_get_flavour (link_info.output_bfd) == bfd_target_elf_flavour
-      && !bfd_elf_link_create_dynamic_sections (link_info.input_bfds,
-						&link_info))
+      && !bfd_elf_link_create_dynamic_sections (&link_info))
     einfo (_("%X%P: cannot create dynamic sections %E\n"));
 
   if (!force_dynamic
       && !bfd_link_pic (&link_info)
       && bfd_get_flavour (link_info.output_bfd) == bfd_target_elf_flavour
+      && is_elf_hash_table (link_info.hash)
       && elf_hash_table (&link_info)->dynamic_sections_created)
     einfo (_("%X%P: dynamic sections created in non-dynamic link\n"));
 }

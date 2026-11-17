@@ -939,7 +939,7 @@ arm_linux_get_next_pcs_syscall_next_pc (struct arm_get_next_pcs *self)
   if (svc_number == ARM_SIGRETURN || svc_number == ARM_RT_SIGRETURN)
     {
       /* SIGRETURN or RT_SIGRETURN may affect the arm thumb mode, so
-	 update IS_THUMB.   */
+	 update IS_THUMB.  */
       next_pc = arm_linux_sigreturn_next_pc (regcache, svc_number, &is_thumb);
     }
 
@@ -1228,7 +1228,7 @@ arm_stap_parse_special_token (struct gdbarch *gdbarch,
 
       if (user_reg_map_name_to_regnum (gdbarch, { regname, len })
 	  == -1)
-	error (_("Invalid register name `%s' on expression `%s'."),
+	error (_("Invalid register name \"%s\" on expression \"%s\"."),
 	       regname, p->saved_arg);
 
       ++tmp;

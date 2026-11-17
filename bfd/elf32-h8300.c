@@ -41,7 +41,7 @@ static bool elf32_h8_relax_delete_bytes
   (bfd *, asection *, bfd_vma, int);
 static bool elf32_h8_symbol_address_p (bfd *, asection *, bfd_vma);
 static bfd_byte *elf32_h8_get_relocated_section_contents
-  (bfd *, struct bfd_link_info *, struct bfd_link_order *,
+  (bfd *, struct bfd_link_info *, const struct bfd_link_order *,
    bfd_byte *, bool, asymbol **);
 static bfd_reloc_status_type elf32_h8_final_link_relocate
   (unsigned long, bfd *, bfd *, asection *,
@@ -441,7 +441,7 @@ elf32_h8_relocate_section (struct bfd_link_info *info,
     {
       unsigned int r_type;
       unsigned long r_symndx;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma relocation;
@@ -712,9 +712,8 @@ elf32_h8_relax_section (bfd *abfd, asection *sec,
   symtab_hdr = &elf_symtab_hdr (abfd);
 
   /* Get a copy of the native relocations.  */
-  internal_relocs = (_bfd_elf_link_read_relocs
-		     (abfd, sec, NULL, (Elf_Internal_Rela *) NULL,
-		      link_info->keep_memory));
+  internal_relocs = _bfd_elf_link_read_relocs (abfd, sec, NULL, NULL,
+					       link_info->keep_memory);
   if (internal_relocs == NULL)
     goto error_return;
 
@@ -1596,12 +1595,13 @@ elf32_h8_symbol_address_p (bfd *abfd, asection *sec, bfd_vma addr)
    which uses elf32_h8_relocate_section.  */
 
 static bfd_byte *
-elf32_h8_get_relocated_section_contents (bfd *output_bfd,
-					 struct bfd_link_info *link_info,
-					 struct bfd_link_order *link_order,
-					 bfd_byte *data,
-					 bool relocatable,
-					 asymbol **symbols)
+elf32_h8_get_relocated_section_contents
+  (bfd *output_bfd,
+   struct bfd_link_info *link_info,
+   const struct bfd_link_order *link_order,
+   bfd_byte *data,
+   bool relocatable,
+   asymbol **symbols)
 {
   Elf_Internal_Shdr *symtab_hdr;
   asection *input_section = link_order->u.indirect.section;
@@ -1638,9 +1638,8 @@ elf32_h8_get_relocated_section_contents (bfd *output_bfd,
       Elf_Internal_Sym *isym, *isymend;
       bfd_size_type amt;
 
-      internal_relocs = (_bfd_elf_link_read_relocs
-			 (input_bfd, input_section, NULL,
-			  (Elf_Internal_Rela *) NULL, false));
+      internal_relocs = _bfd_elf_link_read_relocs (input_bfd, input_section,
+						   NULL, NULL, false);
       if (internal_relocs == NULL)
 	goto error_return;
 

@@ -858,7 +858,7 @@ Connect to a target machine or process.\n\
 The first argument is the type or protocol of the target machine.\n\
 Remaining arguments are interpreted by the target protocol.  For more\n\
 information on the arguments for a particular protocol, type\n\
-`help target ' followed by the protocol name."),
+\"help target \" followed by the protocol name."),
 			  &targetlist, 0, &cmdlist);
   c = add_cmd (t.shortname, no_class, t.doc, &targetlist);
   c->set_context ((void *) &t);
@@ -1105,7 +1105,7 @@ target_supports_terminal_ours (void)
 static void
 tcomplain (void)
 {
-  error (_("You can't do that when your target is `%s'"),
+  error (_("You can't do that when your target is \"%s\""),
 	 current_inferior ()->top_target ()->shortname ());
 }
 
@@ -1121,16 +1121,14 @@ default_terminal_info (struct target_ops *self, const char *args, int from_tty)
   gdb_printf (_("No saved terminal information.\n"));
 }
 
-/* A default implementation for the to_get_ada_task_ptid target method.
-
-   This function builds the PTID by using both LWP and TID as part of
-   the PTID lwp and tid elements.  The pid used is the pid of the
-   inferior_ptid.  */
+/* A default implementation for the to_get_ada_task_ptid target
+   method.  This function builds the PTID using just the LWP parameter
+   and the current inferior, as this is what most targets need.  */
 
 static ptid_t
 default_get_ada_task_ptid (struct target_ops *self, long lwp, ULONGEST tid)
 {
-  return ptid_t (inferior_ptid.pid (), lwp, tid);
+  return ptid_t (inferior_ptid.pid (), lwp);
 }
 
 static enum exec_direction_kind
@@ -1269,7 +1267,7 @@ target_translate_tls_address (struct objfile *objfile, CORE_ADDR offset,
       if (name == nullptr)
 	error (_("Cannot translate TLS address without registers"));
       else
-	error (_("Cannot find address of TLS symbol `%s' without registers"),
+	error (_("Cannot find address of TLS symbol \"%s\" without registers"),
 	       name);
     }
 
@@ -1314,12 +1312,12 @@ target_translate_tls_address (struct objfile *objfile, CORE_ADDR offset,
 	      break;
 	    case TLS_LOAD_MODULE_NOT_FOUND_ERROR:
 	      if (objfile_is_library)
-		error (_("Cannot find shared library `%ps' in dynamic"
+		error (_("Cannot find shared library \"%ps\" in dynamic"
 			 " linker's load module list"),
 		       styled_string (file_name_style.style (),
 				      objfile_name (objfile)));
 	      else
-		error (_("Cannot find executable file `%ps' in dynamic"
+		error (_("Cannot find executable file \"%ps\" in dynamic"
 			 " linker's load module list"),
 		       styled_string (file_name_style.style (),
 				      objfile_name (objfile)));
@@ -1328,7 +1326,7 @@ target_translate_tls_address (struct objfile *objfile, CORE_ADDR offset,
 	      if (objfile_is_library)
 		error (_("The inferior has not yet allocated storage for"
 			 " thread-local variables in\n"
-			 "the shared library `%ps'\n"
+			 "the shared library \"%ps\"\n"
 			 "for %s"),
 		       styled_string (file_name_style.style (),
 				      objfile_name (objfile)),
@@ -1336,7 +1334,7 @@ target_translate_tls_address (struct objfile *objfile, CORE_ADDR offset,
 	      else
 		error (_("The inferior has not yet allocated storage for"
 			 " thread-local variables in\n"
-			 "the executable `%ps'\n"
+			 "the executable \"%ps\"\n"
 			 "for %s"),
 		       styled_string (file_name_style.style (),
 				      objfile_name (objfile)),
@@ -2482,7 +2480,7 @@ target_pre_inferior ()
   if (!gdbarch_has_global_solist (current_inferior ()->arch ()))
     {
       no_shared_libraries (current_program_space);
-      current_program_space->unset_solib_ops ();
+      current_program_space->clear_solib_ops ();
 
       invalidate_target_mem_regions ();
 
@@ -3547,7 +3545,8 @@ target_fileio_read_alloc (struct inferior *inf, const char *filename,
 /* See target.h.  */
 
 gdb::unique_xmalloc_ptr<char>
-target_fileio_read_stralloc (struct inferior *inf, const char *filename)
+target_fileio_read_stralloc (struct inferior *inf, const char *filename,
+			     LONGEST *len)
 {
   gdb_byte *buffer;
   char *bufstr;
@@ -3556,17 +3555,21 @@ target_fileio_read_stralloc (struct inferior *inf, const char *filename)
   transferred = target_fileio_read_alloc_1 (inf, filename, &buffer, 1);
   bufstr = (char *) buffer;
 
+  /* On failure target_fileio_read_alloc_1 returns -1.  */
+  if (len != nullptr)
+    *len = transferred;
+
   if (transferred < 0)
     return gdb::unique_xmalloc_ptr<char> (nullptr);
 
   if (transferred == 0)
     return make_unique_xstrdup ("");
 
-  bufstr[transferred] = 0;
+  bufstr[transferred] = '\0';
 
   /* Check for embedded NUL bytes; but allow trailing NULs.  */
   for (i = strlen (bufstr); i < transferred; i++)
-    if (bufstr[i] != 0)
+    if (bufstr[i] != '\0')
       {
 	warning (_("target file %s "
 		   "contained unexpected null characters"),
@@ -4246,7 +4249,7 @@ target_done_generating_core (void)
 
 
 
-static char targ_desc[] =
+static char const targ_desc[] =
 "Names of targets and files being debugged.\nShows the entire \
 stack of targets currently in use (including the exec-file,\n\
 core-file, and process, if any), as well as the symbol file name.";

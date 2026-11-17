@@ -2165,7 +2165,7 @@ elf32_tic6x_relocate_section (struct bfd_link_info *info,
       unsigned long r_symndx;
       arelent bfd_reloc;
       reloc_howto_type *howto;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma off, off2, relocation;
@@ -2693,7 +2693,7 @@ elf32_tic6x_check_relocs (bfd *abfd, struct bfd_link_info *info,
   if ((bfd_link_pic (info) || elf32_tic6x_using_dsbt (abfd))
       && ! htab->elf.dynamic_sections_created)
     {
-      if (! bfd_elf_link_create_dynamic_sections (abfd, info))
+      if (!bfd_elf_link_create_dynamic_sections (info))
 	return false;
     }
 
@@ -2705,18 +2705,10 @@ elf32_tic6x_check_relocs (bfd *abfd, struct bfd_link_info *info,
       unsigned int r_type;
       unsigned int r_symndx;
       struct elf_link_hash_entry *h;
-      Elf_Internal_Sym *isym;
+      const Elf_Internal_Sym *isym;
 
       r_symndx = ELF32_R_SYM (rel->r_info);
       r_type = ELF32_R_TYPE (rel->r_info);
-
-      if (r_symndx >= NUM_SHDR_ENTRIES (symtab_hdr))
-	{
-	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: bad symbol index: %d"),
-			      abfd, r_symndx);
-	  return false;
-	}
 
       if (r_symndx < symtab_hdr->sh_info)
 	{
@@ -2788,8 +2780,9 @@ elf32_tic6x_check_relocs (bfd *abfd, struct bfd_link_info *info,
 
 	  if (htab->elf.sgot == NULL)
 	    {
-	      if (htab->elf.dynobj == NULL)
-		htab->elf.dynobj = abfd;
+	      if (htab->elf.dynobj == NULL
+		  && !_bfd_elf_link_dynobj (info))
+		return false;
 	      if (!_bfd_elf_create_got_section (htab->elf.dynobj, info))
 		return false;
 	    }
@@ -2843,8 +2836,9 @@ elf32_tic6x_check_relocs (bfd *abfd, struct bfd_link_info *info,
 		 this reloc.  */
 	      if (sreloc == NULL)
 		{
-		  if (htab->elf.dynobj == NULL)
-		    htab->elf.dynobj = abfd;
+		  if (htab->elf.dynobj == NULL
+		      && !_bfd_elf_link_dynobj (info))
+		    return false;
 
 		  sreloc = _bfd_elf_make_dynamic_reloc_section
 		    (sec, htab->elf.dynobj, 2, abfd, /*rela? */ true);
@@ -2861,9 +2855,7 @@ elf32_tic6x_check_relocs (bfd *abfd, struct bfd_link_info *info,
 		}
 	      else
 		{
-		  /* Track dynamic relocs needed for local syms too.
-		     We really need local syms available to do this
-		     easily.  Oh well.  */
+		  /* Track dynamic relocs needed for local syms too.  */
 		  void **vpp;
 		  asection *s;
 

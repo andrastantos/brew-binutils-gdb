@@ -112,7 +112,13 @@
    opcodes and variable-length operands cannot be used.  If this macro is
    nonzero, use the DW_LNS_fixed_advance_pc opcode instead.  */
 #ifndef DWARF2_USE_FIXED_ADVANCE_PC
-# define DWARF2_USE_FIXED_ADVANCE_PC	linkrelax
+# define DWARF2_USE_FIXED_ADVANCE_PC(FROM, TO)	linkrelax
+#endif
+
+/* Similar to DWARF2_USE_FIXED_ADVANCE_PC, used for frag.  */
+#ifndef DWARF2_USE_FIXED_ADVANCE_PC_FRAG
+# define DWARF2_USE_FIXED_ADVANCE_PC_FRAG(FRAG) \
+	 DWARF2_USE_FIXED_ADVANCE_PC (0, 0)
 #endif
 
 /* First special line opcode - leave room for the standard opcodes.
@@ -1898,7 +1904,7 @@ relax_inc_line_addr (int line_delta, symbolS *to_sym, symbolS *from_sym)
 
   /* The maximum size of the frag is the line delta with a maximum
      sized address delta.  */
-  if (DWARF2_USE_FIXED_ADVANCE_PC)
+  if (DWARF2_USE_FIXED_ADVANCE_PC (from_sym, to_sym))
     max_chars = size_fixed_inc_line_addr (line_delta,
 					  -DWARF2_LINE_MIN_INSN_LENGTH);
   else
@@ -1919,7 +1925,7 @@ dwarf2dbg_estimate_size_before_relax (fragS *frag)
   int size;
 
   addr_delta = resolve_symbol_value (frag->fr_symbol);
-  if (DWARF2_USE_FIXED_ADVANCE_PC)
+  if (DWARF2_USE_FIXED_ADVANCE_PC_FRAG (frag))
     size = size_fixed_inc_line_addr (frag->fr_offset, addr_delta);
   else
     size = size_inc_line_addr (frag->fr_offset, addr_delta);
@@ -1953,31 +1959,25 @@ dwarf2dbg_convert_frag (fragS *frag)
 {
   offsetT addr_diff;
 
-  if (DWARF2_USE_FIXED_ADVANCE_PC)
-    {
-      /* If linker relaxation is enabled then the distance between the two
-	 symbols in the frag->fr_symbol expression might change.  Hence we
-	 cannot rely upon the value computed by resolve_symbol_value.
-	 Instead we leave the expression unfinalized and allow
-	 emit_fixed_inc_line_addr to create a fixup (which later becomes a
-	 relocation) that will allow the linker to correctly compute the
-	 actual address difference.  We have to use a fixed line advance for
-	 this as we cannot (easily) relocate leb128 encoded values.  */
-      int saved_finalize_syms = finalize_syms;
-
-      finalize_syms = 0;
-      addr_diff = resolve_symbol_value (frag->fr_symbol);
-      finalize_syms = saved_finalize_syms;
-    }
-  else
-    addr_diff = resolve_symbol_value (frag->fr_symbol);
+  /* If linker relaxation is enabled then the distance between the two
+     symbols in the frag->fr_symbol expression might change.  Hence we
+     cannot rely upon the value computed by resolve_symbol_value.
+     Instead we leave the expression unfinalized and allow
+     emit_fixed_inc_line_addr to create a fixup (which later becomes a
+     relocation) that will allow the linker to correctly compute the
+     actual address difference.  We have to use a fixed line advance for
+     this as we cannot (easily) relocate leb128 encoded values.  */
+  int saved_finalize_syms = finalize_syms;
+  finalize_syms = 0;
+  addr_diff = resolve_symbol_value (frag->fr_symbol);
+  finalize_syms = saved_finalize_syms;
 
   /* fr_var carries the max_chars that we created the fragment with.
      fr_subtype carries the current expected length.  We must, of
      course, have allocated enough memory earlier.  */
   gas_assert (frag->fr_var >= (int) frag->fr_subtype);
 
-  if (DWARF2_USE_FIXED_ADVANCE_PC)
+  if (DWARF2_USE_FIXED_ADVANCE_PC_FRAG (frag))
     emit_fixed_inc_line_addr (frag->fr_offset, addr_diff, frag,
 			      frag->fr_literal + frag->fr_fix,
 			      frag->fr_subtype);
@@ -2110,7 +2110,8 @@ process_entries (segT seg, struct line_entry *e)
 	  out_set_addr (lab);
 	  out_inc_line_addr (line_delta, 0);
 	}
-      else if (frag == last_frag && ! DWARF2_USE_FIXED_ADVANCE_PC)
+      else if (frag == last_frag
+	       && ! DWARF2_USE_FIXED_ADVANCE_PC (last_lab, lab))
 	out_inc_line_addr (line_delta, frag_ofs - last_frag_ofs);
       else
 	relax_inc_line_addr (line_delta, lab, last_lab);
@@ -2127,7 +2128,7 @@ process_entries (segT seg, struct line_entry *e)
   /* Emit a DW_LNE_end_sequence for the end of the section.  */
   frag = last_frag_for_seg (seg);
   frag_ofs = get_frag_fix (frag, seg);
-  if (frag == last_frag && ! DWARF2_USE_FIXED_ADVANCE_PC)
+  if (frag == last_frag && ! DWARF2_USE_FIXED_ADVANCE_PC (last_lab, lab))
     out_inc_line_addr (INT_MAX, frag_ofs - last_frag_ofs);
   else
     {
@@ -2752,7 +2753,7 @@ out_debug_abbrev (segT abbrev_seg,
 	  continue;
 #endif
 
-	  if (S_IS_EXTERNAL (symp))
+	  if (S_IS_EXTERNAL (symp) || S_IS_WEAK (symp))
 	    have_efunc = true;
 	  else
 	    have_lfunc = true;
@@ -2977,7 +2978,7 @@ out_debug_info (segT info_seg, segT abbrev_seg, segT line_seg, segT str_seg,
 
 	  /* DW_AT_external.  */
 	  if (func_form == DW_FORM_flag)
-	    out_byte (S_IS_EXTERNAL (symp));
+	    out_byte (S_IS_EXTERNAL (symp) || S_IS_WEAK (symp));
 
 	  /* PR 29517: Let consumers know that we do not have
 	     return type information for this function.  */
@@ -3043,10 +3044,9 @@ out_debug_str (segT str_seg, symbolS **name_sym, symbolS **comp_dir_sym,
 
   subseg_set (str_seg, 0);
 
-  /* DW_AT_name.  We don't have the actual file name that was present
-     on the command line, so assume files[first_file] is the main input file.
-     We're not supposed to get called unless at least one line number
-     entry was emitted, so this should always be defined.  */
+  /* DW_AT_name.  The first file-table entry names the CU.  For gas-generated
+     line info, dwarf2_finish registers the primary source before other files.
+     There is at least one line entry when we get here.  */
   *name_sym = symbol_temp_new_now_octets ();
 
   if (files[first_file].dir)
@@ -3190,6 +3190,10 @@ dwarf2_finish (void)
       bfd_set_section_flags (line_seg,
 			     SEC_READONLY | SEC_DEBUGGING | SEC_OCTETS);
     }
+
+  /* Register the primary source before files from line entries.  */
+  if (debug_type == DEBUG_DWARF2 && all_segs != NULL)
+    allocate_filenum (as_where_primary ());
 
   for (s = all_segs; s; s = s->next)
     {

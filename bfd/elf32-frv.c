@@ -1322,7 +1322,7 @@ _frvfdpic_emit_got_relocs_plt_entries (struct frvfdpic_relocs_info *entry,
 				       bfd *output_bfd,
 				       struct bfd_link_info *info,
 				       asection *sec,
-				       Elf_Internal_Sym *sym,
+				       const Elf_Internal_Sym *sym,
 				       bfd_vma addend)
 
 {
@@ -2703,7 +2703,7 @@ elf32_frv_relocate_section (struct bfd_link_info *info,
     {
       reloc_howto_type *howto;
       unsigned long r_symndx;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma relocation;
@@ -6071,12 +6071,14 @@ elf32_frv_check_relocs (bfd *abfd,
 	case R_FRV_GPRELLO:
 	case R_FRV_LABEL24:
 	case R_FRV_32:
-	  if (! dynobj)
+	  if (dynobj == NULL)
 	    {
-	      elf_hash_table (info)->dynobj = dynobj = abfd;
-	      if (! _frv_create_got_section (abfd, info))
+	      dynobj = _bfd_elf_link_dynobj (info);
+	      if (dynobj == NULL)
 		return false;
 	    }
+	  if (!_frv_create_got_section (dynobj, info))
+	    return false;
 	  if (! IS_FDPIC (abfd))
 	    {
 	      picrel = NULL;

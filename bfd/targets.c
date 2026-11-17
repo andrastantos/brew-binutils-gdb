@@ -482,7 +482,7 @@ BFD_JUMP_TABLE macros.
 .  bfd_byte *
 .	(*_bfd_get_relocated_section_contents) (bfd *,
 .					        struct bfd_link_info *,
-.					        struct bfd_link_order *,
+.					        const struct bfd_link_order *,
 .					        bfd_byte *, bool,
 .					        struct bfd_symbol **);
 .
@@ -931,7 +931,6 @@ extern const bfd_target vax_elf32_vec;
 extern const bfd_target visium_elf32_vec;
 extern const bfd_target wasm_vec;
 extern const bfd_target wasm32_elf32_vec;
-extern const bfd_target x86_64_coff_vec;
 extern const bfd_target x86_64_elf32_vec;
 extern const bfd_target x86_64_elf64_vec;
 extern const bfd_target x86_64_elf64_fbsd_vec;
@@ -1343,7 +1342,6 @@ static const bfd_target * const _bfd_target_vector[] =
 	&wasm32_elf32_vec,
 
 #ifdef BFD64
-	&x86_64_coff_vec,
 	&x86_64_elf32_vec,
 	&x86_64_elf64_vec,
 	&x86_64_elf64_fbsd_vec,

@@ -51,12 +51,8 @@
 #if HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
 #endif
-#if HAVE_SIGNAL_H
 #include <signal.h>
-#endif
-#if HAVE_FCNTL_H
 #include <fcntl.h>
-#endif
 #include "gdbsupport/gdb_sys_time.h"
 #include <unistd.h>
 #if HAVE_ARPA_INET_H
@@ -128,13 +124,11 @@ static void
 enable_async_notification (int fd)
 {
 #if defined(F_SETFL) && defined (FASYNC)
-  int save_fcntl_flags;
-
-  save_fcntl_flags = fcntl (fd, F_GETFL, 0);
-  fcntl (fd, F_SETFL, save_fcntl_flags | FASYNC);
-#if defined (F_SETOWN)
+#  if defined (F_SETOWN)
   fcntl (fd, F_SETOWN, getpid ());
-#endif
+#  endif
+  int save_fcntl_flags = fcntl (fd, F_GETFL, 0);
+  fcntl (fd, F_SETFL, save_fcntl_flags | FASYNC);
 #endif
 }
 

@@ -44,6 +44,7 @@ typedef uint64_t bpf_insn_word;
 #define BPF_V2 0x2
 #define BPF_V3 0x3
 #define BPF_V4 0x4
+#define BPF_V5 0x5
 #define BPF_XBPF 0xf
 
 /* Masks for the several instruction fields in a BPF instruction.
@@ -133,9 +134,20 @@ typedef uint64_t bpf_insn_word;
    even if these are multi-byte or infra-byte.  Bleh.  */
 
 #define BPF_OFFSET16_SDIVMOD ((uint64_t)0x1 << 32)
+#define BPF_OFFSET16_UHMUL ((uint64_t) 0x1 << 32)
+#define BPF_OFFSET16_SHMUL ((uint64_t) 0x2 << 32)
 #define BPF_OFFSET16_MOVS8 ((uint64_t)8 << 32)
 #define BPF_OFFSET16_MOVS16 ((uint64_t)16 << 32)
 #define BPF_OFFSET16_MOVS32 ((uint64_t)32 << 32)
+#define BPF_OFFSET16_ASCAST ((uint64_t)0x1 << 32)
+
+/* In an address space cast the immediate holds the destination address
+   space in its upper half and the source address space in its lower
+   half.  Only the generic address space 0 and the arena address space
+   1 exist, so only these two combinations are meaningful.  */
+
+#define BPF_IMM32_ASCAST_K ((uint64_t)0x00000001) /* 0 <- 1.  */
+#define BPF_IMM32_ASCAST_U ((uint64_t)0x00010000) /* 1 <- 0.  */
 
 #define BPF_IMM32_END16 ((uint64_t)0x00000010)
 #define BPF_IMM32_END32 ((uint64_t)0x00000020)
@@ -155,6 +167,8 @@ typedef uint64_t bpf_insn_word;
 #define BPF_IMM32_AFXOR ((uint64_t)0x000000a1)
 #define BPF_IMM32_AXCHG ((uint64_t)0x000000e1)
 #define BPF_IMM32_ACMP  ((uint64_t)0x000000f1)
+#define BPF_IMM32_LDACQ ((uint64_t)0x00000100)
+#define BPF_IMM32_STREL ((uint64_t)0x00000110)
 
 /* Unique identifiers for BPF instructions.  */
 
@@ -165,6 +179,7 @@ enum bpf_insn_id
   BPF_INSN_LDDW,
   /* ALU instructions.  */
   BPF_INSN_ADDR, BPF_INSN_ADDI, BPF_INSN_SUBR, BPF_INSN_SUBI,
+  BPF_INSN_UHMULR, BPF_INSN_UHMULI, BPF_INSN_SHMULR, BPF_INSN_SHMULI,
   BPF_INSN_MULR, BPF_INSN_MULI, BPF_INSN_SDIVR, BPF_INSN_SDIVI,
   BPF_INSN_SMODR, BPF_INSN_SMODI, BPF_INSN_DIVR, BPF_INSN_DIVI,
   BPF_INSN_MODR, BPF_INSN_MODI, BPF_INSN_ORR, BPF_INSN_ORI,
@@ -172,7 +187,7 @@ enum bpf_insn_id
   BPF_INSN_NEGR, BPF_INSN_LSHR, BPF_INSN_LSHI,
   BPF_INSN_RSHR, BPF_INSN_RSHI, BPF_INSN_ARSHR, BPF_INSN_ARSHI,
   BPF_INSN_MOVS8R, BPF_INSN_MOVS16R, BPF_INSN_MOVS32R,
-  BPF_INSN_MOVR, BPF_INSN_MOVI,
+  BPF_INSN_ASCASTK, BPF_INSN_ASCASTU, BPF_INSN_MOVR, BPF_INSN_MOVI,
   /* ALU32 instructions.  */
   BPF_INSN_ADD32R, BPF_INSN_ADD32I, BPF_INSN_SUB32R, BPF_INSN_SUB32I,
   BPF_INSN_MUL32R, BPF_INSN_MUL32I, BPF_INSN_SDIV32R, BPF_INSN_SDIV32I,
@@ -203,7 +218,7 @@ enum bpf_insn_id
   BPF_INSN_JAR, BPF_INSN_JEQR, BPF_INSN_JGTR, BPF_INSN_JSGTR,
   BPF_INSN_JGER, BPF_INSN_JSGER, BPF_INSN_JLTR, BPF_INSN_JSLTR,
   BPF_INSN_JSLER, BPF_INSN_JLER, BPF_INSN_JSETR, BPF_INSN_JNER,
-  BPF_INSN_CALLR, BPF_INSN_CALL, BPF_INSN_EXIT,
+  BPF_INSN_JAX, BPF_INSN_CALLR, BPF_INSN_CALL, BPF_INSN_EXIT,
   /* Compare-and-jump instructions (reg OP imm.)  */
   BPF_INSN_JEQI, BPF_INSN_JGTI, BPF_INSN_JSGTI,
   BPF_INSN_JGEI, BPF_INSN_JSGEI, BPF_INSN_JLTI, BPF_INSN_JSLTI,
@@ -230,6 +245,9 @@ enum bpf_insn_id
   BPF_INSN_ACMP, BPF_INSN_AXCHG,
   /* Atomic compare-and-swap, atomic exchange (32-bit).  */
   BPF_INSN_ACMP32, BPF_INSN_AXCHG32,
+  /* Load-acquire and store-release.  */
+  BPF_INSN_LDACQB, BPF_INSN_LDACQH, BPF_INSN_LDACQW, BPF_INSN_LDACQDW,
+  BPF_INSN_STRELB, BPF_INSN_STRELH, BPF_INSN_STRELW, BPF_INSN_STRELDW,
   /* Conditional pseudo-jump "may_goto".  A NOP until the BPF runtime
      decides it isn't.  */
   BPF_INSN_JCOND,
@@ -264,6 +282,19 @@ struct bpf_opcode
      %i64 - 64-bit signed immediate.
      %w - expect zero or more white spaces and print a single space.
      %W - expect one or more white spaces and print a single space.
+     %t - expect the end of a mnemonic, and print nothing.
+     %DIGIT - a decimal constant that the opcode already encodes; expect
+              any spelling of its value, e.g. `0x1' for %1, and print
+              the digits.
+
+     %t consumes no input.  It only asserts that the mnemonic just
+     matched ends there, that is, that the input does not continue it
+     with a character that could begin another mnemonic.  Any white
+     space is left to the %w or %W that follows: `goto%t%w%d16' matches
+     `goto +1', `goto+1' and `goto1', but not `gotol +1', which is a
+     different instruction.  Write %t after any literal mnemonic text,
+     so that adding an instruction whose mnemonic extends an existing
+     one does not silently make the shorter one match it.
 
      When parsing and printing %o16 and %I32 (but not %i32) an
      explicit sign is always expected and included.  Therefore, to

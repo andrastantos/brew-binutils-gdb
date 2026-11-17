@@ -449,8 +449,26 @@ no_emojis ()
   emoji_styling = AUTO_BOOLEAN_FALSE;
 }
 
+/* Emoji warning prefix default:
+   - u26A0: Warning Sign: ⚠
+   - uFE0F: Variation Selector-16 (VS16)
+   The VS16 forces "Emoji" presentation.  It is needed because the default
+   presentation for Warning Sign is "Text".  Together, we get: ⚠️ .
+
+   Emoji error prefix default:
+   - u274C: Cross Mark: ❌
+   No VS16 is needed because the default presentation for Cross Mark is
+   "Emoji".
+
+   UTF-8 string literals have type:
+   - const char[N]    (until C++20), or
+   - const char8_t[N] (since C++20).
+   Assign them to a variable to stabilize the type.  */
+static const char warning_prefix_default[] = u8"\u26A0\uFE0F ";
+static const char error_prefix_default[] = u8"\u274C ";
+
 /* Emoji warning prefix.  */
-static std::string warning_prefix = "⚠️ ";
+static std::string warning_prefix = warning_prefix_default;
 
 /* Implement 'show style warning-prefix'.  */
 
@@ -467,12 +485,12 @@ show_warning_prefix (struct ui_file *file, int from_tty,
 void
 print_warning_prefix (ui_file *file)
 {
-  if (emojis_ok ())
+  if (file->emoji_allowed () && emojis_ok ())
     gdb_puts (warning_prefix.c_str (), file);
 }
 
 /* Emoji error prefix.  */
-static std::string error_prefix = "❌️ ";
+static std::string error_prefix = error_prefix_default;
 
 /* Implement 'show style error-prefix'.  */
 
@@ -489,7 +507,7 @@ show_error_prefix (struct ui_file *file, int from_tty,
 void
 print_error_prefix (ui_file *file)
 {
-  if (emojis_ok ())
+  if (file->emoji_allowed () && emojis_ok ())
     gdb_puts (error_prefix.c_str (), file);
 }
 

@@ -412,9 +412,9 @@ i386_pseudo_register_name (struct gdbarch *gdbarch, int regnum)
   else if (i386_zmm_regnum_p (gdbarch, regnum))
     return i386_zmm_names[regnum - tdep->zmm0_regnum];
   else if (i386_byte_regnum_p (gdbarch, regnum))
-    return i386_byte_names[regnum - tdep->al_regnum];
+    return tdep->byte_names[regnum - tdep->al_regnum];
   else if (i386_word_regnum_p (gdbarch, regnum))
-    return i386_word_names[regnum - tdep->ax_regnum];
+    return tdep->word_names[regnum - tdep->ax_regnum];
 
   internal_error (_("invalid regnum"));
 }
@@ -2323,7 +2323,7 @@ static i386_insn i386_tramp_chain_on_stack_insns[] =
   {0}
 };
 
-/* Return whether PC points inside a stack trampoline.   */
+/* Return whether PC points inside a stack trampoline.  */
 
 static int
 i386_in_stack_tramp_p (CORE_ADDR pc)
@@ -3940,7 +3940,7 @@ i386_stap_parse_special_token_triplet (struct gdbarch *gdbarch,
       std::string regname (start, len);
 
       if (user_reg_map_name_to_regnum (gdbarch, regname) == -1)
-	error (_("Invalid register name `%s' on expression `%s'."),
+	error (_("Invalid register name \"%s\" on expression \"%s\"."),
 	       regname.c_str (), p->saved_arg);
 
       LONGEST value = 0;
@@ -4036,7 +4036,7 @@ i386_stap_parse_special_token_three_arg_disp (struct gdbarch *gdbarch,
       std::string base (start, len_base);
 
       if (user_reg_map_name_to_regnum (gdbarch, base) == -1)
-	error (_("Invalid register name `%s' on expression `%s'."),
+	error (_("Invalid register name \"%s\" on expression \"%s\"."),
 	       base.c_str (), p->saved_arg);
 
       s += 2;
@@ -4049,7 +4049,7 @@ i386_stap_parse_special_token_three_arg_disp (struct gdbarch *gdbarch,
       std::string index (start, len_index);
 
       if (user_reg_map_name_to_regnum (gdbarch, index) == -1)
-	error (_("Invalid register name `%s' on expression `%s'."),
+	error (_("Invalid register name \"%s\" on expression \"%s\"."),
 	       index.c_str (), p->saved_arg);
 
       if (*s != ',' && *s != ')')
@@ -8519,7 +8519,8 @@ i386_xcr0_from_tdesc (const struct target_desc *tdesc)
   const struct tdesc_feature *feature_core;
 
   const struct tdesc_feature *feature_sse, *feature_avx,
-			     *feature_avx512, *feature_pkeys;
+			     *feature_avx512, *feature_pkeys,
+			     *feature_apx;
 
   /* Get core registers.  */
   feature_core = tdesc_find_feature (tdesc, "org.gnu.gdb.i386.core");
@@ -8534,6 +8535,9 @@ i386_xcr0_from_tdesc (const struct target_desc *tdesc)
 
   /* Try AVX512 registers.  */
   feature_avx512 = tdesc_find_feature (tdesc, "org.gnu.gdb.i386.avx512");
+
+  /* Try APX registers.  */
+  feature_apx = tdesc_find_feature (tdesc, "org.gnu.gdb.i386.apx");
 
   /* Try PKEYS  */
   feature_pkeys = tdesc_find_feature (tdesc, "org.gnu.gdb.i386.pkeys");
@@ -8562,6 +8566,9 @@ i386_xcr0_from_tdesc (const struct target_desc *tdesc)
       xcr0 |= X86_XSTATE_AVX512;
     }
 
+  if (feature_apx)
+    xcr0 |= X86_XSTATE_APX_F;
+
   if (feature_pkeys)
     xcr0 |= X86_XSTATE_PKRU;
 
@@ -8577,7 +8584,7 @@ i386_validate_tdesc_p (i386_gdbarch_tdep *tdep,
 
   const struct tdesc_feature *feature_sse, *feature_avx, *feature_avx512,
 			     *feature_pkeys, *feature_segments,
-			     *feature_pl3_ssp;
+			     *feature_pl3_ssp, *feature_apx;
   int i, num_regs, valid_p;
 
   if (! tdesc_has_registers (tdesc))
@@ -8596,6 +8603,9 @@ i386_validate_tdesc_p (i386_gdbarch_tdep *tdep,
 
   /* Try AVX512 registers.  */
   feature_avx512 = tdesc_find_feature (tdesc, "org.gnu.gdb.i386.avx512");
+
+  /* Try APX registers.  */
+  feature_apx = tdesc_find_feature (tdesc, "org.gnu.gdb.i386.apx");
 
   /* Try segment base registers.  */
   feature_segments = tdesc_find_feature (tdesc, "org.gnu.gdb.i386.segments");
@@ -8679,6 +8689,18 @@ i386_validate_tdesc_p (i386_gdbarch_tdep *tdep,
     {
       tdep->xcr0 = X86_XSTATE_X87_MASK;
       tdep->num_xmm_regs = 0;
+    }
+
+  if (feature_apx
+      && tdep->r16_regnum != -1
+      && tdep->apx_register_names != nullptr
+      && tdep->num_apx_regs > 0)
+    {
+      tdep->xcr0 |= X86_XSTATE_APX_F;
+      for (i = 0; i < tdep->num_apx_regs; i++)
+	valid_p &= tdesc_numbered_register (feature_apx, tdesc_data,
+					    tdep->r16_regnum + i,
+					    tdep->apx_register_names[i]);
     }
 
   num_regs = tdep->num_core_regs;
@@ -8948,6 +8970,8 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   tdep->num_core_regs = I386_NUM_GREGS + I387_NUM_REGS;
   tdep->register_names = i386_register_names;
+  tdep->byte_names = i386_byte_names;
+  tdep->word_names = i386_word_names;
 
   tdep->num_byte_regs = 8;
   tdep->num_word_regs = 8;

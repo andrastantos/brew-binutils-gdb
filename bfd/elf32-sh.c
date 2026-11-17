@@ -475,9 +475,8 @@ sh_elf_relax_section (bfd *abfd, asection *sec,
 
   symtab_hdr = &elf_symtab_hdr (abfd);
 
-  internal_relocs = (_bfd_elf_link_read_relocs
-		     (abfd, sec, NULL, (Elf_Internal_Rela *) NULL,
-		      link_info->keep_memory));
+  internal_relocs = _bfd_elf_link_read_relocs (abfd, sec, NULL, NULL,
+					       link_info->keep_memory);
   if (internal_relocs == NULL)
     goto error_return;
 
@@ -1163,8 +1162,7 @@ sh_elf_relax_delete_bytes (bfd *abfd, asection *sec, bfd_vma addr,
       /* We always cache the relocs.  Perhaps, if info->keep_memory is
 	 FALSE, we should free them, if we are permitted to, when we
 	 leave sh_coff_relax_section.  */
-      internal_relocs = (_bfd_elf_link_read_relocs
-			 (abfd, o, NULL, (Elf_Internal_Rela *) NULL, true));
+      internal_relocs = _bfd_elf_link_read_relocs (abfd, o, NULL, NULL, true);
       if (internal_relocs == NULL)
 	return false;
 
@@ -3441,7 +3439,7 @@ sh_elf_relocate_section (struct bfd_link_info *info,
       int r_type;
       reloc_howto_type *howto;
       unsigned long r_symndx;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma relocation;
@@ -5062,7 +5060,7 @@ sh_elf_relocate_section (struct bfd_link_info *info,
 static bfd_byte *
 sh_elf_get_relocated_section_contents (bfd *output_bfd,
 				       struct bfd_link_info *link_info,
-				       struct bfd_link_order *link_order,
+				       const struct bfd_link_order *link_order,
 				       bfd_byte *data,
 				       bool relocatable,
 				       asymbol **symbols)
@@ -5102,9 +5100,8 @@ sh_elf_get_relocated_section_contents (bfd *output_bfd,
       Elf_Internal_Sym *isym, *isymend;
       bfd_size_type amt;
 
-      internal_relocs = (_bfd_elf_link_read_relocs
-			 (input_bfd, input_section, NULL,
-			  (Elf_Internal_Rela *) NULL, false));
+      internal_relocs = _bfd_elf_link_read_relocs (input_bfd, input_section,
+						   NULL, NULL, false);
       if (internal_relocs == NULL)
 	goto error_return;
 
@@ -5384,8 +5381,9 @@ sh_elf_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
 	    case R_SH_TLS_GD_32:
 	    case R_SH_TLS_LD_32:
 	    case R_SH_TLS_IE_32:
-	      if (htab->root.dynobj == NULL)
-		htab->root.dynobj = abfd;
+	      if (htab->root.dynobj == NULL
+		  && !_bfd_elf_link_dynobj (info))
+		return false;
 	      if (!create_got_section (htab->root.dynobj, info))
 		return false;
 	      break;
@@ -5656,8 +5654,9 @@ sh_elf_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
 	      struct elf_dyn_relocs *p;
 	      struct elf_dyn_relocs **head;
 
-	      if (htab->root.dynobj == NULL)
-		htab->root.dynobj = abfd;
+	      if (htab->root.dynobj == NULL
+		  && !_bfd_elf_link_dynobj (info))
+		return false;
 
 	      /* When creating a shared object, we must copy these
 		 reloc types into the output file.  We create a reloc

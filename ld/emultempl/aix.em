@@ -132,9 +132,6 @@ static unsigned int symbol_mode = 0x04;
 /* Which symbol modes are valid */
 static unsigned int symbol_mode_mask = 0x0d;
 
-/* Whether this is a 64 bit link */
-static int is_64bit = 0;
-
 /* Which syscalls from import file are valid */
 static unsigned int syscall_mask = 0x77;
 
@@ -601,13 +598,11 @@ gld${EMULATION_NAME}_handle_option (int optc)
       break;
 
     case OPTION_32:
-      is_64bit = 0;
       syscall_mask = 0x77;
       symbol_mode_mask = 0x0d;
       break;
 
     case OPTION_64:
-      is_64bit = 1;
       syscall_mask = 0xcc;
       symbol_mode_mask = 0x0e;
       break;
@@ -1630,7 +1625,7 @@ fi
 fragment <<EOF
 
 static void
-gld${EMULATION_NAME}_create_output_section_statements (void)
+gld${EMULATION_NAME}_after_open_output (void)
 {
   if ((bfd_get_flavour (link_info.output_bfd) != bfd_target_xcoff_flavour))
     return;
@@ -1767,7 +1762,7 @@ LDEMUL_SET_OUTPUT_ARCH=gld${EMULATION_NAME}_set_output_arch
 LDEMUL_CHOOSE_TARGET=gld${EMULATION_NAME}_choose_target
 LDEMUL_BEFORE_ALLOCATION=gld${EMULATION_NAME}_before_allocation
 LDEMUL_AFTER_ALLOCATION=gld${EMULATION_NAME}_after_allocation
-LDEMUL_CREATE_OUTPUT_SECTION_STATEMENTS=gld${EMULATION_NAME}_create_output_section_statements
+LDEMUL_AFTER_OPEN_OUTPUT=gld${EMULATION_NAME}_after_open_output
 LDEMUL_OPEN_DYNAMIC_ARCHIVE=gld${EMULATION_NAME}_open_dynamic_archive
 LDEMUL_PARSE_ARGS=gld${EMULATION_NAME}_parse_args
 LDEMUL_ADD_OPTIONS=gld${EMULATION_NAME}_add_options

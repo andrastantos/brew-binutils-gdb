@@ -1416,6 +1416,7 @@ enum bfd_architecture
 #define bfd_mach_mips4400              4400
 #define bfd_mach_mips4600              4600
 #define bfd_mach_mips4650              4650
+#define bfd_mach_mips_tx49             4900 /* Toshiba TX49 */
 #define bfd_mach_mips5000              5000
 #define bfd_mach_mips5400              5400
 #define bfd_mach_mips5500              5500
@@ -1838,6 +1839,7 @@ enum bfd_architecture
 #define bfd_mach_amdgcn_gfx1100         0x041
 #define bfd_mach_amdgcn_gfx1101         0x046
 #define bfd_mach_amdgcn_gfx1102         0x047
+#define bfd_mach_amdgcn_gfx1103         0x044
 #define bfd_mach_amdgcn_gfx1150         0x043
 #define bfd_mach_amdgcn_gfx1151         0x04a
 #define bfd_mach_amdgcn_gfx1152         0x055
@@ -2829,8 +2831,8 @@ bool bfd_set_private_flags (bfd *abfd, flagword flags);
        BFD_SEND (abfd, _bfd_canonicalize_dynamic_reloc, (abfd, arels, asyms))
 
 bfd_byte *bfd_get_relocated_section_contents
-   (bfd *, struct bfd_link_info *, struct bfd_link_order *, bfd_byte *,
-    bool, asymbol **);
+   (bfd *, struct bfd_link_info *, const struct bfd_link_order *,
+    bfd_byte *, bool, asymbol **);
 
 bool bfd_record_phdr
    (bfd *, unsigned long, bool, flagword, bool, bfd_vma,
@@ -6181,6 +6183,22 @@ enum bfd_reloc_code_real
   BFD_RELOC_XTENSA_NDIFF16,
   BFD_RELOC_XTENSA_NDIFF32,
 
+  /* Xtensa relocation to mark a positive difference of two local symbols
+     encoded as an unsigned LEB128 value.  This works like
+     BFD_RELOC_XTENSA_PDIFF32, but the linker rewrites the difference in
+     place using the number of bytes the assembler originally emitted, so
+     that the size of the containing section never changes.  Without it the
+     assembler would have to inhibit linker relaxation of all code covered
+     by such a difference, which DWARF 5 location and range lists produce
+     for virtually every function.  */
+  BFD_RELOC_XTENSA_PDIFF_ULEB128,
+
+  /* Xtensa 32-bit absolute address, computed as S + A with the addend taken
+     only from the r_addend field.  Unlike R_XTENSA_32, to which BFD_RELOC_32
+     maps and which is partial_inplace, the contents of the relocated word do
+     not contribute to the result.  */
+  BFD_RELOC_XTENSA_32_ABS,
+
   /* 8 bit signed offset in (ix+d) or (iy+d).  */
   BFD_RELOC_Z80_DISP8,
 
@@ -7722,7 +7740,7 @@ typedef struct bfd_target
   bfd_byte *
        (*_bfd_get_relocated_section_contents) (bfd *,
 					       struct bfd_link_info *,
-					       struct bfd_link_order *,
+					       const struct bfd_link_order *,
 					       bfd_byte *, bool,
 					       struct bfd_symbol **);
 

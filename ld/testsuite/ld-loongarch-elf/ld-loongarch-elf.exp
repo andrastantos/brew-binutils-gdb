@@ -29,6 +29,7 @@ if [istarget "loongarch64-*-*"] {
     run_dump_test "disas-jirl"
     run_dump_test "local-ifunc-reloc"
     run_dump_test "anno-sym"
+    run_dump_test "reloc-addend"
     run_dump_test "pcala64"
     run_dump_test "overflow_s_10_5"
     run_dump_test "overflow_s_10_12"
@@ -54,6 +55,7 @@ if [istarget "loongarch64-*-*"] {
     run_dump_test "relax-sym-size-1"
     run_dump_test "relax-sym-size-2"
     run_dump_test "check_got_relax"
+    run_dump_test "unresolved-ignore-all"
 
     # Tidy up, to not leave huge intermediate files.
     remote_file host delete tmpdir/relax-medium-call.o
@@ -145,6 +147,24 @@ if [istarget "loongarch64-*-*"] {
 	   ] \
       ]
 
+  run_ld_link_exec_tests [list \
+	[list \
+	    "get tls_var_pcaddi test" \
+	    "-mno-relax" \
+	    "" \
+	    { tls-got_pcaddi.s get-tls_var_pcaddi.c} \
+	    "tls-got_pcaddi" \
+	    "tls-got.out" \
+	] \
+	[list \
+	    "get tls_got test" \
+	    "-mno-relax" \
+	    "" \
+	    { tls-got.s get-tls_var.c} \
+	    "tls-got" \
+	    "tls-got.out" \
+	] \
+    ]
 
   run_ld_link_exec_tests [list \
 	[list \
@@ -229,6 +249,7 @@ if [istarget "loongarch64-*-*"] {
     run_dump_test "weak-undef-hidden-shared"
     run_dump_test "overflow_32_pcrel"
     run_dump_test "underflow_32_pcrel"
+    run_dump_test "dynamic-branch-no-plt"
   }
 
   if [check_pie_support] {

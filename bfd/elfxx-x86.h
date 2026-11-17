@@ -108,8 +108,20 @@
    shared lib.  */
 #define ELIMINATE_COPY_RELOCS 1
 
+/* Return true if ID names an x86 ELF backend, so that struct
+   elf_x86_link_hash_table is the correct layout of the link hash table.
+   ID is the target id of the output backend, which a linker script can
+   retarget with OUTPUT_FORMAT, so it need not name an x86 backend.  */
+
+static inline bool
+elf_x86_target_id_p (enum elf_target_id id)
+{
+  return id == X86_64_ELF_DATA || id == I386_ELF_DATA;
+}
+
 #define elf_x86_hash_table(p, id) \
   (is_elf_hash_table ((p)->hash) \
+   && elf_x86_target_id_p (id) \
    && elf_hash_table_id ((struct elf_link_hash_table *) ((p)->hash)) == (id) \
     ? ((struct elf_x86_link_hash_table *) ((p)->hash)) : NULL)
 
@@ -887,7 +899,7 @@ extern void _bfd_elf64_write_addend
 extern bool _bfd_elf_x86_valid_reloc_p
   (asection *, struct bfd_link_info *, struct elf_x86_link_hash_table *,
    const Elf_Internal_Rela *, struct elf_link_hash_entry *,
-   Elf_Internal_Sym *, Elf_Internal_Shdr *, bool *) ATTRIBUTE_HIDDEN;
+   const Elf_Internal_Sym *, Elf_Internal_Shdr *, bool *) ATTRIBUTE_HIDDEN;
 
 extern bool _bfd_x86_elf_late_size_sections
   (struct bfd_link_info *) ATTRIBUTE_HIDDEN;
@@ -949,17 +961,17 @@ extern void _bfd_x86_elf_link_fixup_ifunc_symbol
 
 extern void _bfd_x86_elf_link_report_relative_reloc
   (struct bfd_link_info *, asection *, struct elf_link_hash_entry *,
-   Elf_Internal_Sym *, const char *, const void *) ATTRIBUTE_HIDDEN;
+   const Elf_Internal_Sym *, const char *, const void *) ATTRIBUTE_HIDDEN;
 
 extern void _bfd_x86_elf_link_report_tls_transition_error
   (struct bfd_link_info *, bfd *, asection *, Elf_Internal_Shdr *,
-   struct elf_link_hash_entry *, Elf_Internal_Sym *,
+   struct elf_link_hash_entry *, const Elf_Internal_Sym *,
    const Elf_Internal_Rela *, const char *, const char *,
    enum elf_x86_tls_error_type) ATTRIBUTE_HIDDEN;
 
 extern void _bfd_x86_elf_link_report_error
   (bfd *, asection *, Elf_Internal_Shdr *, struct elf_link_hash_entry *,
-   Elf_Internal_Sym *, reloc_howto_type *,
+   const Elf_Internal_Sym *, reloc_howto_type *,
    enum elf_x86_error_type) ATTRIBUTE_HIDDEN;
 
 extern void _bfd_x86_elf_link_report_relocation_error

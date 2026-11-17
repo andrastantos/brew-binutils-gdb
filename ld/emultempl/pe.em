@@ -69,7 +69,6 @@ fragment <<EOF
 EOF
 
 case ${target} in
-  x86_64-*-mingw* | x86_64-*-pe | x86_64-*-pep | x86_64-*-cygwin | \
   i[3-7]86-*-mingw32* | i[3-7]86-*-cygwin* | i[3-7]86-*-winnt | i[3-7]86-*-pe)
 fragment <<EOF
 #include "pdb.h"
@@ -1270,25 +1269,26 @@ pecoff_checksum_contents (bfd *abfd,
 			  void (*process) (const void *, size_t, void *),
 			  void *arg)
 {
-  file_ptr filepos = (file_ptr) 0;
+  const bfd_size_type bufsize = 65536;
+  unsigned char fallback_buf[64];
+  unsigned char *buf;
+  bfd_size_type read_size = bufsize;
+  bfd_size_type n;
 
-  while (1)
+  if (bfd_seek (abfd, 0, SEEK_SET) != 0)
+    return false;
+
+  buf = malloc (bufsize);
+  if (buf == NULL)
     {
-      unsigned char b;
-      int status;
-
-      if (bfd_seek (abfd, filepos, SEEK_SET) != 0)
-	return 0;
-
-      status = bfd_read (&b, 1, abfd);
-      if (status < 1)
-	{
-	  break;
-	}
-
-      (*process) (&b, 1, arg);
-      filepos += 1;
+      buf = fallback_buf;
+      read_size = sizeof (fallback_buf);
     }
+  while ((n = bfd_read (buf, read_size, abfd)) != 0
+	 && n != (bfd_size_type) -1)
+    (*process) (buf, n, arg);
+  if (buf != fallback_buf)
+    free (buf);
 
   return true;
 }

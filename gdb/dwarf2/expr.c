@@ -1382,7 +1382,7 @@ dwarf_expr_require_composition (const gdb_byte *op_ptr, const gdb_byte *op_end,
 {
   if (op_ptr != op_end && *op_ptr != DW_OP_piece && *op_ptr != DW_OP_bit_piece
       && *op_ptr != DW_OP_GNU_uninit)
-    error (_("DWARF-2 expression error: `%s' operations must be "
+    error (_("DWARF-2 expression error: \"%s\" operations must be "
 	     "used either alone or in conjunction with DW_OP_piece "
 	     "or DW_OP_bit_piece."),
 	   op_name);
@@ -2016,7 +2016,8 @@ dwarf_expr_context::execute_stack_op (gdb::array_view<const gdb_byte> expr)
 	case DW_OP_deref_type:
 	case DW_OP_GNU_deref_type:
 	  {
-	    int addr_size = (op == DW_OP_deref ? this->m_addr_size : *op_ptr++);
+	    int deref_size
+	      = (op == DW_OP_deref ? this->m_addr_size : *op_ptr++);
 	    CORE_ADDR addr = fetch_address (0);
 	    struct type *type;
 
@@ -2027,11 +2028,16 @@ dwarf_expr_context::execute_stack_op (gdb::array_view<const gdb_byte> expr)
 		op_ptr = safe_read_uleb128 (op_ptr, op_end, &uoffset);
 		cu_offset type_die_cu_off = (cu_offset) uoffset;
 		type = get_base_type (type_die_cu_off);
+		if (type->length () != deref_size)
+		  error (_("%s has dereference size %d, but its "
+			   "type has size %s"),
+			 get_DW_OP_name (op), deref_size,
+			 pulongest (type->length ()));
 	      }
 	    else
 	      type = address_type;
 
-	    result_val = this->deref (addr, addr_size, type);
+	    result_val = this->deref (addr, deref_size, type);
 	    break;
 	  }
 
@@ -2365,10 +2371,15 @@ dwarf_expr_context::execute_stack_op (gdb::array_view<const gdb_byte> expr)
 		if (trivial_entry_value (this->m_frame))
 		  {
 		    /* We can assume that DW_OP_entry_value (expr) == expr.
-		       Handle as DW_OP_regx.  */
+		       Handle DW_OP_regx, place register value on the
+		       stack.  */
+		    gdbarch *f_arch = get_frame_arch (this->m_frame);
+		    int dwarf_regnum = kind_u.dwarf_reg;
+		    int gdb_regnum
+		      = dwarf_reg_to_regnum_or_error (f_arch, dwarf_regnum);
 		    result_val
-		      = value_from_ulongest (address_type, kind_u.dwarf_reg);
-		    this->m_location = DWARF_VALUE_REGISTER;
+		      = value_from_register (address_type, gdb_regnum,
+					     this->m_frame);
 		    break;
 		  }
 

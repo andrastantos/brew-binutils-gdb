@@ -1725,6 +1725,20 @@ is_aarch64_special_symbol_name (const char *name)
   return name[2] == 0 || name[2] == '.';
 }
 
+/* See riscv_elf_is_mapping_symbols.  */
+
+static bool
+is_riscv_special_symbol_name (const char *name)
+{
+  return (!strcmp (name, "$d")
+	  || !strcmp (name, "$x")
+	  || !strncmp (name, "$xrv", 4)
+	  /* Only used for counting gp in risc-v.  */
+	  || !strcmp (name, "__DATA_BEGIN__")
+	  || !strcmp (name, "__SDATA_BEGIN__")
+	  || !strcmp (name, "__BSS_END__"));
+}
+
 static bool
 is_special_symbol_name (Filedata * filedata, const char * s)
 {
@@ -1732,6 +1746,9 @@ is_special_symbol_name (Filedata * filedata, const char * s)
     {
     case EM_AARCH64:
       return is_aarch64_special_symbol_name (s);
+
+    case EM_RISCV:
+      return is_riscv_special_symbol_name (s);
 
     default:
       return false;
@@ -3476,8 +3493,181 @@ get_dynamic_type (Filedata * filedata, unsigned long type)
     }
 }
 
-static bool get_program_headers (Filedata *);
-static bool get_dynamic_section (Filedata *);
+/* Save the original section header values.  */
+
+static void
+save_original_section_header_values (Elf_Internal_Shdr *internal,
+				     Elf_Internal_Shdr **orig_internal)
+{
+  /* Nothing to do if they have already been saved.  */
+  if (*orig_internal != NULL)
+    return;
+
+  *orig_internal = xmalloc (sizeof (**orig_internal));
+  **orig_internal = *internal;
+}
+
+/* Warn about and clear any invalid ELF section fields.  */
+
+static void
+validate_section_info (Elf_Internal_Shdr *internal,
+		       Elf_Internal_Shdr **orig_internal,
+		       unsigned int i, Filedata *filedata)
+{
+  bool dynamic = orig_internal == NULL;
+  if (!dynamic)
+    {
+      if (internal->sh_link >= filedata->file_header.e_shnum
+	  && !special_defined_section_index (filedata,
+					     internal->sh_link))
+	{
+	  warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		"sh_link", (uint64_t) internal->sh_link, i);
+	  /* Save the original section header values before garbage
+	     values are cleared.  */
+	  save_original_section_header_values (internal, orig_internal);
+	  internal->sh_link = 0;
+	}
+
+      if ((internal->sh_flags & SHF_INFO_LINK) != 0
+	  && internal->sh_info > filedata->file_header.e_shnum)
+	{
+	  warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		"sh_info", (uint64_t) internal->sh_info, i);
+	  save_original_section_header_values (internal, orig_internal);
+	  internal->sh_info = 0;
+	}
+    }
+
+  if (internal->sh_entsize > filedata->file_size)
+    {
+      if (dynamic)
+	warn (_("out of range %s (%" PRIu64 ")\n"),
+	      "DT_RELRENT", (uint64_t) internal->sh_entsize);
+      else
+	{
+	  warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		"sh_entsize", (uint64_t) internal->sh_entsize, i);
+	  save_original_section_header_values (internal, orig_internal);
+	}
+      internal->sh_entsize = 0;
+    }
+
+  if (internal->sh_type != SHT_NOBITS)
+    {
+      uint64_t sh_offset = internal->sh_offset;
+      if (sh_offset > filedata->file_size)
+	{
+	  if (dynamic)
+	    warn (_("out of range %s (%" PRIu64 ")\n"),
+		  "DT_RELR", sh_offset);
+	  else
+	    {
+	      warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		    "sh_offset", sh_offset, i);
+	      save_original_section_header_values (internal, orig_internal);
+	    }
+	  internal->sh_offset = 0;
+	  internal->sh_size = 0;
+	}
+      else if (internal->sh_size > filedata->file_size - sh_offset)
+	{
+	  if (dynamic)
+	    warn (_("out of range %s (%" PRIu64 ")\n"),
+		  "DT_RELRSZ", (uint64_t) internal->sh_size);
+	  else
+	    {
+	      warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		    "sh_size", (uint64_t) internal->sh_size, i);
+	      save_original_section_header_values (internal, orig_internal);
+	    }
+	  internal->sh_size = 0;
+	}
+    }
+}
+
+#define ElfXX(n) Elf32 ## n
+#include "readelf-nn.c"
+#define ElfXX(n) Elf64 ## n
+#include "readelf-nn.c"
+
+/* Returns TRUE if the program headers were read into `program_headers'.  */
+
+static bool
+get_program_headers (Filedata * filedata)
+{
+  Elf_Internal_Phdr * phdrs;
+
+  /* Check cache of prior read.  */
+  if (filedata->program_headers != NULL)
+    return true;
+
+  /* Be kind to memory checkers by looking for
+     e_phnum values which we know must be invalid.  */
+  if (filedata->file_header.e_phnum
+      * (is_32bit_elf ? sizeof (Elf32_External_Phdr) : sizeof (Elf64_External_Phdr))
+      >= filedata->file_size)
+    {
+      error (_("Too many program headers - %#x - the file is not that big\n"),
+	     filedata->file_header.e_phnum);
+      return false;
+    }
+
+  phdrs = (Elf_Internal_Phdr *) cmalloc (filedata->file_header.e_phnum,
+					 sizeof (Elf_Internal_Phdr));
+  if (phdrs == NULL)
+    {
+      error (_("Out of memory reading %u program headers\n"),
+	     filedata->file_header.e_phnum);
+      return false;
+    }
+
+  if (is_32bit_elf
+      ? Elf32_get_program_headers (filedata, phdrs)
+      : Elf64_get_program_headers (filedata, phdrs))
+    {
+      filedata->program_headers = phdrs;
+      return true;
+    }
+
+  free (phdrs);
+  return false;
+}
+
+static bool
+get_section_headers (Filedata *filedata, bool probe)
+{
+  if (filedata->section_headers != NULL)
+    return true;
+
+  if (is_32bit_elf)
+    return Elf32_get_section_headers (filedata, probe);
+  else
+    return Elf64_get_section_headers (filedata, probe);
+}
+
+static Elf_Internal_Sym *
+get_elf_symbols (Filedata *filedata,
+		 Elf_Internal_Shdr *section,
+		 uint64_t *num_syms_return)
+{
+  if (is_32bit_elf)
+    return Elf32_get_symbols (filedata, section, num_syms_return);
+  else
+    return Elf64_get_symbols (filedata, section, num_syms_return);
+}
+
+static bool
+get_dynamic_section (Filedata *filedata)
+{
+  if (filedata->dynamic_section)
+    return true;
+
+  if (is_32bit_elf)
+    return Elf32_get_dynamic_section (filedata);
+  else
+    return Elf64_get_dynamic_section (filedata);
+}
 
 static void
 locate_dynamic_section (Filedata *filedata)
@@ -4509,6 +4699,9 @@ decode_MIPS_machine_flags (char *out, unsigned int e_flags)
     case EF_MIPS_MACH_4650:
       out = stpcpy (out, ", 4650");
       break;
+    case EF_MIPS_MACH_TX49:
+      out = stpcpy (out, ", tx49");
+      break;
     case EF_MIPS_MACH_5400:
       out = stpcpy (out, ", 5400");
       break;
@@ -5312,6 +5505,7 @@ decode_AMDGPU_machine_flags (char *out, unsigned int e_flags, Filedata *filedata
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1100, "gfx1100")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1101, "gfx1101")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1102, "gfx1102")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1103, "gfx1103")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1150, "gfx1150")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1151, "gfx1151")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1152, "gfx1152")
@@ -7375,143 +7569,6 @@ process_file_header (Filedata * filedata)
   return true;
 }
 
-/* Read in the program headers from FILEDATA and store them in PHEADERS.
-   Returns TRUE upon success, FALSE otherwise.  Loads 32-bit headers.  */
-
-static bool
-get_32bit_program_headers (Filedata * filedata, Elf_Internal_Phdr * pheaders)
-{
-  Elf32_External_Phdr * phdrs;
-  Elf32_External_Phdr * external;
-  Elf_Internal_Phdr *   internal;
-  unsigned int i;
-  unsigned int size = filedata->file_header.e_phentsize;
-  unsigned int num  = filedata->file_header.e_phnum;
-
-  /* PR binutils/17531: Cope with unexpected section header sizes.  */
-  if (size == 0 || num == 0)
-    return false;
-  if (size < sizeof * phdrs)
-    {
-      error (_("The e_phentsize field in the ELF header is less than the size of an ELF program header\n"));
-      return false;
-    }
-  if (size > sizeof * phdrs)
-    warn (_("The e_phentsize field in the ELF header is larger than the size of an ELF program header\n"));
-
-  phdrs = (Elf32_External_Phdr *) get_data (NULL, filedata, filedata->file_header.e_phoff,
-                                            size, num, _("program headers"));
-  if (phdrs == NULL)
-    return false;
-
-  for (i = 0, internal = pheaders, external = phdrs;
-       i < filedata->file_header.e_phnum;
-       i++, internal++, external++)
-    {
-      internal->p_type   = BYTE_GET (external->p_type);
-      internal->p_offset = BYTE_GET (external->p_offset);
-      internal->p_vaddr  = BYTE_GET (external->p_vaddr);
-      internal->p_paddr  = BYTE_GET (external->p_paddr);
-      internal->p_filesz = BYTE_GET (external->p_filesz);
-      internal->p_memsz  = BYTE_GET (external->p_memsz);
-      internal->p_flags  = BYTE_GET (external->p_flags);
-      internal->p_align  = BYTE_GET (external->p_align);
-    }
-
-  free (phdrs);
-  return true;
-}
-
-/* Read in the program headers from FILEDATA and store them in PHEADERS.
-   Returns TRUE upon success, FALSE otherwise.  Loads 64-bit headers.  */
-
-static bool
-get_64bit_program_headers (Filedata * filedata, Elf_Internal_Phdr * pheaders)
-{
-  Elf64_External_Phdr * phdrs;
-  Elf64_External_Phdr * external;
-  Elf_Internal_Phdr *   internal;
-  unsigned int i;
-  unsigned int size = filedata->file_header.e_phentsize;
-  unsigned int num  = filedata->file_header.e_phnum;
-
-  /* PR binutils/17531: Cope with unexpected section header sizes.  */
-  if (size == 0 || num == 0)
-    return false;
-  if (size < sizeof * phdrs)
-    {
-      error (_("The e_phentsize field in the ELF header is less than the size of an ELF program header\n"));
-      return false;
-    }
-  if (size > sizeof * phdrs)
-    warn (_("The e_phentsize field in the ELF header is larger than the size of an ELF program header\n"));
-
-  phdrs = (Elf64_External_Phdr *) get_data (NULL, filedata, filedata->file_header.e_phoff,
-                                            size, num, _("program headers"));
-  if (!phdrs)
-    return false;
-
-  for (i = 0, internal = pheaders, external = phdrs;
-       i < filedata->file_header.e_phnum;
-       i++, internal++, external++)
-    {
-      internal->p_type   = BYTE_GET (external->p_type);
-      internal->p_flags  = BYTE_GET (external->p_flags);
-      internal->p_offset = BYTE_GET (external->p_offset);
-      internal->p_vaddr  = BYTE_GET (external->p_vaddr);
-      internal->p_paddr  = BYTE_GET (external->p_paddr);
-      internal->p_filesz = BYTE_GET (external->p_filesz);
-      internal->p_memsz  = BYTE_GET (external->p_memsz);
-      internal->p_align  = BYTE_GET (external->p_align);
-    }
-
-  free (phdrs);
-  return true;
-}
-
-/* Returns TRUE if the program headers were read into `program_headers'.  */
-
-static bool
-get_program_headers (Filedata * filedata)
-{
-  Elf_Internal_Phdr * phdrs;
-
-  /* Check cache of prior read.  */
-  if (filedata->program_headers != NULL)
-    return true;
-
-  /* Be kind to memory checkers by looking for
-     e_phnum values which we know must be invalid.  */
-  if (filedata->file_header.e_phnum
-      * (is_32bit_elf ? sizeof (Elf32_External_Phdr) : sizeof (Elf64_External_Phdr))
-      >= filedata->file_size)
-    {
-      error (_("Too many program headers - %#x - the file is not that big\n"),
-	     filedata->file_header.e_phnum);
-      return false;
-    }
-
-  phdrs = (Elf_Internal_Phdr *) cmalloc (filedata->file_header.e_phnum,
-					 sizeof (Elf_Internal_Phdr));
-  if (phdrs == NULL)
-    {
-      error (_("Out of memory reading %u program headers\n"),
-	     filedata->file_header.e_phnum);
-      return false;
-    }
-
-  if (is_32bit_elf
-      ? get_32bit_program_headers (filedata, phdrs)
-      : get_64bit_program_headers (filedata, phdrs))
-    {
-      filedata->program_headers = phdrs;
-      return true;
-    }
-
-  free (phdrs);
-  return false;
-}
-
 /* Print program header info and locate dynamic section.  */
 
 static void
@@ -7856,511 +7913,6 @@ offset_from_vma (Filedata * filedata, uint64_t vma, uint64_t size)
   warn (_("Virtual address %#" PRIx64
 	  " not located in any PT_LOAD segment.\n"), vma);
   return vma;
-}
-
-/* Save the original section header values.  */
-
-static void
-save_original_section_header_values (Elf_Internal_Shdr *internal,
-				     Elf_Internal_Shdr **orig_internal)
-{
-  /* Nothing to do if they have already been saved.  */
-  if (*orig_internal != NULL)
-    return;
-
-  *orig_internal = xmalloc (sizeof (**orig_internal));
-  **orig_internal = *internal;
-}
-
-
-/* Warn about and clear any invalid ELF section fields.  */
-
-static void
-validate_section_info (Elf_Internal_Shdr *internal,
-		       Elf_Internal_Shdr **orig_internal,
-		       unsigned int i, Filedata *filedata)
-{
-  bool dynamic = orig_internal == NULL;
-  if (!dynamic)
-    {
-      if (internal->sh_link >= filedata->file_header.e_shnum
-	  && !special_defined_section_index (filedata,
-					     internal->sh_link))
-	{
-	  warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
-		"sh_link", (uint64_t) internal->sh_link, i);
-	  /* Save the original section header values before garbage
-	     values are cleared.  */
-	  save_original_section_header_values (internal, orig_internal);
-	  internal->sh_link = 0;
-	}
-
-      if ((internal->sh_flags & SHF_INFO_LINK) != 0
-	  && internal->sh_info > filedata->file_header.e_shnum)
-	{
-	  warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
-		"sh_info", (uint64_t) internal->sh_info, i);
-	  save_original_section_header_values (internal, orig_internal);
-	  internal->sh_info = 0;
-	}
-    }
-
-  if (internal->sh_entsize > filedata->file_size)
-    {
-      if (dynamic)
-	warn (_("out of range %s (%" PRIu64 ")\n"),
-	      "DT_RELRENT", (uint64_t) internal->sh_entsize);
-      else
-	{
-	  warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
-		"sh_entsize", (uint64_t) internal->sh_entsize, i);
-	  save_original_section_header_values (internal, orig_internal);
-	}
-      internal->sh_entsize = 0;
-    }
-
-  if (internal->sh_type != SHT_NOBITS)
-    {
-      uint64_t sh_offset = internal->sh_offset;
-      if (sh_offset > filedata->file_size)
-	{
-	  if (dynamic)
-	    warn (_("out of range %s (%" PRIu64 ")\n"),
-		  "DT_RELR", sh_offset);
-	  else
-	    {
-	      warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
-		    "sh_offset", sh_offset, i);
-	      save_original_section_header_values (internal, orig_internal);
-	    }
-	  internal->sh_offset = 0;
-	  internal->sh_size = 0;
-	}
-      else if (internal->sh_size > filedata->file_size - sh_offset)
-	{
-	  if (dynamic)
-	    warn (_("out of range %s (%" PRIu64 ")\n"),
-		  "DT_RELRSZ", (uint64_t) internal->sh_size);
-	  else
-	    {
-	      warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
-		    "sh_size", (uint64_t) internal->sh_size, i);
-	      save_original_section_header_values (internal, orig_internal);
-	    }
-	  internal->sh_size = 0;
-	}
-    }
-}
-
-/* Allocate memory and load the sections headers into FILEDATA->filedata->section_headers.
-   If PROBE is true, this is just a probe and we do not generate any error
-   messages if the load fails.  */
-
-static bool
-get_32bit_section_headers (Filedata * filedata, bool probe)
-{
-  Elf32_External_Shdr * shdrs;
-  Elf_Internal_Shdr *   internal;
-  Elf_Internal_Shdr **  orig_internal;
-  unsigned int          i;
-  unsigned int          size = filedata->file_header.e_shentsize;
-  unsigned int          num = probe ? 1 : filedata->file_header.e_shnum;
-
-  /* PR binutils/17531: Cope with unexpected section header sizes.  */
-  if (size == 0 || num == 0)
-    return false;
-
-  /* The section header cannot be at the start of the file - that is
-     where the ELF file header is located.  A file with absolutely no
-     sections in it will use a shoff of 0.  */
-  if (filedata->file_header.e_shoff == 0)
-    return false;
-
-  if (size < sizeof * shdrs)
-    {
-      if (! probe)
-	error (_("The e_shentsize field in the ELF header is less than the size of an ELF section header\n"));
-      return false;
-    }
-  if (!probe && size > sizeof * shdrs)
-    warn (_("The e_shentsize field in the ELF header is larger than the size of an ELF section header\n"));
-
-  shdrs = (Elf32_External_Shdr *) get_data (NULL, filedata, filedata->file_header.e_shoff,
-                                            size, num,
-					    probe ? NULL : _("section headers"));
-  if (shdrs == NULL)
-    return false;
-
-  filedata->section_headers = (Elf_Internal_Shdr *)
-    cmalloc (num, sizeof (Elf_Internal_Shdr));
-  if (filedata->section_headers == NULL)
-    {
-      if (!probe)
-	error (_("Out of memory reading %u section headers\n"), num);
-      free (shdrs);
-      return false;
-    }
-
-  if (!probe)
-    filedata->orig_section_headers = xcalloc2 (num,
-					       sizeof (Elf_Internal_Shdr *));
-
-  orig_internal = filedata->orig_section_headers;
-  for (i = 0, internal = filedata->section_headers;
-       i < num;
-       i++, internal++, orig_internal++)
-    {
-      internal->sh_name      = BYTE_GET (shdrs[i].sh_name);
-      internal->sh_type      = BYTE_GET (shdrs[i].sh_type);
-      internal->sh_flags     = BYTE_GET (shdrs[i].sh_flags);
-      internal->sh_addr      = BYTE_GET (shdrs[i].sh_addr);
-      internal->sh_offset    = BYTE_GET (shdrs[i].sh_offset);
-      internal->sh_size      = BYTE_GET (shdrs[i].sh_size);
-      internal->sh_link      = BYTE_GET (shdrs[i].sh_link);
-      internal->sh_info      = BYTE_GET (shdrs[i].sh_info);
-      internal->sh_addralign = BYTE_GET (shdrs[i].sh_addralign);
-      internal->sh_entsize   = BYTE_GET (shdrs[i].sh_entsize);
-      if (!probe)
-	validate_section_info (internal, orig_internal, i, filedata);
-    }
-
-  free (shdrs);
-  return true;
-}
-
-/* Like get_32bit_section_headers, except that it fetches 64-bit headers.  */
-
-static bool
-get_64bit_section_headers (Filedata * filedata, bool probe)
-{
-  Elf64_External_Shdr *  shdrs;
-  Elf_Internal_Shdr *    internal;
-  Elf_Internal_Shdr **   orig_internal;
-  unsigned int           i;
-  unsigned int           size = filedata->file_header.e_shentsize;
-  unsigned int           num = probe ? 1 : filedata->file_header.e_shnum;
-
-  /* PR binutils/17531: Cope with unexpected section header sizes.  */
-  if (size == 0 || num == 0)
-    return false;
-
-  /* The section header cannot be at the start of the file - that is
-     where the ELF file header is located.  A file with absolutely no
-     sections in it will use a shoff of 0.  */
-  if (filedata->file_header.e_shoff == 0)
-    return false;
-
-  if (size < sizeof * shdrs)
-    {
-      if (! probe)
-	error (_("The e_shentsize field in the ELF header is less than the size of an ELF section header\n"));
-      return false;
-    }
-
-  if (! probe && size > sizeof * shdrs)
-    warn (_("The e_shentsize field in the ELF header is larger than the size of an ELF section header\n"));
-
-  shdrs = (Elf64_External_Shdr *) get_data (NULL, filedata,
-					    filedata->file_header.e_shoff,
-                                            size, num,
-					    probe ? NULL : _("section headers"));
-  if (shdrs == NULL)
-    return false;
-
-  filedata->section_headers = (Elf_Internal_Shdr *)
-    cmalloc (num, sizeof (Elf_Internal_Shdr));
-  if (filedata->section_headers == NULL)
-    {
-      if (! probe)
-	error (_("Out of memory reading %u section headers\n"), num);
-      free (shdrs);
-      return false;
-    }
-
-  if (!probe)
-    filedata->orig_section_headers = xcalloc2 (num,
-					       sizeof (Elf_Internal_Shdr *));
-
-  orig_internal = filedata->orig_section_headers;
-  for (i = 0, internal = filedata->section_headers;
-       i < num;
-       i++, internal++, orig_internal++)
-    {
-      internal->sh_name      = BYTE_GET (shdrs[i].sh_name);
-      internal->sh_type      = BYTE_GET (shdrs[i].sh_type);
-      internal->sh_flags     = BYTE_GET (shdrs[i].sh_flags);
-      internal->sh_addr      = BYTE_GET (shdrs[i].sh_addr);
-      internal->sh_size      = BYTE_GET (shdrs[i].sh_size);
-      internal->sh_entsize   = BYTE_GET (shdrs[i].sh_entsize);
-      internal->sh_link      = BYTE_GET (shdrs[i].sh_link);
-      internal->sh_info      = BYTE_GET (shdrs[i].sh_info);
-      internal->sh_offset    = BYTE_GET (shdrs[i].sh_offset);
-      internal->sh_addralign = BYTE_GET (shdrs[i].sh_addralign);
-      if (!probe)
-	validate_section_info (internal, orig_internal, i, filedata);
-    }
-
-  free (shdrs);
-  return true;
-}
-
-static bool
-get_section_headers (Filedata *filedata, bool probe)
-{
-  if (filedata->section_headers != NULL)
-    return true;
-
-  if (is_32bit_elf)
-    return get_32bit_section_headers (filedata, probe);
-  else
-    return get_64bit_section_headers (filedata, probe);
-}
-
-static Elf_Internal_Sym *
-get_32bit_elf_symbols (Filedata *filedata,
-		       Elf_Internal_Shdr *section,
-		       uint64_t *num_syms_return)
-{
-  uint64_t number = 0;
-  Elf32_External_Sym * esyms = NULL;
-  Elf_External_Sym_Shndx * shndx = NULL;
-  Elf_Internal_Sym * isyms = NULL;
-  Elf_Internal_Sym * psym;
-  unsigned int j;
-  elf_section_list * entry;
-
-  if (section->sh_size == 0)
-    {
-      if (num_syms_return != NULL)
-	* num_syms_return = 0;
-      return NULL;
-    }
-
-  /* Run some sanity checks first.  */
-  if (section->sh_entsize == 0 || section->sh_entsize > section->sh_size)
-    {
-      error (_("Section %s has an invalid sh_entsize of %#" PRIx64 "\n"),
-	     printable_section_name (filedata, section),
-	     section->sh_entsize);
-      goto exit_point;
-    }
-
-  if (section->sh_size > filedata->file_size)
-    {
-      error (_("Section %s has an invalid sh_size of %#" PRIx64 "\n"),
-	     printable_section_name (filedata, section),
-	     section->sh_size);
-      goto exit_point;
-    }
-
-  number = section->sh_size / section->sh_entsize;
-
-  if (number * sizeof (Elf32_External_Sym) > section->sh_size + 1)
-    {
-      error (_("Size (%#" PRIx64 ") of section %s "
-	       "is not a multiple of its sh_entsize (%#" PRIx64 ")\n"),
-	     section->sh_size,
-	     printable_section_name (filedata, section),
-	     section->sh_entsize);
-      goto exit_point;
-    }
-
-  esyms = (Elf32_External_Sym *) get_data (NULL, filedata, section->sh_offset, 1,
-                                           section->sh_size, _("symbols"));
-  if (esyms == NULL)
-    goto exit_point;
-
-  shndx = NULL;
-  for (entry = filedata->symtab_shndx_list; entry != NULL; entry = entry->next)
-    {
-      if (entry->hdr->sh_link != (size_t) (section - filedata->section_headers))
-	continue;
-
-      if (shndx != NULL)
-	{
-	  error (_("Multiple symbol table index sections associated with the same symbol section\n"));
-	  free (shndx);
-	}
-
-      shndx = (Elf_External_Sym_Shndx *) get_data (NULL, filedata,
-						   entry->hdr->sh_offset,
-						   1, entry->hdr->sh_size,
-						   _("symbol table section indices"));
-      if (shndx == NULL)
-	goto exit_point;
-
-      /* PR17531: file: heap-buffer-overflow */
-      if (entry->hdr->sh_size / sizeof (Elf_External_Sym_Shndx) < number)
-	{
-	  error (_("Index section %s has an sh_size of %#" PRIx64 " - expected %#" PRIx64 "\n"),
-		 printable_section_name (filedata, entry->hdr),
-		 entry->hdr->sh_size,
-		 section->sh_size);
-	  goto exit_point;
-	}
-    }
-
-  isyms = (Elf_Internal_Sym *) cmalloc (number, sizeof (Elf_Internal_Sym));
-
-  if (isyms == NULL)
-    {
-      error (_("Out of memory reading %" PRIu64 " symbols\n"), number);
-      goto exit_point;
-    }
-
-  for (j = 0, psym = isyms; j < number; j++, psym++)
-    {
-      psym->st_name  = BYTE_GET (esyms[j].st_name);
-      psym->st_value = BYTE_GET (esyms[j].st_value);
-      psym->st_size  = BYTE_GET (esyms[j].st_size);
-      psym->st_shndx = BYTE_GET (esyms[j].st_shndx);
-      if (psym->st_shndx == (SHN_XINDEX & 0xffff) && shndx != NULL)
-	psym->st_shndx
-	  = byte_get ((unsigned char *) &shndx[j], sizeof (shndx[j]));
-      else if (psym->st_shndx >= (SHN_LORESERVE & 0xffff))
-	psym->st_shndx += SHN_LORESERVE - (SHN_LORESERVE & 0xffff);
-      psym->st_info  = BYTE_GET (esyms[j].st_info);
-      psym->st_other = BYTE_GET (esyms[j].st_other);
-    }
-
- exit_point:
-  free (shndx);
-  free (esyms);
-
-  if (num_syms_return != NULL)
-    * num_syms_return = isyms == NULL ? 0 : number;
-
-  return isyms;
-}
-
-static Elf_Internal_Sym *
-get_64bit_elf_symbols (Filedata *filedata,
-		       Elf_Internal_Shdr *section,
-		       uint64_t *num_syms_return)
-{
-  uint64_t number = 0;
-  Elf64_External_Sym * esyms = NULL;
-  Elf_External_Sym_Shndx * shndx = NULL;
-  Elf_Internal_Sym * isyms = NULL;
-  Elf_Internal_Sym * psym;
-  unsigned int j;
-  elf_section_list * entry;
-
-  if (section->sh_size == 0)
-    {
-      if (num_syms_return != NULL)
-	* num_syms_return = 0;
-      return NULL;
-    }
-
-  /* Run some sanity checks first.  */
-  if (section->sh_entsize == 0 || section->sh_entsize > section->sh_size)
-    {
-      error (_("Section %s has an invalid sh_entsize of %#" PRIx64 "\n"),
-	     printable_section_name (filedata, section),
-	     section->sh_entsize);
-      goto exit_point;
-    }
-
-  if (section->sh_size > filedata->file_size)
-    {
-      error (_("Section %s has an invalid sh_size of %#" PRIx64 "\n"),
-	     printable_section_name (filedata, section),
-	     section->sh_size);
-      goto exit_point;
-    }
-
-  number = section->sh_size / section->sh_entsize;
-
-  if (number * sizeof (Elf64_External_Sym) > section->sh_size + 1)
-    {
-      error (_("Size (%#" PRIx64 ") of section %s "
-	       "is not a multiple of its sh_entsize (%#" PRIx64 ")\n"),
-	     section->sh_size,
-	     printable_section_name (filedata, section),
-	     section->sh_entsize);
-      goto exit_point;
-    }
-
-  esyms = (Elf64_External_Sym *) get_data (NULL, filedata, section->sh_offset, 1,
-                                           section->sh_size, _("symbols"));
-  if (!esyms)
-    goto exit_point;
-
-  shndx = NULL;
-  for (entry = filedata->symtab_shndx_list; entry != NULL; entry = entry->next)
-    {
-      if (entry->hdr->sh_link != (size_t) (section - filedata->section_headers))
-	continue;
-
-      if (shndx != NULL)
-	{
-	  error (_("Multiple symbol table index sections associated with the same symbol section\n"));
-	  free (shndx);
-	}
-
-      shndx = (Elf_External_Sym_Shndx *) get_data (NULL, filedata,
-						   entry->hdr->sh_offset,
-						   1, entry->hdr->sh_size,
-						   _("symbol table section indices"));
-      if (shndx == NULL)
-	goto exit_point;
-
-      /* PR17531: file: heap-buffer-overflow */
-      if (entry->hdr->sh_size / sizeof (Elf_External_Sym_Shndx) < number)
-	{
-	  error (_("Index section %s has an sh_size of %#" PRIx64 " - expected %#" PRIx64 "\n"),
-		 printable_section_name (filedata, entry->hdr),
-		 entry->hdr->sh_size,
-		 section->sh_size);
-	  goto exit_point;
-	}
-    }
-
-  isyms = (Elf_Internal_Sym *) cmalloc (number, sizeof (Elf_Internal_Sym));
-
-  if (isyms == NULL)
-    {
-      error (_("Out of memory reading %" PRIu64 " symbols\n"), number);
-      goto exit_point;
-    }
-
-  for (j = 0, psym = isyms; j < number; j++, psym++)
-    {
-      psym->st_name  = BYTE_GET (esyms[j].st_name);
-      psym->st_info  = BYTE_GET (esyms[j].st_info);
-      psym->st_other = BYTE_GET (esyms[j].st_other);
-      psym->st_shndx = BYTE_GET (esyms[j].st_shndx);
-
-      if (psym->st_shndx == (SHN_XINDEX & 0xffff) && shndx != NULL)
-	psym->st_shndx
-	  = byte_get ((unsigned char *) &shndx[j], sizeof (shndx[j]));
-      else if (psym->st_shndx >= (SHN_LORESERVE & 0xffff))
-	psym->st_shndx += SHN_LORESERVE - (SHN_LORESERVE & 0xffff);
-
-      psym->st_value = BYTE_GET (esyms[j].st_value);
-      psym->st_size  = BYTE_GET (esyms[j].st_size);
-    }
-
- exit_point:
-  free (shndx);
-  free (esyms);
-
-  if (num_syms_return != NULL)
-    * num_syms_return = isyms == NULL ? 0 : number;
-
-  return isyms;
-}
-
-static Elf_Internal_Sym *
-get_elf_symbols (Filedata *filedata,
-		 Elf_Internal_Shdr *section,
-		 uint64_t *num_syms_return)
-{
-  if (is_32bit_elf)
-    return get_32bit_elf_symbols (filedata, section, num_syms_return);
-  else
-    return get_64bit_elf_symbols (filedata, section, num_syms_return);
 }
 
 static const char *
@@ -12613,119 +12165,6 @@ dynamic_section_ia64_val (Elf_Internal_Dyn * entry)
   putchar ('\n');
 }
 
-static bool
-get_32bit_dynamic_section (Filedata * filedata)
-{
-  Elf32_External_Dyn * edyn;
-  Elf32_External_Dyn * ext;
-  Elf_Internal_Dyn * entry;
-
-  edyn = (Elf32_External_Dyn *) get_data (NULL, filedata,
-					  filedata->dynamic_addr, 1,
-					  filedata->dynamic_size,
-					  _("dynamic section"));
-  if (!edyn)
-    return false;
-
-  /* SGI's ELF has more than one section in the DYNAMIC segment, and we
-     might not have the luxury of section headers.  Look for the DT_NULL
-     terminator to determine the number of entries.  */
-  for (ext = edyn, filedata->dynamic_nent = 0;
-       (char *) (ext + 1) <= (char *) edyn + filedata->dynamic_size;
-       ext++)
-    {
-      filedata->dynamic_nent++;
-      if (BYTE_GET (ext->d_tag) == DT_NULL)
-	break;
-    }
-
-  filedata->dynamic_section
-    = (Elf_Internal_Dyn *) cmalloc (filedata->dynamic_nent, sizeof (* entry));
-  if (filedata->dynamic_section == NULL)
-    {
-      error (_("Out of memory allocating space for %" PRIu64 " dynamic entries\n"),
-	     filedata->dynamic_nent);
-      free (edyn);
-      return false;
-    }
-
-  for (ext = edyn, entry = filedata->dynamic_section;
-       entry < filedata->dynamic_section + filedata->dynamic_nent;
-       ext++, entry++)
-    {
-      entry->d_tag      = BYTE_GET (ext->d_tag);
-      entry->d_un.d_val = BYTE_GET (ext->d_un.d_val);
-    }
-
-  free (edyn);
-
-  return true;
-}
-
-static bool
-get_64bit_dynamic_section (Filedata * filedata)
-{
-  Elf64_External_Dyn * edyn;
-  Elf64_External_Dyn * ext;
-  Elf_Internal_Dyn * entry;
-
-  /* Read in the data.  */
-  edyn = (Elf64_External_Dyn *) get_data (NULL, filedata,
-					  filedata->dynamic_addr, 1,
-					  filedata->dynamic_size,
-					  _("dynamic section"));
-  if (!edyn)
-    return false;
-
-  /* SGI's ELF has more than one section in the DYNAMIC segment, and we
-     might not have the luxury of section headers.  Look for the DT_NULL
-     terminator to determine the number of entries.  */
-  for (ext = edyn, filedata->dynamic_nent = 0;
-       /* PR 17533 file: 033-67080-0.004 - do not read past end of buffer.  */
-       (char *) (ext + 1) <= (char *) edyn + filedata->dynamic_size;
-       ext++)
-    {
-      filedata->dynamic_nent++;
-      if (BYTE_GET (ext->d_tag) == DT_NULL)
-	break;
-    }
-
-  filedata->dynamic_section
-    = (Elf_Internal_Dyn *) cmalloc (filedata->dynamic_nent, sizeof (* entry));
-  if (filedata->dynamic_section == NULL)
-    {
-      error (_("Out of memory allocating space for %" PRIu64 " dynamic entries\n"),
-	     filedata->dynamic_nent);
-      free (edyn);
-      return false;
-    }
-
-  /* Convert from external to internal formats.  */
-  for (ext = edyn, entry = filedata->dynamic_section;
-       entry < filedata->dynamic_section + filedata->dynamic_nent;
-       ext++, entry++)
-    {
-      entry->d_tag      = BYTE_GET (ext->d_tag);
-      entry->d_un.d_val = BYTE_GET (ext->d_un.d_val);
-    }
-
-  free (edyn);
-
-  return true;
-}
-
-static bool
-get_dynamic_section (Filedata *filedata)
-{
-  if (filedata->dynamic_section)
-    return true;
-
-  if (is_32bit_elf)
-    return get_32bit_dynamic_section (filedata);
-  else
-    return get_64bit_dynamic_section (filedata);
-}
-
 static void
 print_dynamic_flags (uint64_t flags)
 {
@@ -16290,7 +15729,8 @@ is_32bit_abs_reloc (Filedata * filedata, unsigned int reloc_type)
       return reloc_type == 1; /* R_XSTROMY16_32.  */
     case EM_XTENSA_OLD:
     case EM_XTENSA:
-      return reloc_type == 1; /* R_XTENSA_32.  */
+      /* R_XTENSA_32 or R_XTENSA_32_ABS.  */
+      return reloc_type == 1 || reloc_type == 64;
     case EM_Z80:
       return reloc_type == 6; /* R_Z80_32.  */
     case EM_BREW:
@@ -16864,7 +16304,8 @@ is_none_reloc (Filedata * filedata, unsigned int reloc_type)
 	      || reloc_type == 59  /* R_XTENSA_PDIFF32.  */
 	      || reloc_type == 60  /* R_XTENSA_NDIFF8.  */
 	      || reloc_type == 61  /* R_XTENSA_NDIFF16.  */
-	      || reloc_type == 62  /* R_XTENSA_NDIFF32.  */);
+	      || reloc_type == 62  /* R_XTENSA_NDIFF32.  */
+	      || reloc_type == 63  /* R_XTENSA_PDIFF_ULEB128.  */);
     }
   return false;
 }
@@ -17190,24 +16631,13 @@ static bool
 uncompress_section_contents (bool              is_zstd,
 			     unsigned char **  buffer,
 			     uint64_t          uncompressed_size,
-			     uint64_t *        size,
-			     uint64_t          file_size)
+			     uint64_t *        size)
 {
   uint64_t compressed_size = *size;
   unsigned char *compressed_buffer = *buffer;
   unsigned char *uncompressed_buffer = NULL;
   z_stream strm;
   int rc;
-
-  /* Similar to bfd_section_size_insane() in the BFD library we expect an
-     upper limit of ~10x compression.  Any compression larger than that is
-     thought to be due to fuzzing of the compression header.  */
-  if (uncompressed_size > file_size * 10)
-    {
-      error (_("Uncompressed section size is suspiciously large: 0x%" PRIu64 "\n"),
-	       uncompressed_size);
-      goto fail;
-    }
 
   uncompressed_buffer = xmalloc (uncompressed_size);
 
@@ -17325,7 +16755,7 @@ maybe_expand_or_relocate_section (Elf_Internal_Shdr *  section,
       if (uncompressed_size)
 	{
 	  if (uncompress_section_contents (is_zstd, &start, uncompressed_size,
-					   &new_size, filedata->file_size))
+					   &new_size))
 	    {
 	      *decomp_buf = start;
 	      section_size = new_size;
@@ -17908,7 +17338,7 @@ load_specific_debug_section (enum dwarf_section_display_enum  debug,
       if (uncompressed_size)
 	{
 	  if (uncompress_section_contents (is_zstd, &start, uncompressed_size,
-					   &size, filedata->file_size))
+					   &size))
 	    {
 	      /* Free the compressed buffer, update the section buffer
 		 and the section size if uncompress is successful.  */
@@ -18956,6 +18386,56 @@ display_arm_attribute (const unsigned char * p,
     }
 
   return display_tag_value (tag, p, end);
+}
+
+static const unsigned char *
+display_avr_gnu_attribute (const unsigned char * p,
+			   unsigned int tag,
+			   const unsigned char * const end)
+{
+  unsigned int val;
+
+  switch (tag)
+    {
+    default:
+      break;
+
+    case Tag_GNU_AVR_VTABLE_AS:
+      printf ("  Tag_GNU_AVR_VTABLE_AS (%u): ", tag);
+      if (p == end)
+	{
+	  printf (_("<corrupt>\n"));
+	  return p;
+	}
+
+      READ_ULEB (val, p, end);
+      printf ("%d (%s)\n", val, avr_tag_vtable_as_name (val));
+      return p;
+
+    case Tag_GNU_AVR_BITS_DOUBLE:
+      printf ("  Tag_GNU_AVR_BITS_DOUBLE (%u): ", tag);
+      if (p == end)
+	printf (_("<corrupt>\n"));
+      else
+	{
+	  READ_ULEB (val, p, end);
+	  printf ("%d\n", val);
+	}
+      return p;
+
+    case Tag_GNU_AVR_BITS_LONG_DOUBLE:
+      printf ("  Tag_GNU_AVR_BITS_LONG_DOUBLE (%u): ", tag);
+      if (p == end)
+	printf (_("<corrupt>\n"));
+      else
+	{
+	  READ_ULEB (val, p, end);
+	  printf ("%d\n", val);
+	}
+      return p;
+    }
+
+  return display_tag_value (tag & 1, p, end);
 }
 
 static const unsigned char *
@@ -20661,6 +20141,12 @@ print_mips_isa_ext (unsigned int isa_ext)
     case AFL_EXT_INTERAPTIV_MR2:
       fputs ("Imagination interAptiv MR2", stdout);
       break;
+    case AFL_EXT_ALLEGREX:
+      fputs ("Sony PSP Allegrex", stdout);
+      break;
+    case AFL_EXT_TX49:
+      fputs ("Toshiba TX49", stdout);
+      break;
     default:
       fprintf (stdout, "%s (%d)", _("Unknown"), isa_ext);
     }
@@ -21679,6 +21165,9 @@ process_got_section_contents (Filedata * filedata)
   if (!do_got_section_contents || all_relocations_count == 0)
     return res;
 
+  if (seen_elf_error ())
+    return false;
+
   switch (filedata->file_header.e_type)
     {
     case ET_DYN:
@@ -21990,6 +21479,8 @@ get_note_type (Filedata * filedata, unsigned e_type)
 	return _("NT_PPC_TM_CPPR (ppc checkpointed PPR register)");
       case NT_PPC_TM_CDSCR:
 	return _("NT_PPC_TM_CDSCR (ppc checkpointed DSCR register)");
+      case NT_PPC_DMR:
+	return _("NT_PPC_DMR (ppc Dense Math registers)");
       case NT_386_TLS:
 	return _("NT_386_TLS (x86 TLS information)");
       case NT_386_IOPERM:
@@ -22064,6 +21555,12 @@ get_note_type (Filedata * filedata, unsigned e_type)
 	return _("NT_ARC_V2 (ARC HS accumulator/extra registers)");
       case NT_RISCV_CSR:
 	return _("NT_RISCV_CSR (RISC-V control and status registers)");
+      case NT_RISCV_VECTOR:
+	return _("NT_RISCV_VECTOR (RISC-V vector registers)");
+      case NT_RISCV_TAGGED_ADDR_CTRL:
+	return _("NT_RISCV_TAGGED_ADDR_CTRL (RISC-V tagged address control (prctl()))");
+      case NT_RISCV_USER_CFI:
+	return _("NT_RISCV_USER_CFI (RISC-V shadow stack state)");
       case NT_PSTATUS:
 	return _("NT_PSTATUS (pstatus structure)");
       case NT_FPREGS:
@@ -23339,7 +22836,7 @@ print_stapsdt_note (Elf_Internal_Note *pnote)
   char *provider, *probe, *arg_fmt;
 
   if (pnote->descsz < (addr_size * 3))
-    goto stapdt_note_too_small;
+    goto too_small;
 
   pc = byte_get ((unsigned char *) data, addr_size);
   data += addr_size;
@@ -23351,7 +22848,7 @@ print_stapsdt_note (Elf_Internal_Note *pnote)
   data += addr_size;
 
   if (data >= data_end)
-    goto stapdt_note_too_small;
+    goto too_small;
   maxlen = data_end - data;
   len = strnlen (data, maxlen);
   if (len < maxlen)
@@ -23360,10 +22857,10 @@ print_stapsdt_note (Elf_Internal_Note *pnote)
       data += len + 1;
     }
   else
-    goto stapdt_note_too_small;
+    goto too_small;
 
   if (data >= data_end)
-    goto stapdt_note_too_small;
+    goto too_small;
   maxlen = data_end - data;
   len = strnlen (data, maxlen);
   if (len < maxlen)
@@ -23372,10 +22869,10 @@ print_stapsdt_note (Elf_Internal_Note *pnote)
       data += len + 1;
     }
   else
-    goto stapdt_note_too_small;
+    goto too_small;
 
   if (data >= data_end)
-    goto stapdt_note_too_small;
+    goto too_small;
   maxlen = data_end - data;
   len = strnlen (data, maxlen);
   if (len < maxlen)
@@ -23384,7 +22881,7 @@ print_stapsdt_note (Elf_Internal_Note *pnote)
       data += len + 1;
     }
   else
-    goto stapdt_note_too_small;
+    goto too_small;
 
   printf (_("    Provider: %s\n"), provider);
   printf (_("    Name: %s\n"), probe);
@@ -23399,9 +22896,9 @@ print_stapsdt_note (Elf_Internal_Note *pnote)
 
   return data == data_end;
 
- stapdt_note_too_small:
+ too_small:
   printf (_("  <corrupt - note is too small>\n"));
-  error (_("corrupt stapdt note - the data size is too small\n"));
+  error (_("corrupt stapsdt note - the data size is too small\n"));
   return false;
 }
 
@@ -24757,6 +24254,10 @@ process_arch_specific (Filedata * filedata)
       return process_attributes_v2 (filedata, "aeabi", SHT_AARCH64_ATTRIBUTES,
 				    display_aarch64_attribute);
 
+    case EM_AVR:
+      return process_attributes (filedata, NULL, SHT_GNU_ATTRIBUTES, NULL,
+				 display_avr_gnu_attribute);
+
     case EM_MIPS:
     case EM_MIPS_RS3_LE:
       return process_mips_specific (filedata, false);
@@ -25619,8 +25120,11 @@ main (int argc, char ** argv)
 
   err = false;
   while (optind < argc)
-    if (! process_file (argv[optind++]))
-      err = true;
+    {
+      clear_elf_error ();
+      if (! process_file (argv[optind++]))
+	err = true;
+    }
 
   free (cmdline.dump_sects);
 

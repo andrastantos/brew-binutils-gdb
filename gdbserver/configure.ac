@@ -60,43 +60,23 @@ ACX_NONCANONICAL_TARGET
 ACX_NONCANONICAL_HOST
 
 # Dependency checking.
-ZW_CREATE_DEPDIR
+AM_SET_DEPDIR
 
 dnl Set up for gettext.
 ZW_GNU_GETTEXT_SISTER_DIR
 
-# Create sub-directories for objects and dependencies.
-CONFIG_SRC_SUBDIR="arch gdbsupport nat target"
-AC_SUBST(CONFIG_SRC_SUBDIR)
-
-AC_CONFIG_COMMANDS([gdbdepdir],[
-  for subdir in ${CONFIG_SRC_SUBDIR}
-  do
-      $SHELL $ac_aux_dir/mkinstalldirs $subdir/$DEPDIR
-  done],
-  [ac_aux_dir=$ac_aux_dir DEPDIR=$DEPDIR CONFIG_SRC_SUBDIR="$CONFIG_SRC_SUBDIR"])
-
-ZW_PROG_COMPILER_DEPENDENCIES([CC])
-
 AC_CHECK_HEADERS([ \
   arpa/inet.h \
-  fcntl.h \
-  linux/elf.h \
   netdb.h \
   netinet/in.h \
   netinet/tcp.h \
-  signal.h \
-  string.h \
   sys/file.h \
   sys/ioctl.h \
   sys/procfs.h \
   sys/reg.h \
-  sys/socket.h \
-  termios.h \
   ws2tcpip.h \
 ])
 
-AC_FUNC_FORK
 AC_CHECK_FUNCS([ \
   pread \
   pread64 \
@@ -119,8 +99,6 @@ AC_CHECK_FUNCS(dladdr)
 LIBS="$old_LIBS"
 
 libiberty_INIT
-
-AC_CHECK_DECLS([perror, vasprintf, vsnprintf])
 
 AC_CHECK_TYPES(socklen_t, [], [],
 [#include <sys/types.h>
@@ -201,9 +179,7 @@ esac
 
 . ${srcdir}/configure.srv
 
-if test "${srv_mingwce}" = "yes"; then
-  LIBS="$LIBS -lws2"
-elif test "${srv_mingw}" = "yes"; then
+if test "${srv_mingw}" = "yes"; then
   # WIN32APILIBS is set by GDB_AC_COMMON.
   LIBS="$LIBS $WIN32APILIBS"
 fi
@@ -254,16 +230,6 @@ fi
 if test "${srv_linux_btrace}" = "yes"; then
   AC_DEFINE(HAVE_LINUX_BTRACE, 1,
 	    [Define if the target supports branch tracing.])
-fi
-
-dnl Some systems (e.g., Android) have lwpid_t defined in libthread_db.h.
-if test "$bfd_cv_have_sys_procfs_type_lwpid_t" != yes; then
-  GDBSERVER_HAVE_THREAD_DB_TYPE(lwpid_t)
-fi
-
-dnl Some systems (e.g., Android) have psaddr_t defined in libthread_db.h.
-if test "$bfd_cv_have_sys_procfs_type_psaddr_t" != yes; then
-  GDBSERVER_HAVE_THREAD_DB_TYPE(psaddr_t)
 fi
 
 dnl Check for libdl, but do not add it to LIBS as only gdbserver
@@ -358,10 +324,6 @@ AC_CACHE_CHECK(
      [gdbsrv_cv_have_sync_builtins=no]
    )]
 )
-if test "$gdbsrv_cv_have_sync_builtins" = yes; then
-  AC_DEFINE(HAVE_SYNC_BUILTINS, 1,
-    [Define to 1 if the target supports __sync_*_compare_and_swap])
-fi
 
 dnl Check for -fvisibility=hidden support in the compiler.
 saved_cflags="$CFLAGS"

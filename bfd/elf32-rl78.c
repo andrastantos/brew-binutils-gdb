@@ -739,7 +739,7 @@ rl78_elf_relocate_section
     {
       reloc_howto_type *howto;
       unsigned long r_symndx;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma relocation;
@@ -1165,16 +1165,6 @@ rl78_elf_set_private_flags (bfd * abfd, flagword flags)
   return true;
 }
 
-static bool no_warn_mismatch = false;
-
-void bfd_elf32_rl78_set_target_flags (bool);
-
-void
-bfd_elf32_rl78_set_target_flags (bool user_no_warn_mismatch)
-{
-  no_warn_mismatch = user_no_warn_mismatch;
-}
-
 static const char *
 rl78_cpu_name (flagword flags)
 {
@@ -1369,7 +1359,11 @@ rl78_elf_check_relocs
 	     for it now.  */
 	case R_RL78_DIR16S:
 	  if (dynobj == NULL)
-	    elf_hash_table (info)->dynobj = dynobj = abfd;
+	    {
+	      dynobj = _bfd_elf_link_dynobj (info);
+	      if (dynobj == NULL)
+		return false;
+	    }
 	  splt = elf_hash_table (info)->splt;
 	  if (splt == NULL)
 	    {
@@ -1440,7 +1434,7 @@ rl78_elf_finish_dynamic_sections (struct bfd_link_info *info,
 
   dynobj = elf_hash_table (info)->dynobj;
   splt = elf_hash_table (info)->splt;
-  if (dynobj != NULL && splt != NULL)
+  if (splt != NULL)
     {
       bfd_byte *contents = splt->contents;
       unsigned int i, size = splt->size;
@@ -1458,24 +1452,20 @@ rl78_elf_finish_dynamic_sections (struct bfd_link_info *info,
 static bool
 rl78_elf_early_size_sections (struct bfd_link_info *info)
 {
-  bfd *dynobj;
   asection *splt;
 
   if (bfd_link_relocatable (info))
     return true;
 
-  dynobj = elf_hash_table (info)->dynobj;
-  if (dynobj == NULL)
-    return true;
-
   splt = elf_hash_table (info)->splt;
-  BFD_ASSERT (splt != NULL);
-
-  splt->contents = (bfd_byte *) bfd_zalloc (dynobj, splt->size);
-  if (splt->contents == NULL)
-    return false;
-  splt->alloced = 1;
-
+  if (splt != NULL)
+    {
+      bfd *dynobj = elf_hash_table (info)->dynobj;
+      splt->contents = bfd_zalloc (dynobj, splt->size);
+      if (splt->contents == NULL)
+	return false;
+      splt->alloced = 1;
+    }
   return true;
 }
 
@@ -2172,9 +2162,8 @@ rl78_elf_relax_section (bfd *abfd,
     }
 
   /* Get a copy of the native relocations.  */
-  internal_relocs = (_bfd_elf_link_read_relocs
-		     (abfd, sec, NULL, (Elf_Internal_Rela *) NULL,
-		      link_info->keep_memory));
+  internal_relocs = _bfd_elf_link_read_relocs (abfd, sec, NULL, NULL,
+					       link_info->keep_memory);
   if (internal_relocs == NULL)
     goto error_return;
   if (! link_info->keep_memory)
@@ -2597,7 +2586,7 @@ rl78_elf_relax_section (bfd *abfd,
 
   free (free_intsyms);
 
-  return true;
+  return false;
 }
 
 

@@ -37,9 +37,6 @@
    disassemble_info::fprintf_func which is for unstyled output.  */
 #define fprintf_func please_use_fprintf_styled_func_instead
 
-/* The earliest privilege spec supported by disassembler. */
-#define PRIV_SPEC_EARLIEST PRIV_SPEC_CLASS_1P10
-
 struct riscv_private_data
 {
   bfd_vma gp;
@@ -47,17 +44,23 @@ struct riscv_private_data
   bfd_vma hi_addr[OP_MASK_RD + 1];
   bool to_print_addr;
   bool has_gp;
+  bool has_jvt_base;
+  asection *jvt_section;
+  bfd_byte *jvt_content;
+  bfd_size_type jvt_size;
   /* Current XLEN for the disassembler.  */
   unsigned xlen;
   /* Default ISA specification version.  */
   enum riscv_spec_class default_isa_spec;
-  /* Default privileged specification.  */
-  enum riscv_spec_class default_priv_spec;
   /* Used for architecture parser.  */
   riscv_parse_subset_t riscv_rps_dis;
   /* Default architecture string for the object file.  It will be changed once
      elf architecture attribute exits.  This is used for mapping symbol $x.  */
   const char* default_arch;
+  /* Owning copy of the ISA string given by the "arch=" option, which
+     DEFAULT_ARCH points at while the option is in effect.  The option
+     string itself is freed once the options are parsed.  */
+  char *arch_option;
   /* Used for mapping symbols.  */
   int last_map_symbol;
   bfd_vma last_stop_offset;
@@ -84,6 +87,35 @@ set_default_riscv_dis_options (struct disassemble_info *info)
   pd->riscv_fpr_names = riscv_fpr_names_abi;
   pd->no_aliases = false;
   pd->all_ext = false;
+}
+
+static void riscv_dis_parse_subset (struct disassemble_info *, const char *);
+
+/* Disassemble according to ISA from now on.  If ISA does not parse,
+   keep the previous ISA.  */
+
+static void
+riscv_dis_set_arch (struct disassemble_info *info, const char *isa)
+{
+  struct riscv_private_data *pd = info->private_data;
+
+  riscv_release_subset_list (pd->riscv_rps_dis.subset_list);
+  if (!riscv_parse_subset (&pd->riscv_rps_dis, isa))
+    {
+      /* The subset list now holds whatever parsed before the error, and
+	 has no ISA string, so this parses the previous ISA again.  */
+      riscv_release_subset_list (pd->riscv_rps_dis.subset_list);
+      riscv_dis_parse_subset (info, pd->default_arch);
+      return;
+    }
+  riscv_arch_str (pd->xlen, pd->riscv_rps_dis.subset_list, true/* update */);
+
+  /* Keep an owning copy: ISA points into the option string, which is
+     freed once the options are parsed, while DEFAULT_ARCH is read again
+     on every "$x" mapping symbol.  */
+  free (pd->arch_option);
+  pd->arch_option = xstrdup (isa);
+  pd->default_arch = pd->arch_option;
 }
 
 /* Parse RISC-V disassembler option (without arguments).  */
@@ -152,26 +184,13 @@ parse_riscv_dis_option (char *option, struct disassemble_info *info)
 
   *equal = '\0';
   value = equal + 1;
-  if (strcmp (option, "priv-spec") == 0)
-    {
-      struct riscv_private_data *pd = info->private_data;
-      enum riscv_spec_class priv_spec = PRIV_SPEC_CLASS_NONE;
-      const char *name = NULL;
-
-      RISCV_GET_PRIV_SPEC_CLASS (value, priv_spec);
-      if (priv_spec < PRIV_SPEC_EARLIEST)
-	opcodes_error_handler (_("unknown privileged spec set by %s=%s"),
-			       option, value);
-      else if (pd->default_priv_spec == PRIV_SPEC_CLASS_NONE)
-	pd->default_priv_spec = priv_spec;
-      else if (pd->default_priv_spec != priv_spec)
-	{
-	  RISCV_GET_PRIV_SPEC_NAME (name, pd->default_priv_spec);
-	  opcodes_error_handler (_("mis-matched privilege spec set by %s=%s, "
-				   "the elf privilege attribute is %s"),
-				 option, value, name);
-	}
-    }
+  if (strcmp (option, "arch") == 0)
+    riscv_dis_set_arch (info, value);
+  else if (strcmp (option, "priv-spec") == 0)
+    opcodes_error_handler (_("%s=%s is deprecated and ignored, the "
+			     "privileged spec is always 1.13; use binutils "
+			     "2.47 or earlier to select another version"),
+			   option, value);
   else
     {
       /* xgettext:c-format */
@@ -234,6 +253,48 @@ maybe_print_address (struct riscv_private_data *pd, int base_reg, int offset,
   /* Fit into a 32-bit value on RV32.  */
   if (pd->xlen == 32)
     pd->print_addr = (bfd_vma)(uint32_t)pd->print_addr;
+}
+
+/* Set pd->xlen from ELF class if not already known.  */
+
+static void
+riscv_set_xlen_from_elf (struct riscv_private_data *pd,
+			 struct disassemble_info *info)
+{
+  if (pd->xlen != 0)
+    return;
+
+  if (info->mach == bfd_mach_riscv64)
+    pd->xlen = 64;
+  else if (info->mach == bfd_mach_riscv32)
+    pd->xlen = 32;
+  else if (info->section != NULL)
+    {
+      Elf_Internal_Ehdr *ehdr = elf_elfheader (info->section->owner);
+      pd->xlen = ehdr->e_ident[EI_CLASS] == ELFCLASS64 ? 64 : 32;
+    }
+}
+
+/* Try to print target address of cm.jalt and cm.jt.  */
+
+static void
+maybe_print_jvt_address (struct riscv_private_data *pd, int index)
+{
+  if (!pd->has_jvt_base || pd->jvt_section == NULL || pd->jvt_content == NULL
+      || pd->xlen == 0)
+    return;
+
+  bfd_size_type entry_size = pd->xlen / 8;
+  bfd_size_type offset = entry_size * (bfd_size_type) index;
+  if (index < 0 || index > (ZCMT_TOTAL_ENTRIES - 1)
+      || offset + entry_size > pd->jvt_size)
+    return;
+
+  bfd_byte *packet = pd->jvt_content + offset;
+
+  pd->to_print_addr = true;
+  pd->print_addr = bfd_get_bits (packet, pd->xlen,
+				 bfd_big_endian (pd->jvt_section->owner));
 }
 
 /* Get Zcmp reg_list field.  */
@@ -686,19 +747,11 @@ print_insn_args (const char *oparg, insn_t l, bfd_vma pc, disassemble_info *info
 		for (i = 0; i < 4096; i++)
 		  riscv_csr_hash[i] = NULL;
 
-		/* Set to the newest privileged version.  */
-		if (pd->default_priv_spec == PRIV_SPEC_CLASS_NONE)
-		  pd->default_priv_spec = PRIV_SPEC_CLASS_DRAFT - 1;
-
-#define DECLARE_CSR(name, num, class, define_version, abort_version)	\
-		if (riscv_csr_hash[num] == NULL 			\
-		    && ((define_version == PRIV_SPEC_CLASS_NONE 	\
-			 && abort_version == PRIV_SPEC_CLASS_NONE)	\
-			|| (pd->default_priv_spec >= define_version 	\
-			    && pd->default_priv_spec < abort_version)))	\
+#define DECLARE_CSR(name, num, class)				\
+		if (riscv_csr_hash[num] == NULL)			\
 		  riscv_csr_hash[num] = #name;
-#define DECLARE_CSR_ALIAS(name, num, class, define_version, abort_version) \
-		DECLARE_CSR (name, num, class, define_version, abort_version)
+#define DECLARE_CSR_ALIAS(name, num, class)			\
+		DECLARE_CSR (name, num, class)
 #include "opcode/riscv-opc.h"
 #undef DECLARE_CSR
 	      }
@@ -789,6 +842,7 @@ print_insn_args (const char *oparg, insn_t l, bfd_vma pc, disassemble_info *info
 		case 'I':
 		  print (info->stream, dis_style_address_offset,
 			 "%" PRIu64, EXTRACT_ZCMT_INDEX (l));
+		  maybe_print_jvt_address (pd, EXTRACT_ZCMT_INDEX (l));
 		  break;
 		default:
 		  goto undefined_modifier;
@@ -1098,17 +1152,7 @@ riscv_disassemble_insn (bfd_vma memaddr,
   if (op != NULL)
     {
       /* If XLEN is not known, get its value from the ELF class.  */
-      if (pd->xlen != 0)
-	;
-      else if (info->mach == bfd_mach_riscv64)
-	pd->xlen = 64;
-      else if (info->mach == bfd_mach_riscv32)
-	pd->xlen = 32;
-      else if (info->section != NULL)
-	{
-	  Elf_Internal_Ehdr *ehdr = elf_elfheader (info->section->owner);
-	  pd->xlen = ehdr->e_ident[EI_CLASS] == ELFCLASS64 ? 64 : 32;
-	}
+      riscv_set_xlen_from_elf (pd, info);
 
       /* If arch has the Zfinx extension, replace FPR with GPR.  */
       if (riscv_subset_supports (&pd->riscv_rps_dis, "zfinx"))
@@ -1132,11 +1176,13 @@ riscv_disassemble_insn (bfd_vma memaddr,
 	  if ((op->xlen_requirement != 0)
 	      && (op->xlen_requirement != pd->xlen))
 	    continue;
-	  /* Is this instruction supported by the current architecture?  */
+	  /* Is this instruction supported by the current architecture?
+	     Also recognize Zcmt when the JVT base symbol identifies its table.  */
 	  if (!pd->all_ext)
 	    {
 	      if (!riscv_multi_subset_supports (&pd->riscv_rps_dis,
-						op->insn_class))
+						op->insn_class)
+		  && !(pd->has_jvt_base && op->insn_class == INSN_CLASS_ZCMT))
 		continue;
 
 	      if (pd->xlen == 32
@@ -1565,6 +1611,51 @@ riscv_disassemble_data (bfd_vma memaddr ATTRIBUTE_UNUSED,
   return info->bytes_per_chunk;
 }
 
+/* DATA is the function address in jump table entry.
+   Lookup the address in symbols and print the function name.  */
+static int
+riscv_disassemble_jvt (bfd_vma memaddr, insn_t data,
+		       const bfd_byte *packet,
+		       disassemble_info *info)
+{
+  struct riscv_private_data *pd = info->private_data;
+  if (pd == NULL || pd->xlen == 0 || info->section == NULL)
+    return -1;
+
+  bfd_size_type entry_size = pd->xlen / 8;
+  bfd_vma offset = memaddr - info->section->vma;
+  bfd_size_type entry_offset = (offset / entry_size) * entry_size;
+  bfd_size_type entry_delta = offset - entry_offset;
+  int idx = entry_offset / entry_size;
+  if (idx < 0 || idx > (ZCMT_TOTAL_ENTRIES - 1))
+    opcodes_error_handler (_ ("invalid jvt index: %i"), idx);
+
+  const char *inst_str;
+  if (idx <= ZCMT_JT_END)
+    inst_str = "jvt.jt";
+  else
+    inst_str = "jvt.jalt";
+
+  if (pd->jvt_content != NULL && entry_offset + entry_size <= pd->jvt_size)
+    packet = pd->jvt_content + entry_offset;
+  data = bfd_get_bits (packet, pd->xlen,
+		       bfd_big_endian (info->section->owner));
+
+  const char *funcname = "<unknown>";
+  for (int i = 0; i < info->symtab_size; i++)
+    {
+      bfd_vma addr = bfd_asymbol_value (info->symtab[i]);
+      if (addr == (bfd_vma) data)
+	{
+	  funcname = info->symtab[i]->name;
+	  break;
+	}
+    }
+  (*info->fprintf_styled_func) (info->stream, dis_style_text, "%s[%i]:\t%s",
+				inst_str, idx, funcname);
+  return entry_size - entry_delta;
+}
+
 static bool
 riscv_init_disasm_info (struct disassemble_info *info)
 {
@@ -1577,7 +1668,34 @@ riscv_init_disasm_info (struct disassemble_info *info)
     pd->hi_addr[i] = -1;
   pd->to_print_addr = false;
 
+  pd->has_jvt_base = false;
   pd->has_gp = false;
+  pd->jvt_section = NULL;
+  pd->jvt_content = NULL;
+  pd->jvt_size = 0;
+
+  if (info->section != NULL)
+    {
+      bfd *abfd = info->section->owner;
+      if (abfd && bfd_get_flavour (abfd) == bfd_target_elf_flavour)
+	{
+	  asection *s = bfd_get_section_by_name (abfd, TABLE_JUMP_SEC_NAME);
+	  if (s != NULL && bfd_section_size (s) > 0)
+	    {
+	      bfd_size_type size = bfd_section_size (s);
+	      bfd_byte *buf = (bfd_byte *) xmalloc (size);
+	      if (bfd_get_section_contents (abfd, s, buf, 0, size))
+		{
+		  pd->jvt_section = s;
+		  pd->jvt_content = buf;
+		  pd->jvt_size = size;
+		}
+	      else
+		free (buf);
+	    }
+	}
+    }
+
   for (i = 0; i < info->symtab_size; i++)
     {
       asymbol *sym = info->symtab[i];
@@ -1586,11 +1704,19 @@ riscv_init_disasm_info (struct disassemble_info *info)
 	  pd->gp = bfd_asymbol_value (sym);
 	  pd->has_gp = true;
 	}
+
+      if (strcmp (bfd_asymbol_name (sym), RISCV_TABLE_JUMP_BASE_SYMBOL) == 0)
+	{
+	  bfd_vma jvt_base = bfd_asymbol_value (sym);
+	  if (pd->jvt_section != NULL
+	      && jvt_base == bfd_section_vma (pd->jvt_section))
+	    pd->has_jvt_base = true;
+	}
     }
 
   pd->xlen = 0;
+  riscv_set_xlen_from_elf (pd, info);
   pd->default_isa_spec = ISA_SPEC_CLASS_DRAFT - 1;
-  pd->default_priv_spec = PRIV_SPEC_CLASS_NONE;
 
   pd->riscv_rps_dis.subset_list = xcalloc (1, sizeof (riscv_parse_subset_t));
   pd->riscv_rps_dis.error_handler = opcodes_error_handler;
@@ -1608,13 +1734,6 @@ riscv_init_disasm_info (struct disassemble_info *info)
 	  if (bfd_get_section_by_name (abfd, sec_name) != NULL)
 	    {
 	      obj_attribute *attr = elf_known_obj_attributes_proc (abfd);
-	      unsigned int Tag_a = Tag_RISCV_priv_spec;
-	      unsigned int Tag_b = Tag_RISCV_priv_spec_minor;
-	      unsigned int Tag_c = Tag_RISCV_priv_spec_revision;
-	      riscv_get_priv_spec_class_from_numbers (attr[Tag_a].i,
-						      attr[Tag_b].i,
-						      attr[Tag_c].i,
-						      &pd->default_priv_spec);
 	      pd->default_arch = attr[Tag_RISCV_arch].s;
 	    }
 	}
@@ -1682,8 +1801,21 @@ print_insn_riscv (bfd_vma memaddr, struct disassemble_info *info)
   ((struct riscv_private_data *) info->private_data)->last_map_state = mstate;
 
   /* Set the size to dump.  */
-  if (mstate == MAP_DATA
-      && (info->flags & DISASSEMBLE_DATA) == 0)
+  if (info->section != NULL
+      && strcmp (info->section->name, TABLE_JUMP_SEC_NAME) == 0)
+    {
+      struct riscv_private_data *pd = info->private_data;
+      riscv_set_xlen_from_elf (pd, info);
+
+      dump_size = pd->xlen / 8;
+      info->bytes_per_chunk = dump_size;
+      info->bytes_per_line = dump_size;
+      info->endian_code = bfd_big_endian (info->section->owner)
+			   ? BFD_ENDIAN_BIG : BFD_ENDIAN_LITTLE;
+      info->display_endian = info->endian_code;
+      riscv_disassembler = riscv_disassemble_jvt;
+    }
+  else if (mstate == MAP_DATA && (info->flags & DISASSEMBLE_DATA) == 0)
     {
       dump_size = riscv_data_length (memaddr, info);
       info->bytes_per_chunk = dump_size;
@@ -1759,6 +1891,7 @@ typedef enum
 {
   RISCV_OPTION_ARG_NONE = -1,
   RISCV_OPTION_ARG_PRIV_SPEC,
+  RISCV_OPTION_ARG_ARCH,
 
   RISCV_OPTION_ARG_COUNT
 } riscv_option_arg_t;
@@ -1782,8 +1915,12 @@ static const struct
     N_("Disassemble only into canonical instructions."),
     RISCV_OPTION_ARG_NONE },
   { "priv-spec=",
-    N_("Print the CSR according to the chosen privilege spec."),
-    RISCV_OPTION_ARG_PRIV_SPEC }
+    N_("Deprecated and ignored, the CSR is printed according to the "
+       "privilege spec 1.13."),
+    RISCV_OPTION_ARG_PRIV_SPEC },
+  { "arch=",
+    N_("Disassemble according to the given ISA string."),
+    RISCV_OPTION_ARG_ARCH }
 };
 
 /* Build the structure representing valid RISCV disassembler options.
@@ -1801,19 +1938,17 @@ disassembler_options_riscv (void)
       size_t num_args = RISCV_OPTION_ARG_COUNT;
       disasm_option_arg_t *args;
       disasm_options_t *opts;
-      size_t i, priv_spec_count;
+      size_t i;
 
       args = XNEWVEC (disasm_option_arg_t, num_args + 1);
 
       args[RISCV_OPTION_ARG_PRIV_SPEC].name = "SPEC";
-      priv_spec_count = PRIV_SPEC_CLASS_DRAFT - PRIV_SPEC_EARLIEST;
-      args[RISCV_OPTION_ARG_PRIV_SPEC].values
-        = XNEWVEC (const char *, priv_spec_count + 1);
-      for (i = 0; i < priv_spec_count; i++)
-	args[RISCV_OPTION_ARG_PRIV_SPEC].values[i]
-	  = riscv_priv_specs[PRIV_SPEC_EARLIEST - PRIV_SPEC_CLASS_NONE - 1 + i].name;
-      /* The array we return must be NULL terminated.  */
-      args[RISCV_OPTION_ARG_PRIV_SPEC].values[i] = NULL;
+      /* The option is deprecated, so accept any value.  */
+      args[RISCV_OPTION_ARG_PRIV_SPEC].values = NULL;
+
+      /* Any ISA string is accepted, so no candidate value list.  */
+      args[RISCV_OPTION_ARG_ARCH].name = "ISA";
+      args[RISCV_OPTION_ARG_ARCH].values = NULL;
 
       /* The array we return must be NULL terminated.  */
       args[num_args].name = NULL;
@@ -1913,5 +2048,7 @@ void disassemble_free_riscv (struct disassemble_info *info ATTRIBUTE_UNUSED)
     {
       riscv_release_subset_list (pd->riscv_rps_dis.subset_list);
       free (pd->riscv_rps_dis.subset_list);
+      free (pd->jvt_content);
+      free (pd->arch_option);
     }
 }

@@ -769,18 +769,30 @@ amd_dbgapi_target::xfer_partial (enum target_object object, const char *annex,
   amd_dbgapi_wave_id_t wave_id = (ptid_is_gpu (inferior_ptid)
 				  ? get_amd_dbgapi_wave_id (inferior_ptid)
 				  : AMD_DBGAPI_WAVE_NONE);
+  /* dbgapi requires LANE_NONE when wave is WAVE_NONE.  */
+  amd_dbgapi_lane_id_t lane_id = (wave_id != AMD_DBGAPI_WAVE_NONE
+				  ? 0
+				  : AMD_DBGAPI_LANE_NONE);
 
   size_t len = requested_len;
   amd_dbgapi_status_t status;
 
   if (readbuf != nullptr)
-    status = amd_dbgapi_read_memory (process_id, wave_id, 0,
+    status = amd_dbgapi_read_memory (process_id, wave_id, lane_id,
 				     AMD_DBGAPI_ADDRESS_SPACE_GLOBAL,
 				     offset, &len, readbuf);
   else
-    status = amd_dbgapi_write_memory (process_id, wave_id, 0,
+    status = amd_dbgapi_write_memory (process_id, wave_id, lane_id,
 				      AMD_DBGAPI_ADDRESS_SPACE_GLOBAL,
 				      offset, &len, writebuf);
+
+#if HAVE_DECL_AMD_DBGAPI_STATUS_ERROR_MEMORY_UNAVAILABLE
+  if (status == AMD_DBGAPI_STATUS_ERROR_MEMORY_UNAVAILABLE)
+    {
+      *xfered_len = requested_len;
+      return TARGET_XFER_UNAVAILABLE;
+    }
+#endif
 
   if (status != AMD_DBGAPI_STATUS_SUCCESS)
     return TARGET_XFER_E_IO;
@@ -1505,6 +1517,8 @@ process_one_event (amd_dbgapi_inferior_info &info,
 			| AMD_DBGAPI_WAVE_STOP_REASON_FP_INVALID_OPERATION
 			| AMD_DBGAPI_WAVE_STOP_REASON_INT_DIVIDE_BY_0))
 	      ws.set_stopped (GDB_SIGNAL_FPE);
+	    else if (stop_reason & AMD_DBGAPI_WAVE_STOP_REASON_ASSERT_TRAP)
+	      ws.set_stopped (GDB_SIGNAL_ABRT);
 	    else if (stop_reason
 		     & (AMD_DBGAPI_WAVE_STOP_REASON_BREAKPOINT
 			| AMD_DBGAPI_WAVE_STOP_REASON_WATCHPOINT
@@ -1512,8 +1526,6 @@ process_one_event (amd_dbgapi_inferior_info &info,
 			| AMD_DBGAPI_WAVE_STOP_REASON_DEBUG_TRAP
 			| AMD_DBGAPI_WAVE_STOP_REASON_TRAP))
 	      ws.set_stopped (GDB_SIGNAL_TRAP);
-	    else if (stop_reason & AMD_DBGAPI_WAVE_STOP_REASON_ASSERT_TRAP)
-	      ws.set_stopped (GDB_SIGNAL_ABRT);
 	    else
 	      ws.set_stopped (GDB_SIGNAL_0);
 
@@ -2392,7 +2404,8 @@ amd_dbgapi_inferior_execd (inferior *exec_inf, inferior *follow_inf)
 
 static void
 amd_dbgapi_inferior_forked (inferior *parent_inf, inferior *child_inf,
-			    target_waitkind fork_kind)
+			    target_waitkind fork_kind, bool detach_on_fork,
+			    bool follow_child)
 {
   if (child_inf != nullptr)
     {
@@ -2565,6 +2578,10 @@ amd_dbgapi_xfer_global_memory_callback
 
   if (status == TARGET_XFER_EOF)
     return AMD_DBGAPI_STATUS_ERROR_PROCESS_EXITED;
+#if HAVE_DECL_AMD_DBGAPI_STATUS_ERROR_MEMORY_UNAVAILABLE
+  else if (status == TARGET_XFER_UNAVAILABLE)
+    return AMD_DBGAPI_STATUS_ERROR_MEMORY_UNAVAILABLE;
+#endif
   else if (status != TARGET_XFER_OK)
     return AMD_DBGAPI_STATUS_ERROR_MEMORY_ACCESS;
 

@@ -119,6 +119,16 @@ python_string_to_target_string (PyObject *obj)
   return unicode_to_target_string (str.get ());
 }
 
+/* Wrapper for python_string_to_target_string that throws on failure.  */
+gdb::unique_xmalloc_ptr<char>
+safe_python_string_to_target_string (gdbpy_borrowed_ref<> obj)
+{
+  gdb::unique_xmalloc_ptr<char> result = python_string_to_target_string (obj);
+  if (result == nullptr)
+    throw gdb_python_exception ();
+  return result;
+}
+
 /* Converts a python string (8-bit or unicode) to a target string in the
    target's charset.  Returns NULL on error, with a python exception
    set.
@@ -145,6 +155,16 @@ python_string_to_host_string (PyObject *obj)
     return NULL;
 
   return unicode_to_encoded_string (str.get (), host_charset ());
+}
+
+/* Wrapper for python_string_to_host_string that throws on failure.  */
+gdb::unique_xmalloc_ptr<char>
+safe_python_string_to_host_string (gdbpy_borrowed_ref<> obj)
+{
+  gdb::unique_xmalloc_ptr<char> result = python_string_to_host_string (obj);
+  if (result == nullptr)
+    throw gdb_python_exception ();
+  return result;
 }
 
 /* See python/python-internal.h.  */
@@ -221,7 +241,14 @@ gdbpy_convert_exception (const struct gdb_exception &exception)
   if (exception.reason == RETURN_QUIT)
     exc_class = PyExc_KeyboardInterrupt;
   else if (exception.reason == RETURN_FORCED_QUIT)
-    quit_force (NULL, 0);
+    {
+      /* Ideally we'd like to propagate the exception to top-level, where
+	 we'll call quit_force.  Propagating the exception would ensure that
+	 appropriate cleanups are run.
+	 OTOH, there is the risk that the exception will be swallowed.
+	 For now, don't take this risk and immediately call quit_force.  */
+      quit_force (NULL, 0);
+    }
   else if (exception.error == MEMORY_ERROR)
     exc_class = gdbpy_gdb_memory_error;
   else
@@ -485,6 +512,11 @@ gdbpy_handle_exception ()
 	  exit_arg = 1;
 	}
 
+      /* Ideally we'd like to propagate the exception to top-level, where
+	 we'll call quit_force.  Propagating the exception would ensure that
+	 appropriate cleanups are run.
+	 OTOH, there is the risk that the exception will be swallowed.
+	 For now, don't take this risk and immediately call quit_force.  */
       quit_force (&exit_arg, 0);
     }
   else if (! fetched_error.type_matches (gdbpy_gdberror_exc)

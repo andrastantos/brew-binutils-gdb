@@ -564,7 +564,7 @@ struct riscv_csr_feature : public riscv_register_feature
     : riscv_register_feature (riscv_feature_name_csr)
   {
     m_registers = {
-#define DECLARE_CSR(NAME,VALUE,CLASS,DEFINE_VER,ABORT_VER)		\
+#define DECLARE_CSR(NAME,VALUE,CLASS)					\
       { RISCV_ ## VALUE ## _REGNUM, { # NAME } },
 #include "opcode/riscv-opc.h"
 #undef DECLARE_CSR
@@ -769,7 +769,7 @@ show_riscv_debug_variable (struct ui_file *file, int from_tty,
 			   const char *value)
 {
   gdb_printf (file,
-	      _("RiscV debug variable `%s' is set to: %s\n"),
+	      _("RiscV debug variable \"%s\" is set to: %s\n"),
 	      c->name, value);
 }
 
@@ -1180,14 +1180,13 @@ riscv_print_one_register_info (struct gdbarch *gdbarch,
 
   if (riscv_is_fp_regno_p (regnum))
     {
-      struct value_print_options opts;
       const gdb_byte *valaddr = val->contents_for_printing ().data ();
       enum bfd_endian byte_order = type_byte_order (regtype);
 
-      get_user_print_options (&opts);
+      value_print_options opts = get_user_print_options ();
       opts.deref_ref = true;
 
-      common_val_print (val, file, 0, &opts, current_language);
+      common_val_print (val, file, 0, opts, current_language);
 
       if (print_raw_format)
 	{
@@ -1199,13 +1198,12 @@ riscv_print_one_register_info (struct gdbarch *gdbarch,
     }
   else
     {
-      struct value_print_options opts;
       riscv_gdbarch_tdep *tdep = gdbarch_tdep<riscv_gdbarch_tdep> (gdbarch);
 
       /* Print the register in hex.  */
-      get_formatted_print_options (&opts, 'x');
+      value_print_options opts = get_formatted_print_options ('x');
       opts.deref_ref = true;
-      common_val_print (val, file, 0, &opts, current_language);
+      common_val_print (val, file, 0, opts, current_language);
 
       if (print_raw_format)
 	{
@@ -1338,10 +1336,10 @@ riscv_print_one_register_info (struct gdbarch *gdbarch,
 		 natural format.  */
 	      if (regtype->is_vector () == 0)
 		{
-		  get_user_print_options (&opts);
+		  opts = get_user_print_options ();
 		  opts.deref_ref = true;
 		  gdb_printf (file, "\t");
-		  common_val_print (val, file, 0, &opts, current_language);
+		  common_val_print (val, file, 0, opts, current_language);
 		}
 	    }
 	}
@@ -1360,7 +1358,7 @@ riscv_is_regnum_a_named_csr (int regnum)
 
   switch (regnum)
     {
-#define DECLARE_CSR(name, num, class, define_ver, abort_ver) case RISCV_ ## num ## _REGNUM:
+#define DECLARE_CSR(name, num, class) case RISCV_ ## num ## _REGNUM:
 #include "opcode/riscv-opc.h"
 #undef DECLARE_CSR
       return true;
@@ -4902,7 +4900,7 @@ class riscv_recorded_insn final
      where recording is happening.  */
   int m_xlen = 0;
 
-  /* Flag that says whether we are in baremetal mode.   */
+  /* Flag that says whether we are in baremetal mode.  */
   bool m_in_baremetal_mode = false;
 
   /* Helper for decode 16-bit instruction RS1.  */

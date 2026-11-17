@@ -112,48 +112,67 @@ show_overload_resolution (struct ui_file *file, int from_tty,
 struct value *
 find_function_in_inferior (const char *name, struct objfile **objf_p)
 {
-  struct block_symbol sym;
+  bound_minimal_symbol msymbol;
 
-  sym = lookup_symbol (name, nullptr, SEARCH_TYPE_DOMAIN, nullptr);
-  if (sym.symbol != NULL)
+  try
     {
-      if (objf_p)
-	*objf_p = sym.symbol->objfile ();
+      block_symbol sym = lookup_symbol (name, nullptr, SEARCH_FUNCTION_DOMAIN,
+					nullptr);
 
-      return value_of_variable (sym.symbol, sym.block);
+      if (sym.symbol != nullptr)
+	{
+	  msymbol = find_gnu_ifunc (sym.symbol);
+	  if (msymbol.minsym == nullptr)
+	    {
+	      if (objf_p != nullptr)
+		*objf_p = sym.symbol->objfile ();
+	      return value_of_variable (sym.symbol, sym.block);
+	    }
+	}
+    }
+  catch (const gdb_exception_error &)
+    {
+      /* Ignore the error.  If there's a problem looking for the full
+	 symbol then we shouldn't give up, we should fall back to
+	 looking for the minimal symbol.  */
+    }
+
+  /* If we didn't find an IFunc related minimal symbol above, then
+     look for a suitable minimal symbol now.  */
+  if (msymbol.minsym == nullptr)
+    msymbol = lookup_minimal_symbol (current_program_space, name);
+
+  if (msymbol.minsym != nullptr)
+    {
+      struct objfile *objfile = msymbol.objfile;
+      struct gdbarch *gdbarch = objfile->arch ();
+
+      struct type *type;
+      CORE_ADDR maddr;
+      type = lookup_pointer_type (builtin_type (gdbarch)->builtin_char);
+      type = lookup_function_type (type);
+      type = lookup_pointer_type (type);
+      maddr = msymbol.value_address ();
+      minimal_symbol_type minsym_type = msymbol.minsym->type ();
+
+      if (minsym_type == mst_text_gnu_ifunc
+	  || minsym_type == mst_data_gnu_ifunc)
+	type->target_type ()->set_is_gnu_ifunc (true);
+
+      if (objf_p != nullptr)
+	*objf_p = objfile;
+
+      return value_from_pointer (type, maddr);
     }
   else
     {
-      bound_minimal_symbol msymbol
-	= lookup_minimal_symbol (current_program_space, name);
-
-      if (msymbol.minsym != NULL)
-	{
-	  struct objfile *objfile = msymbol.objfile;
-	  struct gdbarch *gdbarch = objfile->arch ();
-
-	  struct type *type;
-	  CORE_ADDR maddr;
-	  type = lookup_pointer_type (builtin_type (gdbarch)->builtin_char);
-	  type = lookup_function_type (type);
-	  type = lookup_pointer_type (type);
-	  maddr = msymbol.value_address ();
-
-	  if (objf_p)
-	    *objf_p = objfile;
-
-	  return value_from_pointer (type, maddr);
-	}
+      if (!target_has_execution ())
+	error (_("evaluation of this expression "
+		 "requires the target program to be active"));
       else
-	{
-	  if (!target_has_execution ())
-	    error (_("evaluation of this expression "
-		     "requires the target program to be active"));
-	  else
-	    error (_("evaluation of this expression requires the "
-		     "program to have a function \"%s\"."),
-		   name);
-	}
+	error (_("evaluation of this expression requires the "
+		 "program to have a function \"%s\"."),
+	       name);
     }
 }
 
@@ -170,7 +189,9 @@ value_allocate_space_in_inferior (int len)
   struct value *blocklen;
 
   blocklen = value_from_longest (builtin_type (gdbarch)->builtin_int, len);
-  val = call_function_by_hand (val, NULL, blocklen);
+  val = call_function_by_hand (val,
+			       builtin_type (gdbarch)->builtin_data_ptr,
+			       blocklen);
   if (value_logical_not (val))
     {
       if (!target_has_execution ())
@@ -557,7 +578,7 @@ value_cast (struct type *type, struct value *arg2)
 	return value_from_longest (to_type, value_as_long (arg2));
     }
   else if ((code1 == TYPE_CODE_INT || code1 == TYPE_CODE_ENUM
-	    || code1 == TYPE_CODE_RANGE)
+	    || code1 == TYPE_CODE_RANGE || code1 == TYPE_CODE_FLAGS)
 	   && (scalar || code2 == TYPE_CODE_PTR
 	       || code2 == TYPE_CODE_MEMBERPTR))
     {
@@ -826,7 +847,7 @@ value_dynamic_cast (struct type *type, struct value *arg)
     error (_("Argument to dynamic_cast must be a pointer or reference type"));
   if (resolved_type->target_type ()->code () != TYPE_CODE_VOID
       && resolved_type->target_type ()->code () != TYPE_CODE_STRUCT)
-    error (_("Argument to dynamic_cast must be pointer to class or `void *'"));
+    error (_("Argument to dynamic_cast must be pointer to class or \"void *\""));
 
   class_type = check_typedef (resolved_type->target_type ());
   if (resolved_type->code () == TYPE_CODE_PTR)
@@ -887,7 +908,7 @@ value_dynamic_cast (struct type *type, struct value *arg)
      most-derived object.  */
   if (resolved_type->code () == TYPE_CODE_PTR
       && resolved_type->target_type ()->code () == TYPE_CODE_VOID)
-    return value_at_lazy (type, addr);
+    return value_from_pointer (type, addr);
 
   tem = value_at (resolved_type->target_type (), addr);
   type = (is_ref
@@ -1365,10 +1386,6 @@ value_repeat (struct value *arg1, int count)
 
   val->set_lval (lval_memory);
   val->set_address (arg1->address ());
-
-  read_value_memory (val, 0, val->stack (), val->address (),
-		     val->contents_all_raw ().data (),
-		     type_length_units (val->enclosing_type ()));
 
   return val;
 }
@@ -2209,7 +2226,7 @@ search_struct_method (const char *name, struct value **arg1p,
 	  name_matched = 1;
 	  if (j > 0 && !args.has_value ())
 	    error (_("cannot resolve overloaded method "
-		     "`%s': no arguments supplied"), name);
+		     "\"%s\": no arguments supplied"), name);
 	  else if (j == 0 && !args.has_value ())
 	    {
 	      v = value_fn_field (arg1p, f, j, type, offset);
@@ -3688,7 +3705,7 @@ value_struct_elt_for_reference (struct type *domain, int offset,
 		  /* Desired method is ambiguous if more than one
 		     method is defined.  */
 		  if (j != -1 && !TYPE_FN_FIELD_ARTIFICIAL (f, j))
-		    error (_("non-unique member `%s' requires "
+		    error (_("non-unique member \"%s\" requires "
 			     "type instantiation"), name);
 
 		  j = ii;
@@ -3978,7 +3995,7 @@ value_of_this (const struct language_defn *lang)
   frame_info_ptr frame;
 
   if (lang->name_of_this () == NULL)
-    error (_("no `this' in current language"));
+    error (_("no \"this\" in current language"));
 
   frame = get_selected_frame (_("no frame selected"));
 
@@ -3986,7 +4003,7 @@ value_of_this (const struct language_defn *lang)
 
   sym = lookup_language_this (lang, b);
   if (sym.symbol == NULL)
-    error (_("current stack frame does not contain a variable named `%ps'"),
+    error (_("current stack frame does not contain a variable named \"%ps\""),
 	   styled_string (variable_name_style.style (),
 			  lang->name_of_this ()));
 

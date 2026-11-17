@@ -1353,7 +1353,7 @@ or1k_elf_relocate_section (struct bfd_link_info *info,
     {
       reloc_howto_type *howto;
       unsigned long r_symndx;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma relocation;
@@ -2116,7 +2116,11 @@ or1k_elf_check_relocs (bfd *abfd,
 	  if (htab->root.sgot == NULL)
 	    {
 	      if (dynobj == NULL)
-		htab->root.dynobj = dynobj = abfd;
+		{
+		  dynobj = _bfd_elf_link_dynobj (info);
+		  if (dynobj == NULL)
+		    return false;
+		}
 	      if (!_bfd_elf_create_got_section (dynobj, info))
 		return false;
 	    }
@@ -2203,9 +2207,12 @@ or1k_elf_check_relocs (bfd *abfd,
 			   abfd, name);
 		      }
 
-		    if (htab->root.dynobj == NULL)
-		      htab->root.dynobj = abfd;
-		    dynobj = htab->root.dynobj;
+		    if (dynobj == NULL)
+		      {
+			dynobj = _bfd_elf_link_dynobj (info);
+			if (dynobj == NULL)
+			  return false;
+		      }
 
 		    sreloc = bfd_get_section_by_name (dynobj, name);
 		    if (sreloc == NULL)
@@ -2225,10 +2232,7 @@ or1k_elf_check_relocs (bfd *abfd,
 		  head = &h->dyn_relocs;
 		else
 		  {
-		    /* Track dynamic relocs needed for local syms too.
-		       We really need local syms available to do this
-		       easily.  Oh well.  */
-
+		    /* Track dynamic relocs needed for local syms too.  */
 		    asection *s;
 		    Elf_Internal_Sym *isym;
 		    void *vpp;

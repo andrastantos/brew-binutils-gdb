@@ -433,7 +433,7 @@ do
     arm_pei_wince_be_vec)	 tb="$tb pei-arm-wince.lo pei-arm.lo peigen.lo $coff" ;;
     arm_pei_wince_le_vec)	 tb="$tb pei-arm-wince.lo pei-arm.lo peigen.lo $coff" ;;
     arm_mach_o_vec)		 tb="$tb mach-o-arm.lo" ;;
-    avr_elf32_vec)		 tb="$tb elf32-avr.lo elf32.lo $elf" ;;
+    avr_elf32_vec)		 tb="$tb elf32-avr.lo elf32.lo elf-attrs.lo $elf" ;;
     bfin_elf32_vec)		 tb="$tb elf32-bfin.lo elf32.lo $elf" ;;
     bfin_elf32_fdpic_vec)	 tb="$tb elf32-bfin.lo elf32.lo $elf" ;;
     brew_elf32_vec)              tb="$tb elf32-brew.lo elf32.lo $elf" ;;
@@ -652,7 +652,6 @@ do
     visium_elf32_vec)		 tb="$tb elf32-visium.lo elf32.lo $elf" ;;
     wasm_vec)                    tb="$tb wasm-module.lo" ;;
     wasm32_elf32_vec)            tb="$tb elf32-wasm32.lo elf32.lo $elf" ;;
-    x86_64_coff_vec)		 tb="$tb coff-x86_64.lo $coff"; target_size=64 ;;
     x86_64_elf32_vec)		 tb="$tb elf64-x86-64.lo $elfxx_x86 elf64.lo elf32.lo $elf"; target_size=64 ;;
     x86_64_elf64_vec)		 tb="$tb elf64-x86-64.lo $elfxx_x86 elf64.lo elf-sframe.lo $elf"; target_size=64 ;;
     x86_64_elf64_fbsd_vec)	 tb="$tb elf64-x86-64.lo $elfxx_x86 elf64.lo elf-sframe.lo $elf"; target_size=64 ;;

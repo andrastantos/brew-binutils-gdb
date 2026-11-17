@@ -57,6 +57,15 @@ extern "C" {
 #define obj_coff_strings_written(bfd) (coff_data (bfd)->strings_written)
 #define obj_coff_local_toc_table(bfd) (coff_data (bfd)->local_toc_sym_map)
 
+/* True if SYMNDX is a valid index into the raw external COFF symbol
+   table (obj_coff_external_syms).  Rejects negative indices, and any
+   index at or past the declared symbol count.  COFF backends that
+   walk raw symbol entries or the parallel obj_coff_sym_hashes array
+   must gate the access with this, exactly as the generic linker's
+   _bfd_coff_generic_relocate_section does.  */
+#define coff_symndx_in_range(abfd, symndx)			\
+  ((unsigned long) (symndx) < obj_raw_syment_count (abfd))
+
 /* `Tdata' information kept for COFF files.  */
 
 typedef struct coff_tdata
@@ -388,6 +397,8 @@ extern const char *_bfd_coff_read_string_table
   (bfd *) ATTRIBUTE_HIDDEN;
 extern bool _bfd_coff_free_symbols
   (bfd *) ATTRIBUTE_HIDDEN;
+extern bool _bfd_coff_check_symbol_table
+  (bfd *) ATTRIBUTE_HIDDEN;
 extern struct coff_ptr_struct *coff_get_normalized_symtab
   (bfd *) ATTRIBUTE_HIDDEN;
 extern long coff_get_reloc_upper_bound
@@ -422,7 +433,7 @@ extern int coff_sizeof_headers
 extern bool bfd_coff_reloc16_relax_section
   (bfd *, asection *, struct bfd_link_info *, bool *) ATTRIBUTE_HIDDEN;
 extern bfd_byte *bfd_coff_reloc16_get_relocated_section_contents
-  (bfd *, struct bfd_link_info *, struct bfd_link_order *,
+  (bfd *, struct bfd_link_info *, const struct bfd_link_order *,
    bfd_byte *, bool, asymbol **) ATTRIBUTE_HIDDEN;
 extern bfd_vma bfd_coff_reloc16_get_value
   (arelent *, struct bfd_link_info *, asection *) ATTRIBUTE_HIDDEN;
@@ -846,7 +857,7 @@ typedef struct
      combined_entry_type *, unsigned int);
 
   bool (*_bfd_coff_reloc16_extra_cases)
-    (bfd *, struct bfd_link_info *, struct bfd_link_order *, arelent *,
+    (bfd *, struct bfd_link_info *, const struct bfd_link_order *, arelent *,
      bfd_byte *, size_t *, size_t *);
 
   int (*_bfd_coff_reloc16_estimate)

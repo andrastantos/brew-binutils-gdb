@@ -163,6 +163,9 @@ static const mach_o_section_name_xlat data_section_names_xlat[] =
 /* __DWARF Segment.  */
 static const mach_o_section_name_xlat dwarf_section_names_xlat[] =
   {
+    {	".debug_addr",			"__debug_addr",
+	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
+	BFD_MACH_O_S_ATTR_DEBUG,	0},
     {	".debug_frame",			"__debug_frame",
 	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
 	BFD_MACH_O_S_ATTR_DEBUG,	0},
@@ -181,7 +184,13 @@ static const mach_o_section_name_xlat dwarf_section_names_xlat[] =
     {	".debug_line",			"__debug_line",
 	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
 	BFD_MACH_O_S_ATTR_DEBUG,	0},
+    {	".debug_line_str",		"__debug_line_str",
+	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
+	BFD_MACH_O_S_ATTR_DEBUG,	0},
     {	".debug_loc",			"__debug_loc",
+	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
+	BFD_MACH_O_S_ATTR_DEBUG,	0},
+    {	".debug_loclists",		"__debug_loclists",
 	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
 	BFD_MACH_O_S_ATTR_DEBUG,	0},
     {	".debug_pubnames",		"__debug_pubnames",
@@ -190,10 +199,19 @@ static const mach_o_section_name_xlat dwarf_section_names_xlat[] =
     {	".debug_pubtypes",		"__debug_pubtypes",
 	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
 	BFD_MACH_O_S_ATTR_DEBUG,	0},
+    {	".debug_names",			"__debug_names",
+	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
+	BFD_MACH_O_S_ATTR_DEBUG,	0},
     {	".debug_str",			"__debug_str",
 	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
 	BFD_MACH_O_S_ATTR_DEBUG,	0},
+    {	".debug_str_offsets",		"__debug_str_offs",
+	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
+	BFD_MACH_O_S_ATTR_DEBUG,	0},
     {	".debug_ranges",		"__debug_ranges",
+	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
+	BFD_MACH_O_S_ATTR_DEBUG,	0},
+    {	".debug_rnglists",		"__debug_rnglists",
 	SEC_DEBUGGING,			BFD_MACH_O_S_REGULAR,
 	BFD_MACH_O_S_ATTR_DEBUG,	0},
     {	".debug_macro",			"__debug_macro",
@@ -4097,12 +4115,12 @@ static bool
 bfd_mach_o_read_prebound_dylib (bfd *abfd,
 				bfd_mach_o_load_command *command)
 {
+  bfd_mach_o_data_struct *mdata = bfd_mach_o_get_data (abfd);
   bfd_mach_o_prebound_dylib_command *cmd = &command->command.prebound_dylib;
   struct mach_o_prebound_dylib_command_external raw;
   unsigned int nameoff;
   unsigned int modoff;
-  unsigned int str_len;
-  unsigned char *str;
+  uint64_t modlen;
 
   if (command->len < sizeof (raw) + 8)
     return false;
@@ -4114,18 +4132,21 @@ bfd_mach_o_read_prebound_dylib (bfd *abfd,
   if (nameoff > command->len || modoff > command->len)
     return false;
 
-  str_len = command->len - sizeof (raw);
-  str = _bfd_alloc_and_read (abfd, str_len, str_len);
-  if (str == NULL)
-    return false;
-
   cmd->name_offset = command->offset + nameoff;
   cmd->nmodules = bfd_h_get_32 (abfd, raw.nmodules);
   cmd->linked_modules_offset = command->offset + modoff;
 
-  cmd->name_str = (char *)str + nameoff - (sizeof (raw) + BFD_MACH_O_LC_SIZE);
-  cmd->linked_modules = str + modoff - (sizeof (raw) + BFD_MACH_O_LC_SIZE);
-  return true;
+  cmd->name_str = (char *) bfd_mach_o_alloc_and_read
+    (abfd, mdata->hdr_offset + cmd->name_offset, command->len - nameoff, 1);
+  if (cmd->name_str == NULL)
+    return false;
+
+  modlen = ((uint64_t) cmd->nmodules + 7) / 8;
+  if (modlen > command->len - modoff)
+    return false;
+  cmd->linked_modules = bfd_mach_o_alloc_and_read
+    (abfd, mdata->hdr_offset + cmd->linked_modules_offset, modlen, 0);
+  return cmd->linked_modules != NULL;
 }
 
 static bool

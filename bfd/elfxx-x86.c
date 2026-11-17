@@ -1125,8 +1125,7 @@ _bfd_x86_elf_link_relax_section (bfd *abfd ATTRIBUTE_UNUSED,
 
   /* Load the relocations for this section.  */
   internal_relocs =
-    _bfd_elf_link_info_read_relocs (abfd, info, input_section, NULL,
-				    (Elf_Internal_Rela *) NULL,
+    _bfd_elf_link_info_read_relocs (abfd, info, input_section, NULL, NULL,
 				    info->keep_memory);
   if (internal_relocs == NULL)
     return false;
@@ -2180,7 +2179,7 @@ _bfd_elf_x86_valid_reloc_p (asection *input_section,
 			    struct elf_x86_link_hash_table *htab,
 			    const Elf_Internal_Rela *rel,
 			    struct elf_link_hash_entry *h,
-			    Elf_Internal_Sym *sym,
+			    const Elf_Internal_Sym *sym,
 			    Elf_Internal_Shdr *symtab_hdr,
 			    bool *no_dynreloc_p)
 {
@@ -3265,7 +3264,7 @@ _bfd_x86_elf_link_fixup_ifunc_symbol (struct bfd_link_info *info,
 void
 _bfd_x86_elf_link_report_relative_reloc
   (struct bfd_link_info *info, asection *asect,
-   struct elf_link_hash_entry *h, Elf_Internal_Sym *sym,
+   struct elf_link_hash_entry *h, const Elf_Internal_Sym *sym,
    const char *reloc_name, const void *reloc)
 {
   const char *name;
@@ -3303,7 +3302,7 @@ void
 _bfd_x86_elf_link_report_tls_transition_error
   (struct bfd_link_info *info, bfd *abfd, asection *asect,
    Elf_Internal_Shdr *symtab_hdr, struct elf_link_hash_entry *h,
-   Elf_Internal_Sym *sym, const Elf_Internal_Rela *rel,
+   const Elf_Internal_Sym *sym, const Elf_Internal_Rela *rel,
    const char *from_reloc_name, const char *to_reloc_name,
    enum elf_x86_tls_error_type tls_error)
 {
@@ -3387,7 +3386,7 @@ _bfd_x86_elf_link_report_tls_transition_error
 void
 _bfd_x86_elf_link_report_error
   (bfd *abfd, asection *sec, Elf_Internal_Shdr *symtab_hdr,
-   struct elf_link_hash_entry *h, Elf_Internal_Sym *sym,
+   struct elf_link_hash_entry *h, const Elf_Internal_Sym *sym,
    reloc_howto_type *howto, enum elf_x86_error_type type)
 {
   const char *name;
@@ -4634,38 +4633,9 @@ _bfd_x86_elf_link_setup_gnu_properties
 	}
     }
 
-  dynobj = htab->elf.dynobj;
-
   /* Set htab->elf.dynobj here so that there is no need to check and
      set it in check_relocs.  */
-  if (dynobj == NULL)
-    {
-      if (pbfd != NULL)
-	{
-	  htab->elf.dynobj = pbfd;
-	  dynobj = pbfd;
-	}
-      else
-	{
-	  bfd *abfd;
-
-	  /* Find a normal input file to hold linker created
-	     sections.  */
-	  for (abfd = info->input_bfds;
-	       abfd != NULL;
-	       abfd = abfd->link.next)
-	    if (bfd_get_flavour (abfd) == bfd_target_elf_flavour
-		&& (abfd->flags
-		    & (DYNAMIC | BFD_LINKER_CREATED | BFD_PLUGIN)) == 0
-		&& bed->relocs_compatible (abfd->xvec,
-					   info->output_bfd->xvec))
-	      {
-		htab->elf.dynobj = abfd;
-		dynobj = abfd;
-		break;
-	      }
-	}
-    }
+  dynobj = _bfd_elf_link_dynobj_internal (info, false);
 
   /* Return if there are no normal input files.  */
   if (dynobj == NULL)
@@ -5057,7 +5027,10 @@ _bfd_elf_x86_copy_special_section_fields
 {
   /* Return false for Solaris binary to properly set the sh_info and
      sh_link fields of Solaris specific sections.  */
-  return elf_elfheader (ibfd)->e_ident[EI_OSABI] != ELFOSABI_SOLARIS;
+  if (elf_elfheader (ibfd)->e_ident[EI_OSABI] == ELFOSABI_SOLARIS)
+    return false;
+
+  return _bfd_elf_copy_special_section_fields (ibfd, obfd, isection, osection);
 }
 
 void

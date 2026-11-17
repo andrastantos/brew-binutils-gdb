@@ -352,10 +352,14 @@ if { [is_elf_format] } then {
     run_dump_test "dwarf-5-irp" $dump_opts
     run_dump_test "dwarf-5-macro" $dump_opts
     run_dump_test "dwarf-5-macro-include" $dump_opts
+    run_dump_test "dwarf-4-primary-file" $dump_opts
+    run_dump_test "dwarf-5-primary-file" $dump_opts
     run_dump_test "dwarf-3-func" $dump_opts
     run_dump_test "dwarf-5-func" $dump_opts
     run_dump_test "dwarf-5-func-global" $dump_opts
     run_dump_test "dwarf-5-func-local" $dump_opts
+    run_dump_test "dwarf-3-func-weak" $dump_opts
+    run_dump_test "dwarf-5-func-weak" $dump_opts
 
     # Exclude targets defining ONLY_STANDARD_ESCAPES. It's not clear how these
     # are supposed to reference macro arguments in double-quoted strings.

@@ -630,7 +630,7 @@ tfile_target::close ()
 void
 tfile_target::files_info ()
 {
-  gdb_printf ("\t`%s'\n", trace_filename.get ());
+  gdb_printf ("\t\"%s\"\n", trace_filename.get ());
 }
 
 void
@@ -652,6 +652,12 @@ tfile_get_traceframe_address (off_t tframe_offset)
   short tpnum;
   struct tracepoint *tp;
   off_t saved_offset = cur_offset;
+  SCOPE_EXIT
+    {
+      /* Restore our seek position.  */
+      cur_offset = saved_offset;
+      lseek (trace_fd, cur_offset, SEEK_SET);
+    };
 
   /* FIXME dig pc out of collected registers.  */
 
@@ -667,9 +673,6 @@ tfile_get_traceframe_address (off_t tframe_offset)
   if (tp != nullptr && tp->has_locations ())
     addr = tp->first_loc ().address;
 
-  /* Restore our seek position.  */
-  cur_offset = saved_offset;
-  lseek (trace_fd, cur_offset, SEEK_SET);
   return addr;
 }
 

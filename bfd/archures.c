@@ -159,6 +159,7 @@ DESCRIPTION
 .#define bfd_mach_mips4400		4400
 .#define bfd_mach_mips4600		4600
 .#define bfd_mach_mips4650		4650
+.#define bfd_mach_mips_tx49		4900 {* Toshiba TX49 *}
 .#define bfd_mach_mips5000		5000
 .#define bfd_mach_mips5400		5400
 .#define bfd_mach_mips5500		5500
@@ -581,6 +582,7 @@ DESCRIPTION
 .#define bfd_mach_amdgcn_gfx1100         0x041
 .#define bfd_mach_amdgcn_gfx1101         0x046
 .#define bfd_mach_amdgcn_gfx1102         0x047
+.#define bfd_mach_amdgcn_gfx1103         0x044
 .#define bfd_mach_amdgcn_gfx1150         0x043
 .#define bfd_mach_amdgcn_gfx1151         0x04a
 .#define bfd_mach_amdgcn_gfx1152         0x055

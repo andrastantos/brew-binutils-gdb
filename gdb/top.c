@@ -80,10 +80,6 @@
 # include "tui/tui-io.h"
 #endif
 
-#ifndef O_NOCTTY
-# define O_NOCTTY 0
-#endif
-
 extern void initialize_all_files (void);
 
 /* Default command line prompt.  This is overridden in some configs.  */
@@ -1862,7 +1858,7 @@ kill_or_detach (inferior *inf, int from_tty)
   if (inf->pid == 0)
     return;
 
-  thread_info *thread = any_thread_of_inferior (inf);
+  thread_info *thread = any_non_exited_thread_of_inferior (inf);
   if (thread != NULL)
     {
       switch_to_thread (thread);

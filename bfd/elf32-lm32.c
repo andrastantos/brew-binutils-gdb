@@ -747,7 +747,7 @@ lm32_elf_relocate_section (struct bfd_link_info *info,
       reloc_howto_type *howto;
       unsigned int r_type;
       unsigned long r_symndx;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma relocation;
@@ -1169,7 +1169,11 @@ lm32_elf_check_relocs (bfd *abfd,
 	    case R_LM32_GOTOFF_HI16:
 	    case R_LM32_GOTOFF_LO16:
 	      if (dynobj == NULL)
-		htab->root.dynobj = dynobj = abfd;
+		{
+		  dynobj = _bfd_elf_link_dynobj (info);
+		  if (dynobj == NULL)
+		    return false;
+		}
 	      if (!_bfd_elf_create_got_section (dynobj, info))
 		return false;
 	      break;
@@ -1185,7 +1189,11 @@ lm32_elf_check_relocs (bfd *abfd,
 	      /* FDPIC requires a GOT if there is a .rofixup section
 		 (Normal ELF doesn't). */
 	      if (dynobj == NULL)
-		htab->root.dynobj = dynobj = abfd;
+		{
+		  dynobj = _bfd_elf_link_dynobj (info);
+		  if (dynobj == NULL)
+		    return false;
+		}
 	      if (!_bfd_elf_create_got_section (dynobj, info))
 		return false;
 	      /* Create .rofixup section */
@@ -1202,7 +1210,11 @@ lm32_elf_check_relocs (bfd *abfd,
 	      if (htab->sfixup32 == NULL)
 		{
 		  if (dynobj == NULL)
-		    htab->root.dynobj = dynobj = abfd;
+		    {
+		      dynobj = _bfd_elf_link_dynobj (info);
+		      if (dynobj == NULL)
+			return false;
+		    }
 		  if (! create_rofixup_section (dynobj, info))
 		    return false;
 		}
@@ -2072,7 +2084,8 @@ lm32_elf_late_size_sections (struct bfd_link_info *info)
     return false;
 
   /* Allocate .rofixup section.  */
-  if (IS_FDPIC (info->output_bfd))
+  if (IS_FDPIC (info->output_bfd)
+      && lm32fdpic_fixup32_section (info) != NULL)
     {
       struct weak_symbol_list *list_start = NULL, *list_end = NULL;
       int rgot_weak_count = 0;
@@ -2089,7 +2102,8 @@ lm32_elf_late_size_sections (struct bfd_link_info *info)
 		  Elf_Internal_Rela *internal_relocs, *end;
 		  internal_relocs = elf_section_data (s)->relocs;
 		  if (internal_relocs == NULL)
-		    internal_relocs = (_bfd_elf_link_read_relocs (ibfd, s, NULL, NULL, false));
+		    internal_relocs
+		      = _bfd_elf_link_read_relocs (ibfd, s, NULL, NULL, false);
 		  if (internal_relocs != NULL)
 		    {
 		      end = internal_relocs + s->reloc_count;

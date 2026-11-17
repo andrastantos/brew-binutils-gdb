@@ -38,15 +38,14 @@ static int notlsopt = 0;
 /* Whether to convert inline PLT calls to direct.  */
 static int no_inline_opt = 0;
 
-/* Choose the correct place for .got.  */
-static int old_got = 0;
-
 static struct ppc_elf_params params = { PLT_UNSET, 0, -1,
 					0, 0, 0, 0, 0, 0, 0 };
 
 static void
 ppc_after_open_output (void)
 {
+  ldelf_after_open_output ();
+
   if (params.emit_stub_syms < 0)
     params.emit_stub_syms = (link_info.emitrelocations
 			     || bfd_link_pic (&link_info));
@@ -60,6 +59,9 @@ EOF
 # No --secure-plt, --bss-plt, or --sdata-got for vxworks.
 if test -z "$VXWORKS_BASE_EM_FILE" ; then
   fragment <<EOF
+/* Choose the correct place for .got.  */
+static int old_got = 0;
+
 static void
 ppc_after_check_relocs (void)
 {
@@ -380,11 +382,15 @@ PARSE_AND_LIST_ARGS_CASES=${PARSE_AND_LIST_ARGS_CASES}'
     case OPTION_NO_INLINE_OPT:
       no_inline_opt = 1;
       break;
-
+'
+if test -z "$VXWORKS_BASE_EM_FILE" ; then
+  PARSE_AND_LIST_ARGS_CASES=${PARSE_AND_LIST_ARGS_CASES}'
     case OPTION_OLD_GOT:
       old_got = 1;
       break;
-
+'
+fi
+PARSE_AND_LIST_ARGS_CASES=${PARSE_AND_LIST_ARGS_CASES}'
     case OPTION_TRADITIONAL_FORMAT:
       notlsopt = 1;
       params.no_tls_get_addr_opt = 1;
@@ -418,7 +424,7 @@ PARSE_AND_LIST_ARGS_CASES=${PARSE_AND_LIST_ARGS_CASES}'
 
 # Put these extra ppc32elf routines in ld_${EMULATION_NAME}_emulation
 #
-LDEMUL_CREATE_OUTPUT_SECTION_STATEMENTS=ppc_after_open_output
+LDEMUL_AFTER_OPEN_OUTPUT=ppc_after_open_output
 if test -z "$VXWORKS_BASE_EM_FILE" ; then
   LDEMUL_AFTER_CHECK_RELOCS=ppc_after_check_relocs
 fi

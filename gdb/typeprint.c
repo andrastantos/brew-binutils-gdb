@@ -357,7 +357,6 @@ whatis_exp (const char *exp, int show)
   int full = 0;
   LONGEST top = -1;
   int using_enc = 0;
-  struct value_print_options opts;
   struct type_print_options flags = default_ptype_flags;
 
   if (exp)
@@ -457,7 +456,7 @@ whatis_exp (const char *exp, int show)
       flags.print_offsets = 0;
     }
 
-  get_user_print_options (&opts);
+  const value_print_options &opts = get_user_print_options ();
   if (val != NULL && opts.objectprint)
     {
       if (type->is_pointer_or_reference ()
@@ -516,14 +515,15 @@ ptype_command (const char *type_name, int from_tty)
 }
 
 /* Meant to be used in debug sessions, so don't export it in a header file.  */
-extern void ATTRIBUTE_UNUSED debug_type (struct type *type);
+extern void ATTRIBUTE_USED debug (struct type *type);
 
 /* Print TYPE.  */
 
-void ATTRIBUTE_UNUSED
-debug_type (struct type *type)
+void ATTRIBUTE_USED
+debug (struct type *type)
 {
   type_print (type, "", gdb_stdlog, 1);
+  gdb_printf (gdb_stdlog, "\n");
   gdb_flush (gdb_stdlog);
 }
 

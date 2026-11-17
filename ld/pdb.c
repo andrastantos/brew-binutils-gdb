@@ -1879,7 +1879,7 @@ parse_inlinee_lines (uint8_t *data, uint32_t size, uint8_t **bufptr,
       return false;
     }
 
-  version = bfd_getl32 (data + sizeof (uint32_t) + sizeof (uint32_t));
+  version = bfd_getl32 (data);
   if (version != CV_INLINEE_SOURCE_LINE_SIGNATURE)
     {
       einfo (_("%P: warning: unexpected DEBUG_S_INLINEELINES version %u\n"),
@@ -1940,34 +1940,25 @@ handle_debugs_section (asection *s, bfd *mod, struct string_table *strings,
       struct internal_syment *symbols;
       asection **sectlist;
       unsigned int syment_count;
-      int sect_num;
-      struct external_syment *ext;
+      bfd_byte *ext = coff_data (mod)->external_syms;
+      bfd_size_type symesz = bfd_coff_symesz (mod);
 
       syment_count = obj_raw_syment_count (mod);
 
       relocs = bfd_coff_read_internal_relocs (mod, s, false, NULL, true, NULL);
 
       symbols = xmalloc (sizeof (struct internal_syment) * syment_count);
-      sectlist = xmalloc (sizeof (asection *) * syment_count);
-
-      ext = (struct external_syment *) (coff_data (mod)->external_syms);
+      sectlist = xcalloc (syment_count, sizeof (*sectlist));
 
       for (unsigned int i = 0; i < syment_count; i++)
 	{
-	  bfd_coff_swap_sym_in (mod, &ext[i], &symbols[i]);
-	}
+	  bfd_coff_swap_sym_in (mod, ext + i * symesz, &symbols[i]);
 
-      sect_num = 1;
+	  if (symbols[i].n_scnum > 0)
+	    sectlist[i] = coff_section_from_bfd_index (mod, symbols[i].n_scnum);
 
-      for (asection *sect = mod->sections; sect; sect = sect->next)
-	{
-	  for (unsigned int i = 0; i < syment_count; i++)
-	    {
-	      if (symbols[i].n_scnum == sect_num)
-		sectlist[i] = sect;
-	    }
-
-	  sect_num++;
+	  memset (&symbols[i + 1], 0, symbols[i].n_numaux * sizeof (*symbols));
+	  i += symbols[i].n_numaux;
 	}
 
       if (!bfd_coff_relocate_section (abfd, coff_data (abfd)->link_info, mod,
@@ -3811,6 +3802,7 @@ create_linker_symbols (bfd *abfd, uint8_t **syms, uint32_t *sym_byte_size,
   env_size += strlen (exeval) + 1;
   env_size += sizeof (pdb);
   env_size += strlen (pdbval) + 1;
+  env_size++; /* Terminating empty string.  */
 
   if (env_size % 4)
     padding2 = 4 - (env_size % 4);
@@ -3883,6 +3875,8 @@ create_linker_symbols (bfd *abfd, uint8_t **syms, uint32_t *sym_byte_size,
   memcpy (ptr, pdbval, strlen (pdbval) + 1);
   ptr += strlen (pdbval) + 1;
 
+  *ptr++ = 0;
+
   /* Microsoft's LINK also includes "cmd", the command-line options passed
      to the linker, but unfortunately we don't have access to argc and argv
      at this stage.  */
@@ -3933,10 +3927,7 @@ populate_module_stream (bfd *stream, bfd *mod, uint32_t *sym_byte_size,
 	    {
 	      if (!handle_debugt_section (s, mod, types, ids, mod_num, strings,
 					  &map, &num_types))
-		{
-		  free (mod_source->files);
-		  return false;
-		}
+		return false;
 
 	      break;
 	    }
@@ -3955,7 +3946,6 @@ populate_module_stream (bfd *stream, bfd *mod, uint32_t *sym_byte_size,
 		{
 		  free (c13_info);
 		  free (syms);
-		  free (mod_source->files);
 		  free (map);
 		  return false;
 		}
@@ -4360,7 +4350,7 @@ create_source_info_substream (void **data, uint32_t *size,
 			      struct source_files_info *source)
 {
   uint16_t dedupe_source_files_count = 0;
-  uint16_t source_files_count = 0;
+  unsigned int source_files_count = 0;
   uint32_t strings_len = 0;
   uint8_t *ptr;
 
@@ -4390,6 +4380,9 @@ create_source_info_substream (void **data, uint32_t *size,
   *size += (sizeof (uint16_t) + sizeof (uint16_t)) * source->mod_count;
   *size += sizeof (uint32_t) * source_files_count;
   *size += strings_len;
+
+  /* Subsequent DBI substreams must be 4-byte aligned.  */
+  *size = (*size + 3) & ~3;
 
   *data = xmalloc (*size);
 
@@ -4456,6 +4449,7 @@ create_source_info_substream (void **data, uint32_t *size,
 	    }
 	}
     }
+  memset (ptr, 0, (uint8_t *) *data + *size - ptr);
 }
 
 /* Used as parameter to qsort, to sort globals by hash.  */
@@ -4468,6 +4462,11 @@ global_compare_hash (const void *s1, const void *s2)
   if (g1->hash < g2->hash)
     return -1;
   if (g1->hash > g2->hash)
+    return 1;
+
+  if (g1->offset < g2->offset)
+    return -1;
+  if (g1->offset > g2->offset)
     return 1;
 
   return 0;
@@ -5402,7 +5401,14 @@ create_pdb_file (bfd *abfd, const char *pdb_name, const unsigned char *guid)
   ret = true;
 
 end:
-  bfd_close (pdb);
+  if (!bfd_close (pdb))
+    {
+      einfo (_("%P: cannot write PDB file: %E\n"));
+      ret = false;
+    }
+
+  if (!ret)
+    unlink_if_ordinary (pdb_name);
 
   htab_delete (strings.hashmap);
 

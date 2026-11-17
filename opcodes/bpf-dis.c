@@ -22,6 +22,7 @@
 #include "sysdep.h"
 #include "disassemble.h"
 #include "libiberty.h"
+#include "safe-ctype.h"
 #include "opintl.h"
 #include "opcode/bpf.h"
 #include "elf-bfd.h"
@@ -58,7 +59,7 @@ with the -M switch (multiple options should be separated by commas):\n"));
   fprintf (stream, "\n");
   fprintf (stream, _("\
       pseudoc                  Use pseudo-c syntax.\n\
-      v1,v2,v3,v4,xbpf         Version of the BPF ISA to use.\n\
+      v1,v2,v3,v4,v5,xbpf      Version of the BPF ISA to use.\n\
       hex,oct,dec              Output numerical base for immediates.\n"));
 }
 
@@ -77,6 +78,8 @@ parse_bpf_dis_option (const char *option)
     asm_bpf_version = BPF_V3;
   else if (strcmp (option, "v4") == 0)
     asm_bpf_version = BPF_V4;
+  else if (strcmp (option, "v5") == 0)
+    asm_bpf_version = BPF_V5;
   else if (strcmp (option, "xbpf") == 0)
     asm_bpf_version = BPF_XBPF;
   else if (strcmp (option, "hex") == 0)
@@ -155,11 +158,12 @@ print_insn_bpf (bfd_vma pc, disassemble_info *info)
 
       switch (cpu_version)
         {
-        case 0: asm_bpf_version = BPF_V4; break;
+        case 0: asm_bpf_version = BPF_V5; break;
         case 1: asm_bpf_version = BPF_V1; break;
         case 2: asm_bpf_version = BPF_V2; break;
         case 3: asm_bpf_version = BPF_V3; break;
         case 4: asm_bpf_version = BPF_V4; break;
+        case 5: asm_bpf_version = BPF_V5; break;
         case 0xf: asm_bpf_version = BPF_XBPF; break;
         default:
           /* xgettext:c-format */
@@ -206,6 +210,12 @@ print_insn_bpf (bfd_vma pc, disassemble_info *info)
               if (*(p + 1) == '%')
                 {
                   (*info->fprintf_styled_func) (info->stream, dis_style_text, "%%");
+                  p += 2;
+                }
+              else if (*(p + 1) == 't')
+                {
+                  /* %t marks the end of a mnemonic and prints to nothing;
+                     the %w or %W that follows prints the space.  */
                   p += 2;
                 }
               else if (*(p + 1) == 'w' || *(p + 1) == 'W')
@@ -283,6 +293,19 @@ print_insn_bpf (bfd_vma pc, disassemble_info *info)
                                                 bpf_extract_imm64 (word, word2, endian));
                   insn_size = 16;
                   p += 4;
+                }
+              else if (ISDIGIT (*(p + 1)))
+                {
+                  /* %DIGIT is a constant the opcode itself encodes; print
+                     the number without its tag.  */
+                  p += 1;
+                  while (ISDIGIT (*p))
+                    {
+                      (*info->fprintf_styled_func) (info->stream,
+                                                    dis_style_immediate,
+                                                    "%c", *p);
+                      p += 1;
+                    }
                 }
               else
                 {

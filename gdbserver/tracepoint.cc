@@ -249,7 +249,7 @@ tracepoint_look_up_symbols (void)
 
       if (look_up_one_symbol (symbol_list[i].name, addrp, 1) == 0)
 	{
-	  threads_debug_printf ("symbol `%s' not found", symbol_list[i].name);
+	  threads_debug_printf ("symbol \"%s\" not found", symbol_list[i].name);
 	  return;
 	}
     }
@@ -746,11 +746,6 @@ IP_AGENT_EXPORT_VAR int expr_eval_result = expr_eval_no_error;
 }
 
 #ifndef IN_PROCESS_AGENT
-
-/* Pointer to the last tracepoint in the list, new tracepoints are
-   linked in at the end.  */
-
-static struct tracepoint *last_tracepoint;
 
 static const char * const eval_result_names[] =
   {
@@ -1738,7 +1733,6 @@ add_tracepoint (int num, CORE_ADDR addr)
     ;
   tpoint->next = *tp_next;
   *tp_next = tpoint;
-  last_tracepoint = tpoint;
 
   seen_step_action_flag = 0;
 
@@ -2260,7 +2254,6 @@ cmd_qtinit (char *packet)
   clear_readonly_regions ();
 
   tracepoints = NULL;
-  last_tracepoint = NULL;
 
   /* Clear out any leftover trace state variables.  Ones with target
      defined getters should be kept however.  */
@@ -5170,23 +5163,23 @@ fast_tracepoint_collecting (CORE_ADDR thread_area,
   if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_jump_pad_buffer,
 				  &ipa_gdb_jump_pad_buffer))
     {
-      internal_error ("error extracting `gdb_jump_pad_buffer'");
+      internal_error ("error extracting \"gdb_jump_pad_buffer\"");
     }
   if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_jump_pad_buffer_end,
 				  &ipa_gdb_jump_pad_buffer_end))
     {
-      internal_error ("error extracting `gdb_jump_pad_buffer_end'");
+      internal_error ("error extracting \"gdb_jump_pad_buffer_end\"");
     }
 
   if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_trampoline_buffer,
 				  &ipa_gdb_trampoline_buffer))
     {
-      internal_error ("error extracting `gdb_trampoline_buffer'");
+      internal_error ("error extracting \"gdb_trampoline_buffer\"");
     }
   if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_trampoline_buffer_end,
 				  &ipa_gdb_trampoline_buffer_end))
     {
-      internal_error ("error extracting `gdb_trampoline_buffer_end'");
+      internal_error ("error extracting \"gdb_trampoline_buffer_end\"");
     }
 
   if (ipa_gdb_jump_pad_buffer <= stop_pc
@@ -5768,7 +5761,7 @@ download_tracepoint (struct tracepoint *tpoint)
 				      + offsetof (struct tracepoint, next),
 				      &tp_prev_target_next_addr))
 	{
-	  internal_error ("error reading `tp_prev->next'");
+	  internal_error ("error reading \"tp_prev->next\"");
 	}
 
       /* tpoint->next = tp_prev->next */

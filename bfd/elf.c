@@ -81,6 +81,7 @@ SECTION
 #define NOTE_PSEUDO_SECTION_LOONGARCH_LASX	".reg-loongarch-lasx"
 #define NOTE_PSEUDO_SECTION_LOONGARCH_LBT	".reg-loongarch-lbt"
 #define NOTE_PSEUDO_SECTION_LOONGARCH_LSX	".reg-loongarch-lsx"
+#define NOTE_PSEUDO_SECTION_PPC_DMR		".reg-ppc-dmr"
 #define NOTE_PSEUDO_SECTION_PPC_DSCR		".reg-ppc-dscr"
 #define NOTE_PSEUDO_SECTION_PPC_EBB		".reg-ppc-ebb"
 #define NOTE_PSEUDO_SECTION_PPC_PMU		".reg-ppc-pmu"
@@ -470,7 +471,8 @@ bfd_elf_get_elf_syms (bfd *ibfd,
   if (elf_use_dt_symtab_p (ibfd))
     {
       /* Use dynamic symbol table.  */
-      if (elf_tdata (ibfd)->dt_symtab_count != symcount + symoffset)
+      if (symoffset >= elf_tdata (ibfd)->dt_symtab_count
+	  || symcount > elf_tdata (ibfd)->dt_symtab_count - symoffset)
 	{
 	  bfd_set_error (bfd_error_invalid_operation);
 	  return NULL;
@@ -625,7 +627,7 @@ bfd_elf_get_elf_syms (bfd *ibfd,
 static const char *
 bfd_elf_sym_name_raw (bfd *abfd,
 		      Elf_Internal_Shdr *symtab_hdr,
-		      Elf_Internal_Sym *isym)
+		      const Elf_Internal_Sym *isym)
 {
   unsigned int iname = isym->st_name;
   unsigned int shindex = symtab_hdr->sh_link;
@@ -644,7 +646,7 @@ bfd_elf_sym_name_raw (bfd *abfd,
 const char *
 bfd_elf_sym_name (bfd *abfd,
 		  Elf_Internal_Shdr *symtab_hdr,
-		  Elf_Internal_Sym *isym,
+		  const Elf_Internal_Sym *isym,
 		  asection *sym_sec)
 {
   const char *name = bfd_elf_sym_name_raw (abfd, symtab_hdr, isym);
@@ -2605,16 +2607,16 @@ bfd_section_from_shdr (bfd *abfd, unsigned int shindex)
       if (hdr->sh_entsize != bed->s->sizeof_sym)
 	goto fail;
 
+      /* Ignore a zero sized symbol table.  */
+      if (hdr->sh_size < hdr->sh_entsize)
+	goto success;
+
+      /* sh_info must always point past the first symbol.  */
+      if (hdr->sh_info == 0)
+	goto fail;
+
       if (hdr->sh_info * hdr->sh_entsize > hdr->sh_size)
-	{
-	  if (hdr->sh_size != 0)
-	    goto fail;
-	  /* Some assemblers erroneously set sh_info to one with a
-	     zero sh_size.  ld sees this as a global symbol count
-	     of (unsigned) -1.  Fix it here.  */
-	  hdr->sh_info = 0;
-	  goto success;
-	}
+	goto fail;
 
       /* PR 18854: A binary might contain more than one symbol table.
 	 Unusual, but possible.  Warn, but continue.  */
@@ -2677,8 +2679,6 @@ bfd_section_from_shdr (bfd *abfd, unsigned int shindex)
 
 	if (i != shindex)
 	  ret = bfd_section_from_shdr (abfd, i);
-	/* else FIXME: we have failed to find the symbol table.
-	   Should we issue an error?  */
 	goto success;
       }
 
@@ -2689,17 +2689,16 @@ bfd_section_from_shdr (bfd *abfd, unsigned int shindex)
       if (hdr->sh_entsize != bed->s->sizeof_sym)
 	goto fail;
 
-      if (hdr->sh_info * hdr->sh_entsize > hdr->sh_size)
-	{
-	  if (hdr->sh_size != 0)
-	    goto fail;
+      /* Ignore a zero sized symbol table.  */
+      if (hdr->sh_size < hdr->sh_entsize)
+	goto success;
 
-	  /* Some linkers erroneously set sh_info to one with a
-	     zero sh_size.  ld sees this as a global symbol count
-	     of (unsigned) -1.  Fix it here.  */
-	  hdr->sh_info = 0;
-	  goto success;
-	}
+      /* sh_info must always point past the first symbol.  */
+      if (hdr->sh_info == 0)
+	goto fail;
+
+      if (hdr->sh_info * hdr->sh_entsize > hdr->sh_size)
+	goto fail;
 
       /* PR 18854: A binary might contain more than one dynamic symbol table.
 	 Unusual, but possible.  Warn, but continue.  */
@@ -2804,13 +2803,15 @@ bfd_section_from_shdr (bfd *abfd, unsigned int shindex)
     case SHT_REL:
     case SHT_RELA:
     case SHT_RELR:
-      /* *These* do a lot of work -- but build no sections!  */
+      /* *These* do a lot of work -- but usually build no sections!  */
       {
 	asection *target_sect;
 	Elf_Internal_Shdr *hdr2, **p_hdr;
 	unsigned int num_sec = elf_numsections (abfd);
 	struct bfd_elf_section_data *esdt;
 	bfd_size_type size;
+	const char *bad_field;
+	unsigned int bad_val;
 
 	if (hdr->sh_type == SHT_REL)
 	  size = bed->s->sizeof_rel;
@@ -2821,20 +2822,10 @@ bfd_section_from_shdr (bfd *abfd, unsigned int shindex)
 	if (hdr->sh_entsize != size)
 	  goto fail;
 
-	/* Check for a bogus link to avoid crashing.  */
-	if (hdr->sh_link >= num_sec)
-	  {
-	    _bfd_error_handler
-	      /* xgettext:c-format */
-	      (_("%pB: invalid link %u for reloc section %s (index %u)"),
-	       abfd, hdr->sh_link, name, shindex);
-	    ret = _bfd_elf_make_section_from_shdr (abfd, hdr, name, shindex);
-	    goto success;
-	  }
-
 	/* Get the symbol table.  */
-	if ((elf_elfsections (abfd)[hdr->sh_link]->sh_type == SHT_SYMTAB
-	     || elf_elfsections (abfd)[hdr->sh_link]->sh_type == SHT_DYNSYM)
+	if (hdr->sh_link < num_sec
+	    && (elf_elfsections (abfd)[hdr->sh_link]->sh_type == SHT_SYMTAB
+		|| elf_elfsections (abfd)[hdr->sh_link]->sh_type == SHT_DYNSYM)
 	    && ! bfd_section_from_shdr (abfd, hdr->sh_link))
 	  goto fail;
 
@@ -2846,17 +2837,35 @@ bfd_section_from_shdr (bfd *abfd, unsigned int shindex)
 	   also can't use it as a reloc section if it points to the
 	   null section, an invalid section, another reloc section, or
 	   its sh_link points to the null section.  */
+	bad_field = NULL;
+	bad_val = 0;
 	if (((abfd->flags & (DYNAMIC | EXEC_P)) != 0
 	     && (hdr->sh_flags & SHF_ALLOC) != 0)
 	    || (hdr->sh_flags & SHF_COMPRESSED) != 0
-	    || hdr->sh_type == SHT_RELR
-	    || hdr->sh_link == SHN_UNDEF
-	    || hdr->sh_link != elf_onesymtab (abfd)
-	    || hdr->sh_info == SHN_UNDEF
-	    || hdr->sh_info >= num_sec
-	    || elf_elfsections (abfd)[hdr->sh_info]->sh_type == SHT_REL
-	    || elf_elfsections (abfd)[hdr->sh_info]->sh_type == SHT_RELA)
+	    || hdr->sh_type == SHT_RELR)
+	  bad_field = "";
+	else if (hdr->sh_link == SHN_UNDEF
+		 || hdr->sh_link != elf_onesymtab (abfd))
 	  {
+	    bad_field = "sh_link";
+	    bad_val = hdr->sh_link;
+	  }
+	else if (hdr->sh_info == SHN_UNDEF
+		 || hdr->sh_info >= num_sec
+		 || elf_elfsections (abfd)[hdr->sh_info]->sh_type == SHT_REL
+		 || elf_elfsections (abfd)[hdr->sh_info]->sh_type == SHT_RELA)
+	  {
+	    bad_field = "sh_info";
+	    bad_val = hdr->sh_info;
+	  }
+
+	if (bad_field)
+	  {
+	    if (*bad_field)
+	      _bfd_error_handler
+		/* xgettext:c-format */
+		(_("%pB: not using relocs in %s (index %u) due to %s %u"),
+		 abfd, name, shindex, bad_field, bad_val);
 	    ret = _bfd_elf_make_section_from_shdr (abfd, hdr, name, shindex);
 	    goto success;
 	  }
@@ -10568,6 +10577,12 @@ elfcore_grok_ppc_tm_cdscr (bfd *abfd, Elf_Internal_Note *note)
 }
 
 static bool
+elfcore_grok_ppc_dmr (bfd *abfd, Elf_Internal_Note *note)
+{
+  return elfcore_make_note_pseudosection (abfd, NOTE_PSEUDO_SECTION_PPC_DMR, note);
+}
+
+static bool
 elfcore_grok_s390_high_gprs (bfd *abfd, Elf_Internal_Note *note)
 {
   return elfcore_make_note_pseudosection (abfd, NOTE_PSEUDO_SECTION_S390_HIGH_GPRS, note);
@@ -11185,6 +11200,7 @@ elfcore_grok_note (bfd *abfd, Elf_Internal_Note *note)
 	case NT_LARCH_LASX:	return elfcore_grok_loongarch_lasx (abfd, note);
 	case NT_LARCH_LBT:	return elfcore_grok_loongarch_lbt (abfd, note);
 	case NT_LARCH_LSX:	return elfcore_grok_loongarch_lsx (abfd, note);
+	case NT_PPC_DMR:	return elfcore_grok_ppc_dmr (abfd, note);
 	case NT_PPC_DSCR:	return elfcore_grok_ppc_dscr (abfd, note);
 	case NT_PPC_EBB:	return elfcore_grok_ppc_ebb (abfd, note);
 	case NT_PPC_PMU:	return elfcore_grok_ppc_pmu (abfd, note);
@@ -12602,6 +12618,17 @@ elfcore_write_ppc_tm_cdscr (bfd *abfd,
 			     ppc_tm_cdscr, size);
 }
 
+char *
+elfcore_write_ppc_dmr (bfd *abfd,
+		       char *buf,
+		       int *bufsiz,
+		       const void *ppc_dmr,
+		       int size)
+{
+  return elfcore_write_note (abfd, buf, bufsiz,
+			     NOTE_NAME_LINUX, NT_PPC_DMR, ppc_dmr, size);
+}
+
 static char *
 elfcore_write_s390_high_gprs (bfd *abfd,
 			      char *buf,
@@ -13046,6 +13073,7 @@ elfcore_write_register_note (bfd *abfd,
       { NOTE_PSEUDO_SECTION_LOONGARCH_LASX,   elfcore_write_loongarch_lasx},
       { NOTE_PSEUDO_SECTION_LOONGARCH_LBT,    elfcore_write_loongarch_lbt},
       { NOTE_PSEUDO_SECTION_LOONGARCH_LSX,    elfcore_write_loongarch_lsx},
+      { NOTE_PSEUDO_SECTION_PPC_DMR,          elfcore_write_ppc_dmr},
       { NOTE_PSEUDO_SECTION_PPC_DSCR,         elfcore_write_ppc_dscr},
       { NOTE_PSEUDO_SECTION_PPC_EBB,          elfcore_write_ppc_ebb},
       { NOTE_PSEUDO_SECTION_PPC_PMU,          elfcore_write_ppc_pmu},
@@ -13291,7 +13319,7 @@ _bfd_elf_reloc_type_class (const struct bfd_link_info *info ATTRIBUTE_UNUSED,
 
 bfd_vma
 _bfd_elf_rela_local_sym (bfd *abfd,
-			 Elf_Internal_Sym *sym,
+			 const Elf_Internal_Sym *sym,
 			 asection **psec,
 			 Elf_Internal_Rela *rel)
 {
@@ -13327,7 +13355,7 @@ _bfd_elf_rela_local_sym (bfd *abfd,
 
 bfd_vma
 _bfd_elf_rel_local_sym (bfd *abfd,
-			Elf_Internal_Sym *sym,
+			const Elf_Internal_Sym *sym,
 			asection **psec,
 			bfd_vma addend)
 {
@@ -13984,7 +14012,7 @@ _bfd_elf_write_secondary_reloc_section (bfd *abfd, asection *sec)
 	  last_sym = NULL;
 	  last_sym_idx = 0;
 	  dst_rela = hdr->contents;
-	  src_irel = sec->sec_info;
+	  src_irel = relsec->sec_info;
 	  if (src_irel == NULL)
 	    {
 	      _bfd_error_handler
@@ -14215,6 +14243,35 @@ _bfd_elf_link_munmap_section_contents (asection *sec ATTRIBUTE_UNUSED)
       elf_section_data (sec)->contents_size = 0;
     }
 #endif
+}
+
+/* Validate that deleting COUNT bytes starting at OFFS up to the upper
+   bound LIMIT is within the section bounds of SEC (OFFS <= LIMIT,
+   COUNT <= LIMIT - OFFS, and LIMIT <= SEC->SIZE).  OFFS is derived
+   from an unvalidated relocation offset; without this check the
+   subtraction (LIMIT - OFFS - COUNT) wraps around, corrupting the heap
+   buffer.  */
+
+bool
+_bfd_elf_relax_delete_range_ok (const bfd *abfd,
+				const asection *sec,
+				bfd_vma offs,
+				bfd_vma count,
+				bfd_vma limit)
+{
+  if (offs <= limit
+      && count <= limit - offs
+      && limit <= sec->size)
+    return true;
+
+  _bfd_error_handler
+    /* xgettext:c-format */
+    (_("%pB: relax: cannot delete %" PRIu64 " bytes at %#" PRIx64
+       " (limit %#" PRIx64 ") in section `%pA' of size %#" PRIx64),
+     abfd, (uint64_t) count, (uint64_t) offs, (uint64_t) limit, sec,
+     (uint64_t) sec->size);
+  bfd_set_error (bfd_error_bad_value);
+  return false;
 }
 
 #ifndef OBJ_MAYBE_ELF_ATTRIBUTES

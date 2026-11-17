@@ -1063,7 +1063,7 @@ static int record_full_resume_step = 0;
 
 /* True if we've been resumed, and so each record_full_wait call should
    advance execution.  If this is false, record_full_wait will return a
-   TARGET_WAITKIND_IGNORE.  */
+   TARGET_WAITKIND_NO_RESUMED.  */
 static int record_full_resumed = 0;
 
 /* The execution direction of the last resume we got.  This is
@@ -1187,8 +1187,8 @@ record_full_wait_1 (struct target_ops *ops,
     {
       gdb_assert ((options & TARGET_WNOHANG) != 0);
 
-      /* No interesting event.  */
-      status->set_ignore ();
+      /* No thread was resumed at all.  */
+      status->set_no_resumed ();
       return minus_one_ptid;
     }
 
@@ -1362,19 +1362,10 @@ record_full_wait_1 (struct target_ops *ops,
 	      /* Check for beginning and end of log.  */
 	      if (execution_direction == EXEC_REVERSE
 		  && record_full_next_insn < 0)
-		{
-		  /* Hit beginning of record log in reverse.  */
-		  status->set_no_history ();
-		  record_full_next_insn = 0;
-		  break;
-		}
-	      if (execution_direction != EXEC_REVERSE
-		  && record_full_next_insn == record_full_log.size ())
-		{
-		  /* Hit end of record log going forward.  */
-		  status->set_no_history ();
-		  break;
-		}
+		break;
+	      else if (execution_direction != EXEC_REVERSE
+		       && record_full_next_insn == record_full_log.size ())
+		break;
 
 	      record_full_log[record_full_next_insn].exec_insn (regcache);
 
@@ -1424,11 +1415,13 @@ record_full_wait_1 (struct target_ops *ops,
 	    {
 	      gdb_assert (execution_direction == EXEC_REVERSE);
 	      record_full_next_insn = 0;
+	      status->set_no_history ();
 	    }
-	  else if (record_full_next_insn > record_full_log.size ())
+	  else if (record_full_next_insn >= record_full_log.size ())
 	    {
 	      gdb_assert (execution_direction == EXEC_FORWARD);
 	      record_full_next_insn = record_full_log.size ();
+	      status->set_no_history ();
 	    }
 	  /* Reset the current instruction to point to the one to be replayed
 	     moving forward.  */
@@ -2796,16 +2789,15 @@ maintenance_print_record_instruction (const char *args, int from_tty)
   if (offset == record_full_log.size ())
     offset--;
   if (args != nullptr)
-    {
-      offset += value_as_long (parse_and_eval (args));
-      if (offset >= record_full_log.size () || offset < 0)
-	error (_("Not enough recorded history"));
-    }
+    offset += value_as_long (parse_and_eval (args));
+
+  if (offset >= record_full_log.size () || offset < 0)
+    error (_("Not enough recorded history"));
+
   auto to_print = record_full_log.begin () + offset;
 
   gdbarch *arch = current_inferior ()->arch ();
-  struct value_print_options opts;
-  get_user_print_options (&opts);
+  value_print_options opts = get_user_print_options ();
   opts.raw = true;
 
   for (auto &entry : to_print->effects)
@@ -2820,7 +2812,7 @@ maintenance_print_record_instruction (const char *args, int from_tty)
 					 entry.get_loc ());
 	      gdb_printf ("Register %s changed: ",
 			  gdbarch_register_name (arch, entry.reg ().num));
-	      value_print (val, gdb_stdout, &opts);
+	      value_print (val, gdb_stdout, opts);
 	      gdb_printf ("\n");
 	      break;
 	    }
@@ -2842,7 +2834,7 @@ maintenance_print_record_instruction (const char *args, int from_tty)
   value *val = value_from_contents (regtype, to_print->pc.get_loc ());
   gdb_printf ("Register %s changed: ",
 	      gdbarch_register_name (arch, to_print->pc.num));
-  value_print (val, gdb_stdout, &opts);
+  value_print (val, gdb_stdout, opts);
   gdb_printf ("\n");
 }
 

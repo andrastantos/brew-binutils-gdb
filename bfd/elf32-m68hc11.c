@@ -718,9 +718,8 @@ m68hc11_elf_relax_section (bfd *abfd, asection *sec,
   symtab_hdr = &elf_symtab_hdr (abfd);
 
   /* Get a copy of the native relocations.  */
-  internal_relocs = (_bfd_elf_link_read_relocs
-		     (abfd, sec, NULL, (Elf_Internal_Rela *) NULL,
-		      link_info->keep_memory));
+  internal_relocs = _bfd_elf_link_read_relocs (abfd, sec, NULL, NULL,
+					       link_info->keep_memory);
   if (internal_relocs == NULL)
     goto error_return;
   if (! link_info->keep_memory)
@@ -1305,6 +1304,7 @@ static const struct bfd_elf_special_section elf32_m68hc11_special_sections[] =
 #define elf_info_to_howto	NULL
 #define elf_info_to_howto_rel	m68hc11_info_to_howto_rel
 #define bfd_elf32_bfd_relax_section  m68hc11_elf_relax_section
+#define elf_backend_want_stub_bfd    1
 #define elf_backend_check_relocs     elf32_m68hc11_check_relocs
 #define elf_backend_relocate_section elf32_m68hc11_relocate_section
 #define elf_backend_add_symbol_hook  elf32_m68hc11_add_symbol_hook

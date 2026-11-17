@@ -517,7 +517,12 @@ static bool
 in_reloc_p (bfd * abfd ATTRIBUTE_UNUSED,
 	    reloc_howto_type * howto)
 {
-  return !howto->pc_relative && howto->type != ARM_RVA32;
+  return !howto->pc_relative
+# ifdef ARM_WINCE
+	 && howto->type != ARM_SECREL
+	 && howto->type != ARM_SECTION
+# endif
+	 && howto->type != ARM_RVA32;
 }
 #endif
 
@@ -1213,6 +1218,15 @@ coff_arm_relocate_section (bfd *output_bfd,
 	{
 	  h = NULL;
 	  sym = NULL;
+	}
+      else if (! coff_symndx_in_range (input_bfd, symndx))
+	{
+	  _bfd_error_handler
+	    /* xgettext: c-format */
+	    (_("%pB: invalid symbol index %ld in relocs"),
+	     input_bfd, symndx);
+	  bfd_set_error (bfd_error_bad_value);
+	  return false;
 	}
       else
 	{
@@ -2088,10 +2102,10 @@ bfd_arm_process_before_allocation (bfd *		   abfd,
 	    continue;
 
 	  /* If the index is outside of the range of our table, something has gone wrong.  */
-	  if (symndx >= obj_conv_table_size (abfd))
+	  if (!coff_symndx_in_range (abfd, symndx))
 	    {
 	      /* xgettext:c-format */
-	      _bfd_error_handler (_("%pB: illegal symbol index in reloc: %ld"),
+	      _bfd_error_handler (_("%pB: invalid symbol index %ld in relocs"),
 				  abfd, symndx);
 	      continue;
 	    }
@@ -2175,6 +2189,16 @@ coff_arm_adjust_symndx (bfd *obfd ATTRIBUTE_UNUSED,
   if (irel->r_type == ARM_26)
     {
       struct coff_link_hash_entry *h;
+
+      if (! coff_symndx_in_range (ibfd, irel->r_symndx))
+	{
+	  _bfd_error_handler
+	    /* xgettext: c-format */
+	    (_("%pB: invalid symbol index %ld in relocs"),
+	     ibfd, irel->r_symndx);
+	  bfd_set_error (bfd_error_bad_value);
+	  return false;
+	}
 
       h = obj_coff_sym_hashes (ibfd)[irel->r_symndx];
       if (h != NULL

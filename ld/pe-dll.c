@@ -184,10 +184,6 @@ typedef struct
 {
   const char *target_name;
   const char *object_target;
-  unsigned int imagebase_reloc;
-  unsigned int secrel_reloc_lo;
-  unsigned int secrel_reloc_hi;
-  unsigned int section_reloc;
   int pe_arch;
   int bfd_arch;
   bool underscored;
@@ -265,16 +261,9 @@ static pe_details_type pe_detail_list[] =
 #ifdef pe_use_plus
     "pei-x86-64",
     "pe-x86-64",
-    3 /* R_AMD64_IMAGEBASE */,
-    11 /* R_AMD64_SECREL32 */,
-    12 /* R_AMD64_SECREL7 */,
-    10 /* R_AMD64_SECTION */,
 #else
     "pei-i386",
     "pe-i386",
-    7 /* R_IMAGEBASE */,
-    11, 11 /* R_SECREL32 */,
-    10 /* R_SECTION */,
 #endif
     PE_ARCH_i386,
     bfd_arch_i386,
@@ -289,10 +278,6 @@ static pe_details_type pe_detail_list[] =
   {
     "pei-x86-64",
     "pe-bigobj-x86-64",
-    3 /* R_AMD64_IMAGEBASE */,
-    11 /* R_AMD64_SECREL32 */,
-    12 /* R_AMD64_SECREL7 */,
-    10 /* R_AMD64_SECTION */,
     PE_ARCH_i386,
     bfd_arch_i386,
     false,
@@ -302,9 +287,6 @@ static pe_details_type pe_detail_list[] =
   {
     "pei-i386",
     "pe-bigobj-i386",
-    7 /* R_IMAGEBASE */,
-    11, 11 /* R_SECREL32 */,
-    10 /* R_SECTION */,
     PE_ARCH_i386,
     bfd_arch_i386,
     true,
@@ -313,8 +295,6 @@ static pe_details_type pe_detail_list[] =
   {
     "pei-shl",
     "pe-shl",
-    16 /* R_SH_IMAGEBASE */,
-    ~0, 0, ~0, /* none */
     PE_ARCH_sh,
     bfd_arch_sh,
     true,
@@ -323,8 +303,6 @@ static pe_details_type pe_detail_list[] =
   {
     "pei-mcore-little",
     "pe-mcore-little",
-    7 /* IMAGE_REL_MCORE_RVA */,
-    ~0, 0, ~0, /* none */
     PE_ARCH_mcore,
     bfd_arch_mcore,
     false,
@@ -333,8 +311,6 @@ static pe_details_type pe_detail_list[] =
   {
     "pei-mcore-big",
     "pe-mcore-big",
-    7 /* IMAGE_REL_MCORE_RVA */,
-    ~0, 0, ~0, /* none */
     PE_ARCH_mcore,
     bfd_arch_mcore,
     false,
@@ -343,8 +319,6 @@ static pe_details_type pe_detail_list[] =
   {
     "pei-arm-little",
     "pe-arm-little",
-    11 /* ARM_RVA32 */,
-    ~0, 0, ~0, /* none */
     PE_ARCH_arm,
     bfd_arch_arm,
     true,
@@ -353,9 +327,6 @@ static pe_details_type pe_detail_list[] =
   {
     "pei-arm-wince-little",
     "pe-arm-wince-little",
-    2,  /* ARM_RVA32 on Windows CE, see bfd/coff-arm.c.  */
-    15, 15, /* ARM_SECREL (dito) */
-    14, /* ARM_SECTION (dito) */
     PE_ARCH_arm_wince,
     bfd_arch_arm,
     false,
@@ -365,10 +336,6 @@ static pe_details_type pe_detail_list[] =
   {
     "pei-aarch64-little",
     "pe-aarch64-little",
-    2,  /* IMAGE_REL_ARM64_ADDR32NB */
-    8,  /* IMAGE_REL_ARM64_SECREL */
-    11, /* IMAGE_REL_ARM64_SECREL_LOW12L */
-    13, /* IMAGE_REL_ARM64_SECTION */
     PE_ARCH_aarch64,
     bfd_arch_aarch64,
     false,
@@ -377,16 +344,12 @@ static pe_details_type pe_detail_list[] =
   {
     "pei-aarch64-little",
     "pe-bigobj-aarch64-little",
-    2,  /* IMAGE_REL_ARM64_ADDR32NB */
-    8,  /* IMAGE_REL_ARM64_SECREL */
-    11, /* IMAGE_REL_ARM64_SECREL_LOW12L */
-    13, /* IMAGE_REL_ARM64_SECTION */
     PE_ARCH_aarch64,
     bfd_arch_aarch64,
     false,
     autofilter_symbollist_generic
   },
-  { NULL, NULL, 0, 0, 0, 0, 0, 0, false, NULL }
+  { NULL, NULL, 0, 0, false, NULL }
 };
 
 static const pe_details_type *pe_details;
@@ -1657,10 +1620,8 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 		}
 	      if (!relocs[i]->howto->pc_relative
 		  && (bfd_get_flavour (b) != bfd_target_coff_flavour
-		      || (relocs[i]->howto->type != pe_details->imagebase_reloc
-			  && (relocs[i]->howto->type < pe_details->secrel_reloc_lo
-			      || relocs[i]->howto->type > pe_details->secrel_reloc_hi)
-			  && relocs[i]->howto->type != pe_details->section_reloc)))
+		      || pe_data (info->output_bfd)->in_reloc_p
+			   (info->output_bfd, relocs[i]->howto)))
 		{
 		  struct bfd_symbol *sym = *relocs[i]->sym_ptr_ptr;
 		  const struct bfd_link_hash_entry *blhe
@@ -1724,6 +1685,9 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 		  switch BITS_AND_SHIFT (relocs[i]->howto->bitsize,
 					 relocs[i]->howto->rightshift)
 		    {
+		    case BITS_AND_SHIFT (0, 0):
+		      /* Skip relocations not altering the binary.   */
+		      break;
 #ifdef pe_use_plus
 		    case BITS_AND_SHIFT (64, 0):
 		      reloc_data[total_relocs].type = IMAGE_REL_BASED_DIR64;
@@ -2842,10 +2806,183 @@ pe_create_runtime_relocator_reference (bfd *parent)
   return abfd;
 }
 
+static void
+aarch64_make_jump_stub(const char* symbol_name, bfd* parent)
+{
+  static struct bfd_hash_table *stub_hash = NULL;
+  if (!stub_hash)
+    {
+      stub_hash = (struct bfd_hash_table *) xmalloc
+		  (sizeof (struct bfd_hash_table));
+      bfd_hash_table_init (stub_hash, bfd_hash_newfunc,
+			  sizeof (struct bfd_hash_entry));
+    }
+
+  if (pe_dll_extra_pe_debug)
+    printf ("searching for existing jump stub %s\n", symbol_name);
+
+  if (bfd_hash_lookup(stub_hash, symbol_name, false, false))
+    return;
+
+  if (pe_dll_extra_pe_debug)
+    printf ("creating jump stub for %s\n", symbol_name);
+  bfd_hash_lookup(stub_hash, symbol_name, true, true);
+
+  static unsigned tmp_stub_seq = 0;
+  char *oname = xasprintf ("jump_stub_d%06d.o", tmp_stub_seq);
+  ++tmp_stub_seq;
+
+  bfd *abfd = bfd_create (oname, parent);
+  free (oname);
+  bfd_make_writable (abfd);
+
+  bfd_set_format (abfd, bfd_object);
+  bfd_set_arch_mach (abfd, pe_details->bfd_arch, 0);
+
+  symptr = 0;
+  symtab = xmalloc (4 * sizeof (asymbol *));
+
+  asection *tx  = quick_section (abfd, ".text", SEC_CODE | SEC_HAS_CONTENTS
+				 | SEC_READONLY, 2);
+  quick_symbol (abfd, "", symbol_name, "", tx, BSF_GLOBAL, 0);
+  quick_symbol (abfd, "__imp_", symbol_name, "", bfd_und_section_ptr,
+		BSF_GLOBAL, 0);
+
+  const unsigned jmp_byte_count = sizeof (jmp_aarch64_bytes);
+  bfd_set_section_size (tx, jmp_byte_count);
+  unsigned char *td = xmalloc (jmp_byte_count);
+  tx->contents = td;
+  memcpy (td, jmp_aarch64_bytes, jmp_byte_count);
+
+  quick_reloc (abfd, 0, BFD_RELOC_AARCH64_ADR_HI21_PCREL, 2);
+  quick_reloc (abfd, 4, BFD_RELOC_AARCH64_ADD_LO12, 2);
+  save_relocs (tx);
+
+  bfd_set_symtab (abfd, symtab, symptr);
+
+  bfd_set_section_contents (abfd, tx, td, 0, jmp_byte_count);
+  bfd_make_readable (abfd);
+  add_bfd_to_link (abfd, bfd_get_filename (abfd), &link_info);
+}
+
+static void
+aarch64_make_imp_offset(const char* imp_symbol_name,
+			const char* imp_offset_name, const int offset,
+			unsigned rd, const char* caller_label, bfd* parent)
+{
+  if (pe_dll_extra_pe_debug)
+    printf("symbol: %s imp_offset_name: %s offset: %u rs: %u caller: %s\n",
+	   imp_symbol_name, imp_offset_name, offset, rd, caller_label);
+
+  static const unsigned char imp_offset_bytes[] =
+    {
+      0x00, 0x00, 0x00, 0x90, /* adrp x0, <imp_symbol_name>		*/
+      0x00, 0x00, 0x40, 0xf9, /* ldr x0, [x0, :lo12:<imp_symbol_name>]	*/
+      0x00, 0x00, 0x40, 0x91, /* add x0, x0, 0, lsl 12			*/
+      0x01, 0x00, 0x00, 0x14  /* b <caller_label> + 4			*/
+    };
+
+  static unsigned tmp_stub_seq = 0;
+  char *oname = xasprintf ("imp_offset_stub_d%06d.o", tmp_stub_seq);
+  ++tmp_stub_seq;
+
+  bfd *abfd = bfd_create (oname, parent);
+  free (oname);
+  bfd_make_writable (abfd);
+
+  bfd_set_format (abfd, bfd_object);
+  bfd_set_arch_mach (abfd, pe_details->bfd_arch, 0);
+
+  symptr = 0;
+  symtab = xmalloc (5 * sizeof (asymbol *));
+
+  asection *tx = quick_section (abfd, ".text", SEC_CODE | SEC_HAS_CONTENTS
+				| SEC_READONLY, 2);
+  quick_symbol (abfd, "", imp_offset_name, "", tx, BSF_GLOBAL, 0);
+  quick_symbol (abfd, "", imp_symbol_name, "", UNDSEC, BSF_GLOBAL, 0);
+  quick_symbol (abfd, "", caller_label, "", UNDSEC, BSF_GLOBAL, 0);
+
+  const unsigned imp_offset_byte_count = sizeof (imp_offset_bytes);
+  bfd_set_section_size (tx, imp_offset_byte_count);
+  uint32_t *td = xmalloc (imp_offset_byte_count);
+  tx->contents = (bfd_byte*) td;
+  memcpy (td, imp_offset_bytes, imp_offset_byte_count);
+
+  rd &= (1 << 5) - 1;
+  td[0] |= rd;
+  td[1] |= (rd << 5) | rd;
+
+  /* offset is extracted from a 21-bit adrp immediate.  The bottom 12 bits are
+     handled outside the thunk.  The remaining bits are in range for an ADD/SUB
+     with shifted immediate.  */
+  unsigned imm = offset & -4096;
+  if (offset < 0)
+  {
+    /* Change ADD (immediate) to SUB (immediate).  */
+    td[2] |= 1 << 30;
+    imm = -imm;
+  }
+  imm >>= 12;
+  td[2] |= (rd << 5) | rd;
+  td[2] |= imm << 10;
+
+  quick_reloc (abfd, 0, BFD_RELOC_AARCH64_ADR_HI21_PCREL, 2);
+  quick_reloc (abfd, 4, BFD_RELOC_AARCH64_LDST64_LO12, 2);
+  quick_reloc (abfd, 12, BFD_RELOC_AARCH64_CALL26, 3);
+  save_relocs (tx);
+
+  bfd_set_symtab (abfd, symtab, symptr);
+
+  bfd_set_section_contents (abfd, tx, td, 0, imp_offset_byte_count);
+  bfd_make_readable (abfd);
+  add_bfd_to_link (abfd, bfd_get_filename (abfd), &link_info);
+}
+
 void
 pe_create_import_fixup (arelent *rel, asection *s, bfd_vma addend, char *name,
 			const char *symname)
 {
+ if (pe_details->pe_arch == PE_ARCH_aarch64)
+   {
+      if (rel->howto->bitsize == 12)
+	/* :lo12: bits are used within the replacement for the adrp
+	   instruction.  */
+	return;
+      else if (rel->howto->bitsize == 26)
+	{
+	  /* On AArch64, a single opcode is not sufficient for relocation
+	     in dynamic linking. The linker generates a jump stub instead.  */
+	  aarch64_make_jump_stub(name, s->owner);
+	  return;
+	}
+      else if (rel->howto->bitsize == 21)
+	{
+	  uint32_t opcode;
+	  if (!bfd_get_section_contents (s->owner, s, &opcode,
+					 rel->address, 4))
+	    return;
+
+	  int32_t imm = (opcode >> 5) & ((1 << 19) - 1);
+	  imm <<= 2;
+	  imm |= (opcode >> 29) & ((1 << 2) - 1);
+	  if (imm & (1 << 20))
+	    imm -= (1 << 21);
+
+	  char *imp_offset_label = xasprintf("__imp_%s", name);
+	  char *imp_label = xasprintf("%s_%x_%lx", imp_offset_label,
+				      current_sec->id,
+				      (long unsigned) rel->address);
+	  const char *fixup_name = make_import_fixup_mark (rel, name);
+	  unsigned rd = opcode & ((1 << 5) - 1);
+	  aarch64_make_imp_offset(imp_offset_label, imp_label, imm, rd,
+				  fixup_name, s->owner);
+
+	  free(imp_label);
+	  free(imp_offset_label);
+	  return;
+	}
+   }
+
   const char *fixup_name = make_import_fixup_mark (rel, name);
   bfd *b;
 

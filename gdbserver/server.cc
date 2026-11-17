@@ -23,9 +23,7 @@
 #include "gdbsupport/rsp-low.h"
 #include "gdbsupport/signals-state-save-restore.h"
 #include <unistd.h>
-#if HAVE_SIGNAL_H
 #include <signal.h>
-#endif
 #include "gdbsupport/gdb_vecs.h"
 #include "gdbsupport/gdb_wait.h"
 #include "gdbsupport/btrace-common.h"
@@ -1318,7 +1316,7 @@ handle_detach (char *own_buf)
 		 "Persistent commands are present, "
 		 "leaving gdbserver attached to the process\n");
 
-      /* Make sure we're in non-stop/async mode, so we we can both
+      /* Make sure we're in non-stop/async mode, so we can both
 	 wait for an async socket accept, and handle async target
 	 events simultaneously.  There's also no point either in
 	 having the target stop all threads, when we're going to
@@ -4676,7 +4674,7 @@ captured_main (int argc, char *argv[])
 	    {
 	      if (disconnected_tracing)
 		{
-		  /* Try to enable non-stop/async mode, so we we can
+		  /* Try to enable non-stop/async mode, so we can
 		     both wait for an async socket accept, and handle
 		     async target events simultaneously.  There's also
 		     no point either in having the target always stop

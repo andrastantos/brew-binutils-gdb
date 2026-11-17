@@ -25,6 +25,7 @@
 #include "language.h"
 #include "varobj.h"
 #include "m2-lang.h"
+#include "m2-exp-parser.h"
 #include "c-lang.h"
 #include "valprint.h"
 #include "gdbarch.h"
@@ -98,7 +99,7 @@ eval_op_m2_subscript (struct type *expect_type, struct expression *exp,
     if (type->code () != TYPE_CODE_ARRAY)
       {
 	if (type->name ())
-	  error (_("cannot subscript something of type `%s'"),
+	  error (_("cannot subscript something of type \"%s\""),
 		 type->name ());
 	else
 	  error (_("cannot subscript requested type"));
@@ -115,6 +116,14 @@ eval_op_m2_subscript (struct type *expect_type, struct expression *exp,
 /* Single instance of the M2 language.  */
 
 static m2_language m2_language_defn;
+
+/* See language.h.  */
+
+int
+m2_language::parser (struct parser_state *ps) const
+{
+  return m2_parse (ps);
+}
 
 /* See language.h.  */
 
@@ -179,7 +188,7 @@ void
 m2_language::printstr (struct ui_file *stream, struct type *elttype,
 			const gdb_byte *string, unsigned int length,
 			const char *encoding, int force_ellipses,
-			const struct value_print_options *options) const
+			const value_print_options &options) const
 {
   m2_wchar_printer printer (elttype, '"', encoding);
   printer.print (stream, string, length, force_ellipses, 0, options);

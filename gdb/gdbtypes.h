@@ -738,17 +738,6 @@ struct field
   void set_virtual ()
   { m_virtual = true; }
 
-  /* True if this field is 'ignored'.  */
-  bool is_ignored () const
-  { return m_ignored; }
-
-  /* Set the field's "ignored" flag.  Note that the 'ignored' bit is
-     deprecated.  It was used by some unknown stabs generator, and has
-     been replaced by the optimized-out approach -- however, it
-     remains because the stabs reader was never updated.  */
-  void set_ignored ()
-  { m_ignored = true; }
-
   union field_location m_loc;
 
   /* For a function or member type, this is 1 if the argument is
@@ -760,8 +749,6 @@ struct field
 
   /* Whether the field is 'virtual'.  */
   bool m_virtual : 1;
-  /* Whether the field is 'ignored'.  */
-  bool m_ignored : 1;
 
   /* Discriminant for union field_location.  */
 
@@ -1702,7 +1689,7 @@ struct fn_field
 {
   /* This is the mangled name which we can look up to find the
      address of the method (FIXME: it would be cleaner to have a
-     pointer to the struct symbol here instead).   */
+     pointer to the struct symbol here instead).  */
 
   const char *physname;
 
@@ -2431,20 +2418,43 @@ extern struct type *init_pointer_type (type_allocator &alloc, int bit,
 extern struct type *init_fixed_point_type (type_allocator &, int, int,
 					   const char *);
 
-/* Helper functions to construct a struct or record type.  An
-   initially empty type is created using arch_composite_type().
-   Fields are then added using append_composite_type_field*().  A union
-   type has its size set to the largest field.  A struct type has each
-   field packed against the previous.  */
+/* Allocate a structure or union type (as specified by CODE) associated with
+   GDBARCH.
+
+   NAME is the type name.  If it is nullptr, the type is anonymous.
+
+   The new type initially has no fields.  Fields can be added by calling
+   append_composite_type_field*.  */
 
 extern struct type *arch_composite_type (struct gdbarch *gdbarch,
 					 const char *name, enum type_code code);
+
+/* Add a new field named NAME with type FIELD to composite type T.
+
+   If NAME is an empty string and the field's type is a structure or a union,
+   the fields of that structure or union are visible directly in T.
+
+   This function updates the size of T:
+     - A union type has its size set to the largest field.
+     - A structure type has each field packed against the previous.  */
+
 extern void append_composite_type_field (struct type *t, const char *name,
 					 struct type *field);
+
+/* Like append_composite_type_field, except that ALIGNMENT (if non-zero)
+   specifies the minimum alignment of the new field.  */
+
 extern void append_composite_type_field_aligned (struct type *t,
 						 const char *name,
 						 struct type *field,
 						 int alignment);
+
+/* Like append_composite_type_field, except that this function does not
+   set the field's position or adjust the length of T; the caller is
+   responsible for doing so.
+
+   Return the newly added field.  */
+
 struct field *append_composite_type_field_raw (struct type *t, const char *name,
 					       struct type *field);
 
@@ -2484,8 +2494,6 @@ extern struct type *make_restrict_type (struct type *);
 extern struct type *make_unqualified_type (struct type *);
 
 extern struct type *make_atomic_type (struct type *);
-
-extern void replace_type (struct type *, struct type *);
 
 extern struct type *make_type_with_harvard_address_space
   (struct type *type, enum harvard_address_space aspace);
@@ -2731,7 +2739,7 @@ extern struct type *check_typedef (struct type *);
 extern char *gdb_mangle_name (struct type *, int, int);
 
 /* Lookup a typedef or primitive type named NAME, visible in lexical block
-   BLOCK.  If NOERR is nonzero, return zero if NAME is not suitably
+   BLOCK.  If NOERR is true, return nullptr if NAME is not suitably
    defined.
 
    If this function finds a suitable type then check_typedef is called on
@@ -2739,9 +2747,8 @@ extern char *gdb_mangle_name (struct type *, int, int);
    then the length of the type will be correct.  The original typedef will
    still be returned, not the result of calling check_typedef.  */
 
-extern struct type *lookup_typename (const struct language_defn *language,
-				     const char *name,
-				     const struct block *block, int noerr);
+extern type *lookup_typename (const language_defn *language, const char *name,
+			      const block *block, bool noerr);
 
 extern struct type *lookup_template_type (const char *, struct type *,
 					  const struct block *);
@@ -2861,7 +2868,7 @@ extern void recursive_dump_type (struct type *, int);
 /* printcmd.c */
 
 extern void print_scalar_formatted (const gdb_byte *, struct type *,
-				    const struct value_print_options *,
+				    const value_print_options &,
 				    int, struct ui_file *);
 
 extern int can_dereference (struct type *);

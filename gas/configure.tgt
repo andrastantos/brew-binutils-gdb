@@ -139,7 +139,8 @@ case ${generic_target} in
   aarch64*-*-nto*)			fmt=elf;;
   aarch64*-*-openbsd*)			fmt=elf;;
   aarch64*-*-phoenix*)			fmt=elf;;
-  aarch64*-*-pe* | aarch64*-*-mingw*)	fmt=coff em=pepaarch64 ;;
+  aarch64*-*-pe* | aarch64*-*-mingw* | aarch64*-*-cygwin*)
+					fmt=coff em=pepaarch64 ;;
   alpha-*-*vms*)			fmt=evax ;;
   alpha-*-osf*)				fmt=ecoff ;;
   alpha-*-linux*ecoff*)			fmt=ecoff ;;
@@ -172,7 +173,7 @@ case ${generic_target} in
 
   avr-*-*)				fmt=elf bfd_gas=yes ;;
 
-  bfin-*-linux-uclibc)			fmt=fdpicelf em=linux ;;
+  bfin-*-linux-uclibc)			fmt=elf em=linux-fdpic ;;
   bfin-*-uclinux*)			fmt=elf em=linux ;;
   bfin-*elf)				fmt=elf ;;
 
@@ -457,7 +458,7 @@ case ${cpu_type} in
     ;;
 esac
 case ${fmt} in
-  elf | ecoff | fdpicelf | multi | som)
+  elf | ecoff | multi | som)
     bfd_gas=yes
     ;;
 esac

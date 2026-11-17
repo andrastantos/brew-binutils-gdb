@@ -584,6 +584,14 @@ static int mips_32bitmode = 0;
    || mips_opts.micromips                             \
    )
 
+/* True if MFLO and MFHI can be immediately followed by non-division
+   instructions.  This applies to instructions not marked INSN_DIV.  */
+#define hilo_nondiv_interlocks				\
+  (hilo_interlocks					\
+   || mips_opts.arch == CPU_R3900			\
+   || mips_opts.arch == CPU_TX49			\
+   )
+
 /* Whether the processor uses hardware interlocks to protect reads
    from the GPRs after they are loaded from memory, and thus does not
    require nops to be inserted.  This applies to instructions marked
@@ -6707,9 +6715,10 @@ insns_between (const struct mips_cl_insn *insn1,
   pinfo1 = insn1->insn_mo->pinfo;
   pinfo2 = insn2 ? insn2->insn_mo->pinfo : ~0U;
 
-  /* For most targets, write-after-read dependencies on the HI and LO
-     registers must be separated by at least two instructions.  */
-  if (!hilo_interlocks)
+  /* For some legacy ISA targets, write-after-read dependencies on the HI
+     and LO registers must be separated by at least two instructions.  */
+  if (!(hilo_interlocks
+	|| (hilo_nondiv_interlocks && !(pinfo2 & INSN_DIV))))
     {
       if ((pinfo1 & INSN_READ_LO) && (pinfo2 & INSN_WRITE_LO))
 	return 2;
@@ -20368,6 +20377,7 @@ static const struct mips_cpu_info mips_cpu_info_table[] =
   { "r4600",          0, 0,			ISA_MIPS3,    CPU_R4600 },
   { "orion",          0, 0,			ISA_MIPS3,    CPU_R4600 },
   { "r4650",          0, 0,			ISA_MIPS3,    CPU_R4650 },
+  { "tx49",           0, 0,			ISA_MIPS3,    CPU_TX49 },
   { "r5900",          0, 0,			ISA_MIPS3,    CPU_R5900 },
   /* ST Microelectronics Loongson 2E and 2F cores.  */
   { "loongson2e",     0, 0,			ISA_MIPS3,    CPU_LOONGSON_2E },
@@ -20458,6 +20468,8 @@ static const struct mips_cpu_info mips_cpu_info_table[] =
   { "m5101",          0, ASE_MCU,		ISA_MIPS32R5, CPU_MIPS32R5 },
   /* P5600 with EVA and Virtualization ASEs, other ASEs are optional.  */
   { "p5600",          0, ASE_VIRT | ASE_EVA | ASE_XPA,	ISA_MIPS32R5, CPU_MIPS32R5 },
+  /* M6200 family.  */
+  { "m6201",          0, ASE_MCU,		ISA_MIPS32R6, CPU_MIPS32R6 },
 
   /* MIPS 64 */
   { "5kc",            0, 0,			ISA_MIPS64,   CPU_MIPS64 },

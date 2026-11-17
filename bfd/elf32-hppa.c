@@ -447,7 +447,6 @@ elf32_hppa_init_stub_bfd (bfd *abfd, struct bfd_link_info *info)
 {
   struct elf32_hppa_link_hash_table *htab = hppa_link_hash_table (info);
 
-  elf_elfheader (abfd)->e_ident[EI_CLASS] = ELFCLASS32;
   htab->etab.dynobj = abfd;
 }
 
@@ -1455,9 +1454,7 @@ elf32_hppa_check_relocs (bfd *abfd,
 		}
 	      else
 		{
-		  /* Track dynamic relocs needed for local syms too.
-		     We really need local syms available to do this
-		     easily.  Oh well.  */
+		  /* Track dynamic relocs needed for local syms too.  */
 		  asection *sr;
 		  void *vpp;
 		  Elf_Internal_Sym *isym;
@@ -3227,18 +3224,36 @@ final_link_relocate (asection *input_section,
 	      if ((insn & 0xfc000000) == OP_ADDIL << 26)
 		insn = ADDIL_DP;
 	      else
-		/* We must have a ldil instruction.  It's too hard to find
-		   and convert the associated add instruction, so issue an
-		   error.  */
-		_bfd_error_handler
-		  /* xgettext:c-format */
-		  (_("%pB(%pA+%#" PRIx64 "): %s fixup for insn %#x "
-		     "is not supported in a non-shared link"),
-		   input_bfd,
-		   input_section,
-		   (uint64_t) offset,
-		   howto->name,
-		   insn);
+		{
+		  /* We must have a ldil instruction.  In general, it's hard
+		     to find and convert the associated add instruction.
+		     However, gcc emits the addl immediately after the ldil.
+		     As with addil, gcc sometimes changes the base in the
+		     addl.  So if the next instruction is an addl with r1
+		     matching the target register of the ldil, convert it
+		     to use dp.  Otherwise, issue an error.  */
+		  unsigned int next = bfd_get_32 (input_bfd, hit_data + 4);
+
+		  /* Check for "addl %r0,%r0,%r0" and ldil/addl
+		     target/input register match.  */
+		  if ((next & 0xfc00ffe0) == 0x08000a00
+		      && ((next >> 16) & 0x1f) == ((insn >> 21) & 0x1f))
+		    {
+		      /* Change register to dp.  */
+		      next = (next & 0xfc1fffff) | (27 << 21);
+		      bfd_put_32 (input_bfd, (bfd_vma) next, hit_data + 4);
+		    }
+		  else
+		    _bfd_error_handler
+		      /* xgettext:c-format */
+		      (_("%pB(%pA+%#" PRIx64 "): %s fixup for insn %#x "
+			 "is not supported in a non-shared link"),
+		       input_bfd,
+		       input_section,
+		       (uint64_t) offset,
+		       howto->name,
+		       insn);
+		}
 	    }
 	  else if (r_type == R_PARISC_DPREL14F)
 	    {
@@ -3261,10 +3276,26 @@ final_link_relocate (asection *input_section,
 	  if ((insn & ((0x3fu << 26) | (0x1f << 21)))
 	      == ((OP_ADDIL << 26) | (27 << 21)))
 	    {
+	      /* We have a dp relative addil.  */
 	      insn &= ~ (0x1f << 21);
 	    }
-	  /* Now try to make things easy for the dynamic linker.  */
+	  else if ((insn & (0x3fu << 26)) == (OP_LDIL << 26))
+	    {
+	      /* We have an ldil.  */
+	      unsigned int next = bfd_get_32 (input_bfd, hit_data + 4);
 
+	      /* Check for "addl %r0,%dp,%r0" and ldil/addl
+		 target/input register match.  */
+	      if ((next & 0xffe0ffe0) == 0x0b600a00
+		  && ((next >> 16) & 0x1f) == ((insn >> 21) & 0x1f))
+		{
+		  /* Change dp register in addl to r0.  */
+		  next &= ~ (0x1f << 21);
+		  bfd_put_32 (input_bfd, (bfd_vma) next, hit_data + 4);
+		}
+	    }
+
+	  /* Now try to make things easy for the dynamic linker.  */
 	  break;
 	}
       /* Fall thru.  */
@@ -3529,7 +3560,7 @@ elf32_hppa_relocate_section (struct bfd_link_info *info,
       reloc_howto_type *howto;
       unsigned int r_symndx;
       struct elf32_hppa_link_hash_entry *hh;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sym_sec;
       bfd_vma relocation;
       bfd_reloc_status_type rstatus;
@@ -4530,6 +4561,7 @@ elf32_hppa_elf_get_symbol_type (Elf_Internal_Sym *elf_sym, int type)
 #define elf_backend_want_plt_sym	     0
 #define elf_backend_got_header_size	     8
 #define elf_backend_want_dynrelro	     1
+#define elf_backend_want_stub_bfd	     1
 #define elf_backend_rela_normal		     1
 #define elf_backend_dtrel_excludes_plt	     1
 #define elf_backend_no_page_alias	     1

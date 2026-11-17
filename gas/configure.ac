@@ -172,6 +172,18 @@ AC_ARG_ENABLE(default-riscv-attribute,
   no)   ac_default_generate_riscv_attr=0 ;;
 esac])dnl
 
+# Decide if the Xtensa assembler should default to emitting R_XTENSA_32_ABS
+# rather than R_XTENSA_32 for 32-bit absolute data.
+ac_default_r_xtensa_32_abs=unset
+# Provide a configuration option to override the default.
+AC_ARG_ENABLE(r-xtensa-32-abs,
+	      AS_HELP_STRING([--enable-r-xtensa-32-abs],
+	      [emit R_XTENSA_32_ABS for 32-bit absolute data by default]),
+[case "${enableval}" in
+  yes)  ac_default_r_xtensa_32_abs=1 ;;
+  no)   ac_default_r_xtensa_32_abs=0 ;;
+esac])dnl
+
 using_cgen=no
 
 AM_BINUTILS_WARNINGS
@@ -443,7 +455,7 @@ changequote([,])dnl
 
     # Does the target support Object Attributes ?
     case ${cpu_type} in
-      aarch64* | arc* | arm* | csky | loongarch | m68k | mips* | msp430 \
+      aarch64* | arc* | arm* | avr | csky | loongarch | m68k | mips* | msp430 \
       | ppc* | riscv* | s390* | sparc* | tic6x)
 	for f in config/obj-elf-attr.o; do
 	  case " $extra_objects " in
@@ -662,13 +674,10 @@ changequote([,])dnl
         fi
         AC_MSG_RESULT($with_isa_spec)
 
-        # --with-priv-spec=[1.9.1|1.10|1.11|1.12|1.13].
-        AC_MSG_CHECKING(for default configuration of --with-priv-spec)
+        # --with-priv-spec is deprecated and has no effect.
         if test "x${with_priv_spec}" != x; then
-          AC_DEFINE_UNQUOTED(DEFAULT_RISCV_PRIV_SPEC, "$with_priv_spec",
-                             [Define default value for RISC-V -mpriv-spec])
+          AC_MSG_WARN([--with-priv-spec is deprecated and has no effect, the privileged spec is always 1.13; use binutils 2.47 or earlier to select another version])
         fi
-        AC_MSG_RESULT($with_priv_spec)
         ;;
 
       rl78)
@@ -786,6 +795,14 @@ fi
 AC_DEFINE_UNQUOTED(DEFAULT_RISCV_ATTR,
   $ac_default_generate_riscv_attr,
   [Define to 1 if you want to generate RISC-V arch attribute by default.])
+
+if test ${ac_default_r_xtensa_32_abs} = unset; then
+  ac_default_r_xtensa_32_abs=0
+fi
+AC_DEFINE_UNQUOTED(DEFAULT_R_XTENSA_32_ABS,
+  $ac_default_r_xtensa_32_abs,
+  [Define to 1 if you want to emit R_XTENSA_32_ABS for 32-bit absolute data
+   by default.])
 
 if test ${ac_default_mips_fix_loongson3_llsc} = unset; then
   ac_default_mips_fix_loongson3_llsc=0

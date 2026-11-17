@@ -363,7 +363,7 @@ ft32_elf_relocate_section (struct bfd_link_info *info,
     {
       reloc_howto_type *howto;
       unsigned long r_symndx;
-      Elf_Internal_Sym *sym;
+      const Elf_Internal_Sym *sym;
       asection *sec;
       struct elf_link_hash_entry *h;
       bfd_vma relocation;
@@ -1237,7 +1237,7 @@ ft32_elf_relax_section (bfd *abfd,
  error_return:
   free (free_relocs);
 
-  return true;
+  return false;
 }
 
 #define ELF_ARCH		bfd_arch_ft32

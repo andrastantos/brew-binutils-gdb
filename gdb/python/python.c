@@ -298,44 +298,44 @@ gdbpy_check_quit_flag (const struct extension_language_defn *extlang)
    Python start symbol, and does not automatically print the stack on
    errors.  FILENAME is used to set the file name in error messages;
    NULL means that this is evaluating a string, not the contents of a
-   file.  */
+   file.
+   Return the result of the evaluation on success, NULL on failure.  */
 
-int
+gdbpy_ref<>
 eval_python_command (const char *command, int start_symbol,
 		     const char *filename)
 {
-  PyObject *m, *d;
+  gdbpy_opt_borrowed_ref<> mainmod = PyImport_AddModule ("__main__");
+  if (mainmod == nullptr)
+    return nullptr;
 
-  m = PyImport_AddModule ("__main__");
-  if (m == NULL)
-    return -1;
-
-  d = PyModule_GetDict (m);
-  if (d == NULL)
-    return -1;
+  gdbpy_opt_borrowed_ref<> globals = PyModule_GetDict (mainmod);
+  if (globals == nullptr)
+    return nullptr;
 
   bool file_set = false;
   if (filename != nullptr)
     {
       gdbpy_ref<> file = host_string_to_python_string ("__file__");
       if (file == nullptr)
-	return -1;
+	return nullptr;
 
       /* PyDict_GetItemWithError returns a borrowed reference.  */
-      PyObject *found = PyDict_GetItemWithError (d, file.get ());
+      gdbpy_opt_borrowed_ref<> found
+	= PyDict_GetItemWithError (globals, file.get ());
       if (found == nullptr)
 	{
 	  if (PyErr_Occurred ())
-	    return -1;
+	    return nullptr;
 
 	  gdbpy_ref<> filename_obj = host_string_to_python_string (filename);
 	  if (filename_obj == nullptr)
-	    return -1;
+	    return nullptr;
 
-	  if (PyDict_SetItem (d, file.get (), filename_obj.get ()) < 0)
-	    return -1;
-	  if (PyDict_SetItemString (d, "__cached__", Py_None) < 0)
-	    return -1;
+	  if (PyDict_SetItem (globals, file.get (), filename_obj.get ()) < 0)
+	    return nullptr;
+	  if (PyDict_SetItemString (globals, "__cached__", Py_None) < 0)
+	    return nullptr;
 
 	  file_set = true;
 	}
@@ -348,12 +348,12 @@ eval_python_command (const char *command, int start_symbol,
 				      : filename,
 				      start_symbol));
 
-  int result = -1;
+  gdbpy_ref<> eval_result;
   if (code != nullptr)
     {
-      gdbpy_ref<> eval_result (PyEval_EvalCode (code.get (), d, d));
-      if (eval_result != nullptr)
-	result = 0;
+      eval_result.reset (PyEval_EvalCode (code.get (), globals, globals));
+      if (eval_result == nullptr)
+	gdb_assert (PyErr_Occurred ());
     }
 
   if (file_set)
@@ -361,21 +361,21 @@ eval_python_command (const char *command, int start_symbol,
       /* If there's already an exception occurring, preserve it and
 	 restore it before returning from this function.  */
       std::optional<gdbpy_err_fetch> save_error;
-      if (result < 0)
+      if (eval_result == nullptr)
 	save_error.emplace ();
 
       /* CPython also just ignores errors here.  These should be
 	 expected to be exceedingly rare anyway.  */
-      if (PyDict_DelItemString (d, "__file__") < 0)
+      if (PyDict_DelItemString (globals, "__file__") < 0)
 	PyErr_Clear ();
-      if (PyDict_DelItemString (d, "__cached__") < 0)
+      if (PyDict_DelItemString (globals, "__cached__") < 0)
 	PyErr_Clear ();
 
       if (save_error.has_value ())
 	save_error->restore ();
     }
 
-  return result;
+  return eval_result;
 }
 
 /* Implementation of the gdb "python-interactive" command.  */
@@ -383,8 +383,12 @@ eval_python_command (const char *command, int start_symbol,
 static void
 python_interactive_command (const char *arg, int from_tty)
 {
+  if (!gdbpy_import_readline_disabled ())
+    error (_("Disabling import readline failed, \"%ps\" command disabled"),
+	   styled_string (command_style.style (), "python-interactive"));
+
   struct ui *ui = current_ui;
-  int err;
+  bool err;
 
   scoped_restore save_async = make_scoped_restore (&current_ui->async, 0);
 
@@ -396,11 +400,11 @@ python_interactive_command (const char *arg, int from_tty)
     {
       std::string script = std::string (arg) + "\n";
       /* Py_single_input causes the result to be displayed.  */
-      err = eval_python_command (script.c_str (), Py_single_input);
+      err = (eval_python_command (script.c_str (), Py_single_input) == nullptr);
     }
   else
     {
-      err = PyRun_InteractiveLoop (ui->instream, "<stdin>");
+      err = PyRun_InteractiveLoop (ui->instream, "<stdin>") != 0;
       dont_repeat ();
     }
 
@@ -411,6 +415,7 @@ python_interactive_command (const char *arg, int from_tty)
 /* Like PyRun_SimpleFile, but if there is an exception, it is not
    automatically displayed.  FILE is the Python script to run named
    FILENAME.
+   Return true on success, false on failure.
 
    On Windows hosts few users would build Python themselves (this is no
    trivial task on this platform), and thus use binaries built by
@@ -421,11 +426,11 @@ python_interactive_command (const char *arg, int from_tty)
    A FILE * from one runtime does not necessarily operate correctly in
    the other runtime.  */
 
-static int
+static bool
 python_run_simple_file (FILE *file, const char *filename)
 {
   std::string contents = read_remainder_of_file (file);
-  return eval_python_command (contents.c_str (), Py_file_input, filename);
+  return eval_python_command (contents.c_str (), Py_file_input, filename) != nullptr;
 }
 
 /* Given a command_line, return a command string suitable for passing
@@ -459,8 +464,7 @@ gdbpy_eval_from_control_command (const struct extension_language_defn *extlang,
   gdbpy_enter enter_py;
 
   std::string script = compute_python_string (cmd->body_list_0.get ());
-  int ret = eval_python_command (script.c_str (), Py_file_input);
-  if (ret != 0)
+  if (eval_python_command (script.c_str (), Py_file_input) == nullptr)
     gdbpy_handle_exception ();
 }
 
@@ -476,8 +480,7 @@ python_command (const char *arg, int from_tty)
   arg = skip_spaces (arg);
   if (arg && *arg)
     {
-      int ret = eval_python_command (arg, Py_file_input);
-      if (ret != 0)
+      if (eval_python_command (arg, Py_file_input) == nullptr)
 	gdbpy_handle_exception ();
     }
   else
@@ -611,14 +614,14 @@ gdbpy_parameter (PyObject *self, PyObject *args)
 
   if (cmd == CMD_LIST_AMBIGUOUS)
     return PyErr_Format (PyExc_RuntimeError,
-			 _("Parameter `%s' is ambiguous."), arg);
+			 _("Parameter \"%s\" is ambiguous."), arg);
   else if (!found)
     return PyErr_Format (PyExc_RuntimeError,
-			 _("Could not find parameter `%s'."), arg);
+			 _("Could not find parameter \"%s\"."), arg);
 
   if (!cmd->var.has_value ())
     return PyErr_Format (PyExc_RuntimeError,
-			 _("`%s' is not a parameter."), arg);
+			 _("\"%s\" is not a parameter."), arg);
 
   return gdbpy_parameter_value (*cmd->var);
 }
@@ -845,7 +848,7 @@ gdbpy_rbreak (PyObject *self, PyObject *args, PyObject *kw)
       minsyms_p = cmp;
     }
 
-  global_symbol_searcher spec (SEARCH_FUNCTION_DOMAIN, regex);
+  global_symbol_searcher spec (symbol_search_kind::FUNCTION, regex);
 
   /* The "symtabs" keyword is any Python iterable object that returns
      a gdb.Symtab on each iteration.  If specified, iterate through
@@ -902,11 +905,8 @@ gdbpy_rbreak (PyObject *self, PyObject *args, PyObject *kw)
   for (const symbol_search &p : symbols)
     {
       /* Minimal symbols included?  */
-      if (minsyms_p)
-	{
-	  if (p.msymbol.minsym != NULL)
-	    count++;
-	}
+      if (minsyms_p && p.msymbol.minsym != nullptr)
+	count++;
 
       if (p.symbol != NULL)
 	count++;
@@ -933,9 +933,8 @@ gdbpy_rbreak (PyObject *self, PyObject *args, PyObject *kw)
       std::string symbol_name;
 
       /* Skipping minimal symbols?  */
-      if (minsyms_p == 0)
-	if (p.msymbol.minsym != NULL)
-	  continue;
+      if (minsyms_p == 0 && p.msymbol.minsym != nullptr)
+	continue;
 
       if (p.msymbol.minsym == NULL)
 	{
@@ -1120,8 +1119,7 @@ gdbpy_source_script (const struct extension_language_defn *extlang,
 		     FILE *file, const char *filename)
 {
   gdbpy_enter enter_py;
-  int result = python_run_simple_file (file, filename);
-  if (result != 0)
+  if (! python_run_simple_file (file, filename))
     gdbpy_handle_exception ();
 }
 
@@ -1235,7 +1233,7 @@ gdbpy_before_prompt_hook (const struct extension_language_defn *extlang,
 
   gdbpy_enter enter_py;
 
-  if (!evregpy_no_listeners_p (gdb_py_events.before_prompt)
+  if (evregpy_has_listeners_p (gdb_py_events.before_prompt)
       && evpy_emit_event (NULL, gdb_py_events.before_prompt) < 0)
     return EXT_LANG_RC_ERROR;
 
@@ -1260,8 +1258,7 @@ gdbpy_before_prompt_hook (const struct extension_language_defn *extlang,
 	    }
 
 	  gdbpy_ref<> result
-	    (PyObject_CallFunctionObjArgs (hook.get (), current_prompt.get (),
-					   NULL));
+	    = gdbpy_object_call_function_obj_args (hook, current_prompt);
 	  if (result == NULL)
 	    {
 	      gdbpy_print_stack ();
@@ -1362,11 +1359,10 @@ gdbpy_colorize (const std::string &filename, const std::string &contents,
      contents (a bytes object).  This function should return either a bytes
      object, the same contents with styling applied, or None to indicate
      that no styling should be performed.  */
-  gdbpy_ref<> result (PyObject_CallFunctionObjArgs (hook.get (),
-						    fname_arg.get (),
-						    contents_arg.get (),
-						    lang_arg.get (),
-						    nullptr));
+  gdbpy_ref<> result = gdbpy_object_call_function_obj_args (hook,
+							    fname_arg,
+							    contents_arg,
+							    lang_arg);
   if (result == nullptr)
     {
       gdbpy_print_stack ();
@@ -1431,10 +1427,9 @@ gdbpy_colorize_disasm (const std::string &content, gdbarch *gdbarch)
       return {};
     }
 
-  gdbpy_ref<> result (PyObject_CallFunctionObjArgs (hook.get (),
-						    content_arg.get (),
-						    gdbarch_arg.get (),
-						    nullptr));
+  gdbpy_ref<> result = gdbpy_object_call_function_obj_args (hook,
+							    content_arg,
+							    gdbarch_arg);
   if (result == nullptr)
     {
       gdbpy_print_stack ();
@@ -1827,8 +1822,7 @@ gdbpy_source_objfile_script (const struct extension_language_defn *extlang,
   scoped_restore restore_current_objfile
     = make_scoped_restore (&gdbpy_current_objfile, objfile);
 
-  int result = python_run_simple_file (file, filename);
-  if (result != 0)
+  if (! python_run_simple_file (file, filename))
     gdbpy_print_stack ();
 }
 
@@ -1850,8 +1844,7 @@ gdbpy_execute_objfile_script (const struct extension_language_defn *extlang,
   scoped_restore restore_current_objfile
     = make_scoped_restore (&gdbpy_current_objfile, objfile);
 
-  int ret = eval_python_command (script, Py_file_input);
-  if (ret != 0)
+  if (eval_python_command (script, Py_file_input) == nullptr)
     gdbpy_print_stack ();
 }
 
@@ -1903,8 +1896,7 @@ gdbpy_handle_missing_debuginfo (const struct extension_language_defn *extlang,
 
   /* Call the function, passing in the Python objfile object.  */
   gdbpy_ref<> pyo_execute_ret
-    (PyObject_CallFunctionObjArgs (pyo_handler.get (), pyo_objfile.get (),
-				   nullptr));
+    = gdbpy_object_call_function_obj_args (pyo_handler, pyo_objfile);
   if (pyo_execute_ret == nullptr)
     {
       /* If the handler is cancelled due to a Ctrl-C, then propagate
@@ -2003,9 +1995,8 @@ gdbpy_find_objfile_from_buildid (const struct extension_language_defn *extlang,
 
   /* Call the function, passing in the Python objfile object.  */
   gdbpy_ref<> pyo_execute_ret
-    (PyObject_CallFunctionObjArgs (pyo_handler.get (), pyo_pspace.get (),
-				   pyo_buildid.get (), pyo_filename.get (),
-				   nullptr));
+    = gdbpy_object_call_function_obj_args (pyo_handler, pyo_pspace,
+					   pyo_buildid, pyo_filename);
   if (pyo_execute_ret == nullptr)
     {
       /* If the handler is cancelled due to a Ctrl-C, then propagate
@@ -2055,8 +2046,6 @@ static void
 gdbpy_start_type_printers (const struct extension_language_defn *extlang,
 			   struct ext_lang_type_printers *ext_printers)
 {
-  PyObject *printers_obj = NULL;
-
   if (!gdb_python_initialized)
     return;
 
@@ -2077,11 +2066,11 @@ gdbpy_start_type_printers (const struct extension_language_defn *extlang,
       return;
     }
 
-  printers_obj = PyObject_CallFunctionObjArgs (func.get (), (char *) NULL);
-  if (printers_obj == NULL)
+  gdbpy_ref<> printers_obj = gdbpy_object_call_function_obj_args (func);
+  if (printers_obj == nullptr)
     gdbpy_print_stack ();
   else
-    ext_printers->py_type_printers = printers_obj;
+    ext_printers->py_type_printers = printers_obj.release ();
 }
 
 /* If TYPE is recognized by some type printer, store in *PRETTIED_TYPE
@@ -2130,10 +2119,9 @@ gdbpy_apply_type_printers (const struct extension_language_defn *extlang,
       return EXT_LANG_RC_ERROR;
     }
 
-  gdbpy_ref<> result_obj (PyObject_CallFunctionObjArgs (func.get (),
-							printers_obj,
-							type_obj.get (),
-							(char *) NULL));
+  gdbpy_ref<> result_obj = gdbpy_object_call_function_obj_args (func,
+								printers_obj,
+								type_obj);
   if (result_obj == NULL)
     {
       gdbpy_print_stack ();
@@ -2492,7 +2480,7 @@ init__gdb_module (void)
 static int
 emit_exiting_event (int exit_code)
 {
-  if (evregpy_no_listeners_p (gdb_py_events.gdb_exiting))
+  if (!evregpy_has_listeners_p (gdb_py_events.gdb_exiting))
     return 0;
 
   gdbpy_ref<> event_obj = create_event_object (&gdb_exiting_event_object_type);
@@ -2500,10 +2488,11 @@ emit_exiting_event (int exit_code)
     return -1;
 
   gdbpy_ref<> code = gdb_py_object_from_longest (exit_code);
-  if (evpy_add_attribute (event_obj.get (), "exit_code", code.get ()) < 0)
+  if (code == nullptr
+      || evpy_add_attribute (event_obj, "exit_code", code) < 0)
     return -1;
 
-  return evpy_emit_event (event_obj.get (), gdb_py_events.gdb_exiting);
+  return evpy_emit_event (event_obj, gdb_py_events.gdb_exiting);
 }
 
 /* Callback for the gdb_exiting observable.  EXIT_CODE is the value GDB
@@ -2542,7 +2531,7 @@ catch_python_fatal (int signum)
   throw_exception_sjlj (gdb_exception {RETURN_ERROR, GENERIC_ERROR});
 }
 
-/* Call Py_Initialize (), and return true if successful.   */
+/* Call Py_Initialize (), and return true if successful.  */
 
 static bool
 py_initialize_catch_abort ()
@@ -2941,7 +2930,7 @@ message == an error message without a stack will be printed."),
 Set whether the Python interpreter should ignore environment variables."), _("\
 Show whether the Python interpreter showlist ignore environment variables."), _("\
 When enabled GDB's Python interpreter will ignore any Python related\n\
-flags in the environment.  This is equivalent to passing `-E' to a\n\
+flags in the environment.  This is equivalent to passing \"-E\" to a\n\
 python executable."),
 			   set_python_ignore_environment,
 			   show_python_ignore_environment,
@@ -3005,7 +2994,7 @@ do_initialize (const struct extension_language_defn *extlang)
      initialized to an empty list following any of the PyConfig
      initialization functions.  If it does turn out that some kind of
      initialization is still needed, it should be added to the
-     PyConfig-based initialization in do_start_initialize().  */
+     PyConfig-based initialization in do_start_initialization().  */
 #if PY_VERSION_HEX < 0x030a0000
   /* If sys.path is not defined yet, define it first.  */
   if (!(sys_path && PyList_Check (sys_path)))
@@ -3038,7 +3027,7 @@ do_initialize (const struct extension_language_defn *extlang)
       /* This is passed in one call to warning so that blank lines aren't
 	 inserted between each line of text.  */
       warning (_("\n"
-		 "Could not load the Python gdb module from `%s'.\n"
+		 "Could not load the Python gdb module from \"%s\".\n"
 		 "Limited Python support is available from the _gdb module.\n"
 		 "Suggest passing --data-directory=/path/to/gdb/data-directory."),
 	       gdb_pythondir.c_str ());
@@ -3159,15 +3148,15 @@ Arguments (also strings) are passed to the command." },
   { "current_objfile", gdbpy_get_current_objfile, METH_NOARGS,
     "Return the current Objfile being loaded, or None." },
 
-  { "newest_frame", gdbpy_newest_frame, METH_NOARGS,
+  noargs_function<gdbpy_newest_frame> ("newest_frame",
     "newest_frame () -> gdb.Frame.\n\
-Return the newest frame object." },
-  { "selected_frame", gdbpy_selected_frame, METH_NOARGS,
+Return the newest frame object."),
+  noargs_function<gdbpy_selected_frame> ("selected_frame",
     "selected_frame () -> gdb.Frame.\n\
-Return the selected frame object." },
-  { "frame_stop_reason_string", gdbpy_frame_stop_reason_string, METH_VARARGS,
+Return the selected frame object."),
+  varargs_function<gdbpy_frame_stop_reason_string> ("frame_stop_reason_string",
     "stop_reason_string (Integer) -> String.\n\
-Return a string explaining unwind stop reason." },
+Return a string explaining unwind stop reason."),
 
   { "start_recording", gdbpy_start_recording, METH_VARARGS,
     "start_recording ([method] [, format]) -> gdb.Record.\n\
@@ -3185,24 +3174,20 @@ Stop current recording." },
     METH_VARARGS | METH_KEYWORDS,
     "lookup_type (name [, block]) -> type\n\
 Return a Type corresponding to the given name." },
-  { "lookup_symbol", (PyCFunction) gdbpy_lookup_symbol,
-    METH_VARARGS | METH_KEYWORDS,
+  varargs_function<gdbpy_lookup_symbol> ("lookup_symbol",
     "lookup_symbol (name [, block] [, domain]) -> (symbol, is_field_of_this)\n\
 Return a tuple with the symbol corresponding to the given name (or None) and\n\
 a boolean indicating if name is a field of the current implied argument\n\
-`this' (when the current language is object-oriented)." },
-  { "lookup_global_symbol", (PyCFunction) gdbpy_lookup_global_symbol,
-    METH_VARARGS | METH_KEYWORDS,
+\"this\" (when the current language is object-oriented)."),
+  varargs_function<gdbpy_lookup_global_symbol> ("lookup_global_symbol",
     "lookup_global_symbol (name [, domain]) -> symbol\n\
-Return the symbol corresponding to the given name (or None)." },
-  { "lookup_static_symbol", (PyCFunction) gdbpy_lookup_static_symbol,
-    METH_VARARGS | METH_KEYWORDS,
+Return the symbol corresponding to the given name (or None)."),
+  varargs_function<gdbpy_lookup_static_symbol> ("lookup_static_symbol",
     "lookup_static_symbol (name [, domain]) -> symbol\n\
-Return the static-linkage symbol corresponding to the given name (or None)." },
-  { "lookup_static_symbols", (PyCFunction) gdbpy_lookup_static_symbols,
-    METH_VARARGS | METH_KEYWORDS,
+Return the static-linkage symbol corresponding to the given name (or None)."),
+  varargs_function<gdbpy_lookup_static_symbols> ("lookup_static_symbols",
     "lookup_static_symbols (name [, domain]) -> symbol\n\
-Return a list of all static-linkage symbols corresponding to the given name." },
+Return a list of all static-linkage symbols corresponding to the given name."),
 
   { "lookup_objfile", (PyCFunction) gdbpy_lookup_objfile,
     METH_VARARGS | METH_KEYWORDS,
@@ -3274,19 +3259,18 @@ or None if not set." },
 Set the value of the convenience variable $NAME." },
 
 #ifdef TUI
-  { "register_window_type", (PyCFunction) gdbpy_register_tui_window,
-    METH_VARARGS | METH_KEYWORDS,
+  varargs_function<gdbpy_register_tui_window> ("register_window_type",
     "register_window_type (NAME, CONSTRUCTOR) -> None\n\
-Register a TUI window constructor." },
+Register a TUI window constructor."),
 #endif	/* TUI */
 
-  { "architecture_names", gdbpy_all_architecture_names, METH_NOARGS,
+  noargs_function<gdbpy_all_architecture_names> ("architecture_names",
     "architecture_names () -> List.\n\
-Return a list of all the architecture names GDB understands." },
+Return a list of all the architecture names GDB understands."),
 
-  { "connections", gdbpy_connections, METH_NOARGS,
+  noargs_function<gdbpy_connections> ("connections",
     "connections () -> List.\n\
-Return a list of gdb.TargetConnection objects." },
+Return a list of gdb.TargetConnection objects."),
 
   { "format_address", (PyCFunction) gdbpy_format_address,
     METH_VARARGS | METH_KEYWORDS,

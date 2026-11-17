@@ -49,6 +49,7 @@ rdcoff.c
 rdcoff.c
 rddbg.c
 rddbg.c
+readelf-nn.c
 readelf.c
 rename.c
 resbin.c

@@ -211,6 +211,8 @@ enum i386_cpu
   CpuAVX512_BMM,
   /* AVX10.1-aux Instructions support required.  */
   CpuAVX10_1_AUX,
+  /* AVX10 V2 Auxiliary Instructions support required.  */
+  CpuAVX10_V2_AUX,
   /* TDX Instructions support required.  */
   CpuTDX,
   /* Intel AVX VNNI Instructions support required.  */
@@ -276,6 +278,8 @@ enum i386_cpu
   CpuAMX_AVX512,
   /* AMX-TILE instructions required */
   CpuAMX_TILE,
+  /* Tile management instructions required (internal). */
+  CpuTILE,
   /* GFNI instructions required */
   CpuGFNI,
   /* VAES instructions required */
@@ -326,6 +330,10 @@ enum i386_cpu
   CpuRMPQUERY,
   /* RMPREAD instruction required */
   CpuRMPREAD,
+  /* RMPDIRTY instruction required */
+  CpuRMPDIRTY,
+  /* RMPOPT instruction required */
+  CpuRMPOPT,
   /* Intel APX New Conditional Instructions support required.  */
   CpuAPX_NCI,
   /* Intel APX Non-Destructive Destination support required.  */
@@ -361,6 +369,8 @@ enum i386_cpu
   CpuAVX10_2,
   /* Intel AMX-TRANSPOSE Instructions support required.  */
   CpuAMX_TRANSPOSE,
+  /* ACE V1 instructions support required.  */
+  CpuACE_V1,
   /* Not supported in the 64bit mode  */
   CpuNo64,
 
@@ -399,6 +409,7 @@ enum i386_cpu
 		   cpuapx_f:1, \
 		   cpuavx10_2:1, \
 		   cpuamx_transpose:1, \
+		   cpuace_v1:1, \
       /* NOTE: This field needs to remain last. */ \
 		   cpuno64:1
 
@@ -512,6 +523,7 @@ typedef union i386_cpu_flags
       unsigned int cpuavx512_vp2intersect:1;
       unsigned int cpuavx512_bmm:1;
       unsigned int cpuavx10_1_aux:1;
+      unsigned int cpuavx10_v2_aux:1;
       unsigned int cputdx:1;
       unsigned int cpuavx_vnni:1;
       unsigned int cpuavx512_fp16:1;
@@ -545,6 +557,7 @@ typedef union i386_cpu_flags
       unsigned int cpuamx_movrs:1;
       unsigned int cpuamx_avx512:1;
       unsigned int cpuamx_tile:1;
+      unsigned int cputile:1;
       unsigned int cpugfni:1;
       unsigned int cpuvaes:1;
       unsigned int cpuvpclmulqdq:1;
@@ -570,6 +583,8 @@ typedef union i386_cpu_flags
       unsigned int cpusnp:1;
       unsigned int cpurmpquery:1;
       unsigned int cpurmpread:1;
+      unsigned int cpurmpdirty:1;
+      unsigned int cpurmpopt:1;
       unsigned int cpuapx_nci:1;
       unsigned int cpuapx_ndd:1;
       unsigned int cpuapx_nf:1;
@@ -1104,11 +1119,11 @@ typedef struct insn_template
   /* cpu feature attributes */
   i386_cpu_attr cpu, cpu_any;
 
-  /* operand_types[i] describes the type of operand i.  This is made
-     by OR'ing together all of the possible type masks.  (e.g.
+  /* i386_operand_types[operand_ref + i] describes the type of operand i.
+     This is made by OR'ing together all of the possible type masks.  (e.g.
      'operand_types[i] = Reg|Imm' specifies that operand i can be
      either a register or an immediate operand.  */
-  i386_operand_type operand_types[MAX_OPERANDS];
+  unsigned int operand_ref;
 }
 insn_template;
 
