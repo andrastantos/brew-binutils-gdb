@@ -643,7 +643,7 @@ md_begin (void)
          (int (*) (const void*, const void*)) cmp_opcode);
 
   opc = XNEWVEC (struct m68hc11_opcode_def, num_opcodes);
-  m68hc11_opcode_defs = opc--;
+  m68hc11_opcode_defs = opc;
 
   /* Insert unique names into hash table.  The M6811 instruction set
      has several identical opcode names that have different opcodes based
@@ -655,19 +655,18 @@ md_begin (void)
 
       if (strcmp (prev_name, opcodes->name))
 	{
-	  prev_name = (char *) opcodes->name;
-
+	  prev_name = opcodes->name;
 	  opc++;
-	  opc->format = 0;
-	  opc->min_operands = 100;
-	  opc->max_operands = 0;
-	  opc->nb_modes = 0;
-	  opc->opcode = opcodes;
-	  opc->used = 0;
-	  str_hash_insert (m68hc11_hash, opcodes->name, opc, 0);
+	  (opc - 1)->format = 0;
+	  (opc - 1)->min_operands = 100;
+	  (opc - 1)->max_operands = 0;
+	  (opc - 1)->nb_modes = 0;
+	  (opc - 1)->opcode = opcodes;
+	  (opc - 1)->used = 0;
+	  str_hash_insert (m68hc11_hash, opcodes->name, opc - 1, 0);
 	}
-      opc->nb_modes++;
-      opc->format |= opcodes->format;
+      (opc - 1)->nb_modes++;
+      (opc - 1)->format |= opcodes->format;
 
       /* See how many operands this opcode needs.  */
       expect = 0;
@@ -700,14 +699,13 @@ md_begin (void)
 	    expect++;
 	}
 
-      if (expect < opc->min_operands)
-	opc->min_operands = expect;
+      if (expect < (opc - 1)->min_operands)
+	(opc - 1)->min_operands = expect;
       if (IS_CALL_SYMBOL (opcodes->format))
 	expect++;
-      if (expect > opc->max_operands)
-	opc->max_operands = expect;
+      if (expect > (opc - 1)->max_operands)
+	(opc - 1)->max_operands = expect;
     }
-  opc++;
   m68hc11_nb_opcode_defs = opc - m68hc11_opcode_defs;
 
   if (flag_print_opcodes)
@@ -1576,7 +1574,8 @@ fixup8 (expressionS *oper, int mode, int opmode)
 	{
 	  static char trap_id_warn_once = 0;
 
-	  as_bad (_("Trap id `%ld' is out of range."), oper->X_add_number);
+	  as_bad (_("Trap id `%" PRId64 "' is out of range."),
+		  (int64_t) oper->X_add_number);
 	  if (trap_id_warn_once == 0)
 	    {
 	      trap_id_warn_once = 1;
@@ -1587,7 +1586,8 @@ fixup8 (expressionS *oper, int mode, int opmode)
       if (!(mode & M6812_OP_TRAP_ID)
 	  && !check_range (oper->X_add_number, mode))
 	{
-	  as_bad (_("Operand out of 8-bit range: `%ld'."), oper->X_add_number);
+	  as_bad (_("Operand out of 8-bit range: `%" PRId64 "'."),
+		  (int64_t) oper->X_add_number);
 	}
       number_to_chars_bigendian (f, oper->X_add_number & 0x0FF, 1);
     }
@@ -1643,8 +1643,8 @@ fixup16 (expressionS *oper, int mode, int opmode ATTRIBUTE_UNUSED)
     {
       if (!check_range (oper->X_add_number, mode))
 	{
-	  as_bad (_("Operand out of 16-bit range: `%ld'."),
-		  oper->X_add_number);
+	  as_bad (_("Operand out of 16-bit range: `%" PRId64 "'."),
+		  (int64_t) oper->X_add_number);
 	}
       number_to_chars_bigendian (f, oper->X_add_number & 0x0FFFF, 2);
     }
@@ -1691,8 +1691,8 @@ fixup24 (expressionS *oper, int mode, int opmode ATTRIBUTE_UNUSED)
     {
       if (!check_range (oper->X_add_number, mode))
 	{
-	  as_bad (_("Operand out of 16-bit range: `%ld'."),
-		  oper->X_add_number);
+	  as_bad (_("Operand out of 16-bit range: `%" PRId64 "'."),
+		  (int64_t) oper->X_add_number);
 	}
       number_to_chars_bigendian (f, oper->X_add_number & 0x0FFFFFF, 3);
     }
@@ -1738,8 +1738,8 @@ fixup8_xg (expressionS *oper, int mode, int opmode)
      else
         {
 	  if (!(check_range (oper->X_add_number, mode)))
-	    as_bad (_("Operand out of 8-bit range: `%ld'."),
-		    oper->X_add_number);
+	    as_bad (_("Operand out of 8-bit range: `%" PRId64 "'."),
+		    (int64_t) oper->X_add_number);
           number_to_chars_bigendian (f, oper->X_add_number & 0x0FF, 1);
         }
     }

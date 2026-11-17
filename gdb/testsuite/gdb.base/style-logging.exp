@@ -18,17 +18,11 @@
 # Do not run if gdb debug is enabled as it will interfere with log redirect.
 require !gdb_debug_enabled
 
-if {[is_remote host]} {
-    untested "does not work on remote host"
-    return 0
-}
+require {!is_remote host}
 
 standard_testfile style.c
 
-save_vars { env(TERM) } {
-    # We need an ANSI-capable terminal to get the output.
-    setenv TERM ansi
-
+with_ansi_styling_terminal {
     if {[prepare_for_testing "failed to prepare" $testfile $srcfile debug]} {
 	return -1
     }

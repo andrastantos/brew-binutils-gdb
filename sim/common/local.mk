@@ -31,6 +31,7 @@ noinst_LIBRARIES += %D%/libcommon.a
 	%D%/callback.c \
 	%D%/portability.c \
 	%D%/sim-load.c \
+	%D%/sim-signal.c \
 	%D%/syscall.c \
 	%D%/target-newlib-errno.c \
 	%D%/target-newlib-open.c \
@@ -95,7 +96,6 @@ SIM_NEW_COMMON_OBJS = \
 	sim-profile.o \
 	sim-reason.o \
 	sim-reg.o \
-	sim-signal.o \
 	sim-stop.o \
 	sim-syscall.o \
 	sim-trace.o \
@@ -178,7 +178,7 @@ SIM_COMMON_LIBS = \
 ##
 
 ## If the local tree has a bundled copy of guile, use that.
-GUILE = $(or $(wildcard ../guile/libguile/guile),guile)
+GUILE = guile
 CGEN = "$(GUILE) -l $(cgendir)/guile.scm -s"
 CGENFLAGS = -v
 CGEN_CPU_DIR = $(cgendir)/cpu
