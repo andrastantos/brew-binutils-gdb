@@ -1,5 +1,5 @@
 /* opncls.c -- open and close a BFD.
-   Copyright (C) 1990-2025 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
 
    Written by Cygnus Support.
 
@@ -151,8 +151,7 @@ _bfd_delete_bfd (bfd *abfd)
     bfd_free_cached_info (abfd);
 
   /* The target _bfd_free_cached_info may not have done anything..  */
-  if (abfd->section_htab.memory)
-    bfd_hash_table_free (&abfd->section_htab);
+  bfd_hash_table_free (&abfd->section_htab);
   if (abfd->memory)
     objalloc_free (abfd->memory);
 
@@ -186,8 +185,7 @@ DESCRIPTION
 bool
 _bfd_free_cached_info (bfd *abfd)
 {
-  if (abfd->section_htab.memory)
-    bfd_hash_table_free (&abfd->section_htab);
+  bfd_hash_table_free (&abfd->section_htab);
 
   abfd->sections = NULL;
   abfd->section_last = NULL;
@@ -195,6 +193,7 @@ _bfd_free_cached_info (bfd *abfd)
   abfd->outsymbols = NULL;
   abfd->tdata.any = NULL;
   abfd->usrdata = NULL;
+  abfd->format = bfd_unknown;
 
   return true;
 }
@@ -489,6 +488,47 @@ bfd_openstreamr (const char *filename, const char *target, void *streamarg)
       _bfd_delete_bfd (nbfd);
       return NULL;
     }
+
+  return nbfd;
+}
+
+/*
+FUNCTION
+	bfd_openr_fake_archive
+
+SYNOPSIS
+	bfd *bfd_openr_fake_archive (bfd *fbfd);
+
+DESCRIPTION
+	Open a list of BFDs starting from @var{fbfd} as an artificial
+	archive.  Subsequent members of the archive are indicated by each
+	BFD's proxy_handle.abfd member, with the final one holding a NULL
+	pointer there.  The newly opened archive will necessarily also be
+	a thin archive as there will be member files only to refer to and
+	no containing archive file.
+*/
+
+bfd *
+bfd_openr_fake_archive (bfd *fbfd)
+{
+  bfd *abfd, *nbfd;
+
+  if (fbfd == NULL)
+    return NULL;
+
+  nbfd = _bfd_new_bfd ();
+  if (nbfd == NULL)
+    return NULL;
+
+  nbfd->xvec = fbfd->xvec;
+  bfd_set_format (nbfd, bfd_archive);
+  bfd_set_thin_archive (nbfd, true);
+  bfd_set_fake_archive (nbfd, true);
+  bfd_ardata (nbfd)->first_file.abfd = fbfd;
+  nbfd->direction = read_direction;
+
+  for (abfd = fbfd; abfd != NULL; abfd = abfd->proxy_handle.abfd)
+    abfd->my_archive = nbfd;
 
   return nbfd;
 }
@@ -1029,20 +1069,16 @@ bfd_make_readable (bfd *abfd)
   abfd->arch_info = &bfd_default_arch_struct;
 
   abfd->where = 0;
-  abfd->format = bfd_unknown;
   abfd->my_archive = NULL;
   abfd->origin = 0;
   abfd->opened_once = false;
   abfd->output_has_begun = false;
-  abfd->usrdata = NULL;
   abfd->cacheable = false;
   abfd->mtime_set = false;
 
   abfd->target_defaulted = true;
   abfd->direction = read_direction;
   abfd->symcount = 0;
-  abfd->outsymbols = 0;
-  abfd->tdata.any = 0;
   abfd->size = 0;
 
   bfd_check_format (abfd, bfd_object);

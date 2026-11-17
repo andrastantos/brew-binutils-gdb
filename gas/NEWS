@@ -1,9 +1,70 @@
 -*- text -*-
 
+Changes in 2.47:
+
+* New command line option --reloc-section-sym=[all|internal|none]
+  controls whether relocations referencing local binding symbols are adjusted
+  to use section symbols.
+
+* The aarch64 extensions TME and MPAMv2_VID have never been implemented in any
+  products.  Arm has withdrawn them from the architecture.  The assembler will
+  now warn if instructions or system registers from either extension are
+  detected during assembly.  The architecture sub-option +mpamv2 has also
+  been withdrawn as the feature no-longer has instructions to enable.
+
+* The legacy .vtable_entry and .vtable_inherit directives that were
+  needed for versions of GCC prior to gcc-3.0 (when the generic C++
+  ABI was adopted) are now considered obsolete.  They are now deprecated
+  and will be removed in a future release.
+
+* Add support for RISC-V standard extensions:
+  zalasr v1.0, svrsw60t59b v1.0, zvabd v1.0, smpmpmt v1.0,
+  zvqwdota8i, zvqwdota16i, zvfwdota16bf and zvfqwdota8f v1.0,
+  zvqwbdota8i, zvqwbdota16i, zvfwbdota16bf, zvfqwbdota8f and
+  zvfbdota32f v1.0.
+
+* Add support for RISC-V vendor extensions:
+  SpacemiT: xsmtvdot v1.0, xsmtvdotii v1.0.
+
+* Change the default architecture for H8 family from H8/300 to H8/300H.
+  Support for H8/300 was removed from gcc in 2020, making H8/300H the
+  default architecture.
+
+Changes in 2.46:
+
+* Add support for AMD Zen6 processor.
+
+* Emit an SFrame FRE with zero offsets to convey an undefined return address
+  in the SFrame stack trace format.
+
 * ELF targets can now have section entity size specified for arbitrary
   sections, using the new attribute letter 'E'.
 
 * NaCl target support is removed.
+
+* Solaris/PowerPC target support is removed.
+
+* Add support for RISC-V standard extensions:
+  sdtrig v1.0, ssstrict v1.0.
+
+* The assembler now supports generating SFrame Version 3 format.  This version
+  supports .text > 2 GiB, support for marking outermost frames, support for
+  marking signal trampolines, and support for "flexible" frames which have
+  non-SP/FP based CFA, or save FP/RA in REG among other patterns.
+
+* New command line option --gsframe-3 causes GAS to emit SFrame section in
+  version 3.  SFrame version 3 is emitted by default with the existing option
+  --gsframe.
+
+* Add support for the remaining Armv9.6 instructions, enabled by the
+  extensions '+sme-mop4', '+sme-tmop', '+ssve-bitperm' and '+ssve-fexpa'.
+
+* Add support for Armv9.7 extensions, enabled by the option `-march=armv9.7-a'
+  and extensions '+f16f32dot', '+f16f32mm', '+f16mm', '+gcie', '+lscp',
+  '+mpamv2', '+mtetc', '+sme2p3', '+sve-b16mm', '+sve2p3' and '+tlbid'.
+
+* Add support for Arm future technologies POE2 and vMTE, enabled by the
+  extensions '+poe2', '+tev' and '+mops-go'.
 
 Changes in 2.45:
 
@@ -1322,7 +1383,7 @@ Changes in 1.93.01:
   of new CPUs and formats, lots of bugs fixed.
 
 
-Copyright (C) 2012-2025 Free Software Foundation, Inc.
+Copyright (C) 2012-2026 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

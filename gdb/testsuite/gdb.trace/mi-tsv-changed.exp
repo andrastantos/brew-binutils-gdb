@@ -1,4 +1,4 @@
-# Copyright 2012-2025 Free Software Foundation, Inc.
+# Copyright 2012-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@ require gdb_trace_common_supports_arch
 if { [gdb_compile "$srcdir/$subdir/$srcfile" $binfile \
 	  executable {debug nowarnings}] != "" } {
     untested "failed to compile"
-    return -1
+    return
 }
 
 # Test notifications on creating, deleting and modifying TSV.
@@ -36,7 +36,7 @@ proc test_create_delete_modify_tsv { } {
 	global srcdir subdir
 	global mi_gdb_prompt
 
-	if [mi_gdb_start] {
+	if {[mi_gdb_start]} {
 	    return
 	}
 	mi_gdb_load ${binfile}
@@ -67,11 +67,11 @@ proc test_create_delete_modify_tsv { } {
 	# Test target supports tracepoints or not.
 	clean_restart $testfile
 
-	if ![runto_main] {
+	if {![runto_main]} {
 	    return -1
 	}
 
-	if ![gdb_target_supports_trace] {
+	if {![gdb_target_supports_trace]} {
 	    unsupported "current target does not support trace"
 	    return -1
 	}
@@ -201,12 +201,12 @@ proc test_upload_tsv { } {
 	    }
 	}
 
-	if $tsv1_created {
+	if {$tsv1_created} {
 	    pass "tsv1 created"
 	} else {
 	    fail "tsv1 created"
 	}
-	if $tsv2_created {
+	if {$tsv2_created} {
 	    pass "tsv2 created"
 	} else {
 	    fail "tsv2 created"
@@ -222,13 +222,13 @@ proc test_upload_tsv { } {
 
 clean_restart $testfile
 
-if ![runto_main] {
-    return -1
+if {![runto_main]} {
+    return
 }
 
-if ![gdb_target_supports_trace] {
+if {![gdb_target_supports_trace]} {
     unsupported "current target does not support trace"
-    return -1
+    return
 }
 
 gdb_exit

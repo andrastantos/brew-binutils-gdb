@@ -1,4 +1,4 @@
-# Copyright 2009-2025 Free Software Foundation, Inc.
+# Copyright 2009-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -45,15 +45,15 @@ set srcfile3 ${exec3}.c
 set binfile3 [standard_output_file ${exec3}]
 
 if { [build_executable ${testfile}.exp ${exec1} "${srcfile1}" {debug}] == -1 } {
-    return -1
+    return
 }
 
 if { [build_executable ${testfile}.exp ${exec2} "${srcfile2}" {debug}] == -1 } {
-    return -1
+    return
 }
 
 if { [build_executable ${testfile}.exp ${exec3} "${srcfile3}" {debug}] == -1 } {
-    return -1
+    return
 }
 
 # Start two inferiors, place a checkpoint on inferior 2, but switch
@@ -781,7 +781,7 @@ with_test_prefix "background execution" {
 	gdb_test "info checkpoints" \
 	    [multi_line \
 		"$checkpoints_header_re" \
-		"\\* 1\\.0 y +$proc_re +at $::hex,.*" \
+		"\\* 1\\.0 y +$proc_re +at $::hex.*" \
 		"  1\\.1 n +$proc_re +at $::hex, file.*?$hello_c.*?" \
 		"  2\\.0 y +$proc_re +at $::hex, file.*?$goodbye_c.*?" \
 		"  2\\.1 n +$proc_re +at $::hex, file.*?$goodbye_c.*?"]
@@ -792,7 +792,7 @@ with_test_prefix "background execution" {
 	gdb_test "info checkpoints" \
 	    [multi_line \
 		"$checkpoints_header_re" \
-		"  1\\.0 y +$proc_re +at $::hex,.*" \
+		"  1\\.0 y +$proc_re +at $::hex.*" \
 		"  1\\.1 n +$proc_re +at $::hex, file.*?$hello_c.*?" \
 		"  2\\.0 n +$proc_re +at $::hex, file.*?$goodbye_c.*?" \
 		"\\* 2\\.1 y +$proc_re +at $::hex, file.*?$goodbye_c.*?"]

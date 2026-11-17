@@ -1,5 +1,5 @@
 /* Support for the generic parts of COFF, for BFD.
-   Copyright (C) 1990-2025 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -596,12 +596,12 @@ _bfd_coff_internal_syment_name (bfd *abfd,
    value must be INTERNAL_RELOCS.  The function returns NULL on error.  */
 
 struct internal_reloc *
-_bfd_coff_read_internal_relocs (bfd *abfd,
-				asection *sec,
-				bool cache,
-				bfd_byte *external_relocs,
-				bool require_internal,
-				struct internal_reloc *internal_relocs)
+bfd_coff_read_internal_relocs (bfd *abfd,
+			       asection *sec,
+			       bool cache,
+			       bfd_byte *external_relocs,
+			       bool require_internal,
+			       struct internal_reloc *internal_relocs)
 {
   bfd_size_type relsz;
   bfd_byte *free_external = NULL;
@@ -1259,9 +1259,17 @@ coff_write_alien_symbol (bfd *abfd,
     }
   else
     {
+      asection *isec = symbol->section;
+
       native->u.syment.n_scnum = output_section->target_index;
-      native->u.syment.n_value = (symbol->value
-				  + symbol->section->output_offset);
+      native->u.syment.n_value = symbol->value;
+
+      if (isec->sec_info_type == SEC_INFO_TYPE_MERGE
+	  && !(symbol->flags & (BSF_SECTION_SYM | BSF_MERGE_RESOLVED)))
+	native->u.syment.n_value =
+	  _bfd_merged_section_offset (abfd, &isec, symbol->value);
+
+      native->u.syment.n_value += isec->output_offset;
       if (! obj_pe (abfd))
 	native->u.syment.n_value += output_section->vma;
 
@@ -1863,7 +1871,7 @@ coff_get_normalized_symtab (bfd *abfd)
   const char *string_table = NULL;
   asection * debug_sec = NULL;
   char *debug_sec_data = NULL;
-  bfd_size_type size;
+  size_t size;
 
   if (obj_raw_syments (abfd) != NULL)
     return obj_raw_syments (abfd);
@@ -1871,12 +1879,14 @@ coff_get_normalized_symtab (bfd *abfd)
   if (! _bfd_coff_get_external_symbols (abfd))
     return NULL;
 
-  size = obj_raw_syment_count (abfd);
   /* Check for integer overflow.  */
-  if (size > (bfd_size_type) -1 / sizeof (combined_entry_type))
-    return NULL;
-  size *= sizeof (combined_entry_type);
-  internal = (combined_entry_type *) bfd_zalloc (abfd, size);
+  if (_bfd_mul_overflow (obj_raw_syment_count (abfd),
+			 sizeof (combined_entry_type), &size))
+    {
+      bfd_set_error (bfd_error_file_too_big);
+      return NULL;
+    }
+  internal = bfd_zalloc (abfd, size);
   if (internal == NULL && size != 0)
     return NULL;
 
@@ -1903,7 +1913,17 @@ coff_get_normalized_symtab (bfd *abfd)
 
       /* PR 17512: Prevent buffer overrun.  */
       if (sym->u.syment.n_numaux > ((raw_end - 1) - raw_src) / symesz)
-	return NULL;
+	{
+	  char buf[SYMNMLEN + 1];
+	  const char *name;
+
+	  name = _bfd_coff_internal_syment_name (abfd, &sym->u.syment, buf);
+	  _bfd_error_handler
+	    /* xgettext:c-format */
+	    (_("%pB: class %d symbol '%s' has missing aux entries"),
+	     abfd, sym->u.syment.n_sclass, name ? name : "");
+	  return NULL;
+	}
 
       for (i = 0; i < sym->u.syment.n_numaux; i++)
 	{
@@ -2864,8 +2884,8 @@ init_reloc_cookie_rels (struct coff_reloc_cookie *cookie,
       return true;
     }
 
-  cookie->rels = _bfd_coff_read_internal_relocs (abfd, sec, false, NULL,
-						 0, NULL);
+  cookie->rels = bfd_coff_read_internal_relocs (abfd, sec, false, NULL,
+						false, NULL);
 
   if (cookie->rels == NULL)
     return false;
@@ -2945,9 +2965,10 @@ _bfd_coff_gc_mark_hook (asection *sec,
 	      /* PE weak externals.  A weak symbol may include an auxiliary
 		 record indicating that if the weak symbol is not resolved,
 		 another external symbol is used instead.  */
-	      struct coff_link_hash_entry *h2 =
-		h->auxbfd->tdata.coff_obj_data->sym_hashes
-		[h->aux->x_sym.x_tagndx.u32];
+	      struct coff_link_hash_entry *h2 = NULL;
+	      unsigned long symndx2 = h->aux->x_sym.x_tagndx.u32;
+	      if (symndx2 < obj_raw_syment_count (h->auxbfd))
+		h2 = obj_coff_sym_hashes (h->auxbfd)[symndx2];
 
 	      if (h2 && h2->root.type != bfd_link_hash_undefined)
 		return  h2->root.u.def.section;
@@ -2974,8 +2995,11 @@ _bfd_coff_gc_mark_rsec (struct bfd_link_info *info, asection *sec,
 			struct coff_reloc_cookie *cookie)
 {
   struct coff_link_hash_entry *h;
+  unsigned long rsym = cookie->rel->r_symndx;
 
-  h = cookie->sym_hashes[cookie->rel->r_symndx];
+  if (rsym >= obj_raw_syment_count (cookie->abfd))
+    return NULL;
+  h = cookie->sym_hashes[rsym];
   if (h != NULL)
     {
       while (h->root.type == bfd_link_hash_indirect
@@ -2987,7 +3011,7 @@ _bfd_coff_gc_mark_rsec (struct bfd_link_info *info, asection *sec,
 
   return (*gc_mark_hook) (sec, info, cookie->rel, NULL,
 			  &(cookie->symbols
-			    + obj_convert (sec->owner)[cookie->rel->r_symndx])->native->u.syment);
+			    + obj_convert (sec->owner)[rsym])->native->u.syment);
 }
 
 static bool _bfd_coff_gc_mark
@@ -3238,7 +3262,7 @@ _bfd_coff_gc_keep (struct bfd_link_info *info)
 /* Do mark and sweep of unused sections.  */
 
 bool
-bfd_coff_gc_sections (bfd *abfd ATTRIBUTE_UNUSED, struct bfd_link_info *info)
+_bfd_coff_gc_sections (bfd *abfd ATTRIBUTE_UNUSED, struct bfd_link_info *info)
 {
   bfd *sub;
 
@@ -3288,7 +3312,7 @@ bfd_coff_gc_sections (bfd *abfd ATTRIBUTE_UNUSED, struct bfd_link_info *info)
 /* Return name used to identify a comdat group.  */
 
 const char *
-bfd_coff_group_name (bfd *abfd, const asection *sec)
+_bfd_coff_group_name (bfd *abfd, const asection *sec)
 {
   struct coff_comdat_info *ci = bfd_coff_get_comdat_section (abfd, sec);
   if (ci != NULL)

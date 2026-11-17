@@ -1,6 +1,6 @@
 /* Native-dependent code for modern i386 BSD's.
 
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -269,7 +269,7 @@ INIT_GDB_FILE (i386bsd_nat)
     {
       warning (_("\
 offsetof (struct sigcontext, sc_pc) yields %d instead of %d.\n\
-Please report this to <bug-gdb@gnu.org>."), 
+Please report this to <bug-gdb@gnu.org>."),
 	       offset, SC_PC_OFFSET);
     }
 

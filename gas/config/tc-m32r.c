@@ -1,5 +1,5 @@
 /* tc-m32r.c -- Assembler for the Renesas M32R.
-   Copyright (C) 1996-2025 Free Software Foundation, Inc.
+   Copyright (C) 1996-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -1967,11 +1967,11 @@ m32r_cgen_record_fixup_exp (fragS *frag,
 
     case BFD_RELOC_M32R_GOTOFF:
       if (fixP->fx_cgen.opinfo == BFD_RELOC_M32R_HI16_SLO)
-        r_type = BFD_RELOC_M32R_GOTOFF_HI_SLO;
+	r_type = BFD_RELOC_HI16_S_GOTOFF;
       else if (fixP->fx_cgen.opinfo == BFD_RELOC_M32R_HI16_ULO)
-        r_type = BFD_RELOC_M32R_GOTOFF_HI_ULO;
+	r_type = BFD_RELOC_HI16_GOTOFF;
       else if (fixP->fx_cgen.opinfo == BFD_RELOC_M32R_LO16)
-        r_type = BFD_RELOC_M32R_GOTOFF_LO;
+	r_type = BFD_RELOC_LO16_GOTOFF;
       break;
 
     case BFD_RELOC_M32R_26_PLTREL:

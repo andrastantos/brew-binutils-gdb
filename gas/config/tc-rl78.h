@@ -1,5 +1,5 @@
 /* tc-rl78.h - header file for Renesas RL78
-   Copyright (C) 2011-2025 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -45,9 +45,6 @@ extern int target_little_endian;
 
 /* .-foo gets turned into PC relative relocs.  */
 #define DIFF_EXPR_OK
-
-#define md_end rl78_md_end
-extern void rl78_md_end (void);
 
 #define md_relax_frag rl78_relax_frag
 extern int rl78_relax_frag (segT, fragS *, long);

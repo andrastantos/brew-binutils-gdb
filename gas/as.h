@@ -1,5 +1,5 @@
 /* as.h - global header file
-   Copyright (C) 1987-2025 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -118,14 +118,6 @@ void *mempcpy(void *, const void *, size_t);
 #define obstack_chunk_free xfree
 
 #define xfree free
-
-#if GCC_VERSION >= 7000
-#define gas_mul_overflow(a, b, res) __builtin_mul_overflow (a, b, res)
-#else
-/* Assumes unsigned values.  Careful!  Args evaluated multiple times.  */
-#define gas_mul_overflow(a, b, res) \
-  ((*res) = (a), (*res) *= (b), (b) != 0 && (*res) / (b) != (a))
-#endif
 
 #include "asintl.h"
 
@@ -380,6 +372,13 @@ enum gen_sframe_option
 /* State of the setting for SFrame section creation.  */
 COMMON enum gen_sframe_option flag_gen_sframe;
 
+enum gen_sframe_version
+{
+  GEN_SFRAME_VERSION_3 = 3,
+};
+
+COMMON enum gen_sframe_version flag_gen_sframe_version;
+
 /* name of emitted object file */
 COMMON const char *out_file_name;
 
@@ -405,6 +404,16 @@ enum multibyte_input_handling
   multibyte_warn_syms
 };
 COMMON enum multibyte_input_handling multibyte_handling;
+
+/* Controls whether relocations referencing local symbols are converted
+   to use section symbols.  */
+enum reloc_section_sym_type
+{
+  reloc_section_sym_all = 0,
+  reloc_section_sym_internal,
+  reloc_section_sym_none
+};
+COMMON enum reloc_section_sym_type flag_reloc_section_sym;
 
 /* TRUE if we should produce a listing.  */
 extern int listing;
@@ -471,10 +480,13 @@ typedef struct _pseudo_type pseudo_typeS;
 #define PRINTF_LIKE(FCN) \
   void FCN (const char *format, ...) \
     __attribute__ ((__format__ (__printf__, 1, 2)))
+#define PRINTF_INDENT_LIKE(FCN) \
+  void FCN (unsigned int indent, const char *format, ...) \
+    __attribute__ ((__format__ (__printf__, 2, 3)))
 #define PRINTF_WHERE_LIKE(FCN) \
   void FCN (const char *file, unsigned int line, const char *format, ...) \
     __attribute__ ((__format__ (__printf__, 3, 4)))
-#define PRINTF_INDENT_LIKE(FCN) \
+#define PRINTF_WHERE_INDENT_LIKE(FCN) \
   void FCN (const char *file, unsigned int line, unsigned int indent, \
 	    const char *format, ...) \
     __attribute__ ((__format__ (__printf__, 4, 5)))
@@ -482,13 +494,15 @@ typedef struct _pseudo_type pseudo_typeS;
 #else /* __GNUC__ < 2 || defined(VMS) */
 
 #define PRINTF_LIKE(FCN)	void FCN (const char *format, ...)
+#define PRINTF_INDENT_LIKE(FCN)	void FCN (unsigned int indent, \
+					  const char *format, ...)
 #define PRINTF_WHERE_LIKE(FCN)	void FCN (const char *file, \
 					  unsigned int line, \
 					  const char *format, ...)
-#define PRINTF_INDENT_LIKE(FCN)	void FCN (const char *file, \
-					  unsigned int line, \
-					  unsigned int indent, \
-					  const char *format, ...)
+#define PRINTF_WHERE_INDENT_LIKE(FCN) void FCN (const char *file, \
+						unsigned int line, \
+						unsigned int indent, \
+						const char *format, ...)
 
 #endif /* __GNUC__ < 2 || defined(VMS) */
 
@@ -496,9 +510,10 @@ PRINTF_LIKE (as_bad);
 PRINTF_LIKE (as_fatal) ATTRIBUTE_NORETURN;
 PRINTF_LIKE (as_tsktsk);
 PRINTF_LIKE (as_warn);
+PRINTF_INDENT_LIKE (as_info);
 PRINTF_WHERE_LIKE (as_bad_where);
 PRINTF_WHERE_LIKE (as_warn_where);
-PRINTF_INDENT_LIKE (as_info_where);
+PRINTF_WHERE_INDENT_LIKE (as_info_where);
 
 void   set_identify_name (const char *);
 void   as_abort (const char *, int, const char *) ATTRIBUTE_NORETURN;
@@ -701,7 +716,5 @@ COMMON int flag_sectname_subst;
 #else
 #define SEC_OCTETS 0
 #endif
-
-#define POISON_BFD_BOOLEAN 1
 
 #endif /* GAS */

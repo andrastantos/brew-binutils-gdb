@@ -1,4 +1,4 @@
-#   Copyright (C) 1994-2025 Free Software Foundation, Inc.
+#   Copyright (C) 1994-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -268,6 +268,9 @@ if [is_remote host] {
 }
 
 set got [binutils_run $OBJCOPY "-I binary -i 4 -b 0 --interleave-width 2 ${sequence_file} ${copyfile}"]
+
+file delete sequence_file
+remote_file host delete $sequence_file
 
 if ![string equal "" $got] then {
     fail "objcopy -i --interleave-width"
@@ -1329,6 +1332,7 @@ if [is_elf_format] {
 	run_dump_test "note-6-32"
     }
     run_dump_test "note-5"
+    run_dump_test "object-attr-v2"
 }
 
 run_dump_test "copy-2"
@@ -1552,7 +1556,6 @@ run_dump_test "pr23633"
 run_dump_test "set-section-alignment"
 
 setup_xfail "hppa*-*-*"
-setup_xfail "spu-*-*"
 clear_xfail "hppa*64*-*-hpux*" "hppa*-*-linux*" "hppa*-*-lites*"
 clear_xfail "hppa*-*-*n*bsd*" "hppa*-*-*elf*"
 if { [istarget pdp11-*-*] } {
@@ -1564,6 +1567,11 @@ if { [istarget pdp11-*-*] } {
 set ldflags "-T$srcdir/$subdir/pr25662.ld"
 if { [istarget *-*-cygwin] || [istarget *-*-mingw*] } {
    append ldflags " --disable-reloc-section"
+}
+
+# Append LDFLAGS for milli.a archive
+if { [istarget hppa*64*-*-hpux*] } {
+   append ldflags " $LDFLAGS"
 }
 
 #xcoff doesn't support arbitrary sections
@@ -1602,3 +1610,49 @@ proc objcopy_tek2bin {} {
 }
 
 objcopy_tek2bin
+
+# Test objcopy -I binary and --binary-symbol-prefix
+
+proc binary_symbol {name file args sym_prefix} {
+    global OBJCOPY
+    global NM
+    global NMFLAGS
+    global binutils_run_status
+
+    set test "binary symbol ($name)"
+
+    # detect a valid target, take the first supported
+    set inf [split [binutils_run $OBJCOPY "--info"] \n]
+    set target [lindex $inf 1]
+    set arch [string trim [lindex $inf 3]]
+
+    set out tmpdir/binary_${name}.o
+    set got [binutils_run $OBJCOPY "-I binary -B $arch -O $target $args $file $out"]
+    if { $binutils_run_status != 0 || ![string equal "" $got] } {
+	fail $test
+	return
+    }
+
+    set got [binutils_run $NM "-a $NMFLAGS $out"]
+    if { $binutils_run_status != 0 } {
+	fail $test
+	return
+    }
+
+    set syms [list {D start} {D end} {A size}]
+    foreach e $syms {
+	set typ [lindex $e 0]
+	set sym [lindex $e 1]
+	set exp "^\[0-9a-fA-F\]+ +${typ} +${sym_prefix}_${sym}$"
+	if ![regexp -line $exp $got] {
+	    send_log "failed to match: $exp\n"
+	    fail $test
+	    return
+	}
+    }
+
+    pass $test
+}
+
+binary_symbol implicit $srcdir/$subdir/version.s "" _binary_.*[regsub -all {[^0-9a-zA-Z]} $subdir/version.s _]
+binary_symbol explicit $srcdir/$subdir/version.s "--binary-symbol-prefix symbol1" symbol1

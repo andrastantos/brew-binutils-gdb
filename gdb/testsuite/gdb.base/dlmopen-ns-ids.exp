@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 #
-# Copyright 2025 Free Software Foundation, Inc.
+# Copyright 2025-2026 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -65,7 +65,7 @@ proc get_info_shared {} {
 	    set ns $expect_out(3,string)
 	    set name $expect_out(4,string)
 
-    	    lappend libs [list $from $to $ns $name]
+	    lappend libs [list $from $to $ns $name]
 	    exp_continue
 	}
 
@@ -126,8 +126,7 @@ proc get_first_so_ns {} {
 # Run the tests relating to the command "info sharedlibrary", to
 # verify that the namespace ID is consistent.
 proc test_info_shared {} {
-    clean_restart
-    gdb_load $::binfile
+    clean_restart $::testfile
 
     if { ![runto_main] } {
 	return
@@ -177,8 +176,7 @@ proc test_info_shared {} {
 # Also tests that the namespace ID is only printed at the correct
 # times.
 proc_with_prefix test_conv_vars {} {
-    clean_restart
-    gdb_load $::binfile
+    clean_restart $::testfile
 
     gdb_test "print \$_linker_namespace_count" "0" \
 	"0 namespace before starting inferior"
@@ -194,7 +192,7 @@ proc_with_prefix test_conv_vars {} {
     gdb_test "print \$_linker_namespace" ".* = 0" \
 	"Still in the default namespace"
 
-    gdb_breakpoint "inc" allow-pending
+    gdb_breakpoint "inc" -allow-pending
     gdb_breakpoint [gdb_get_line_number "TAG: first dlclose"]
 
     foreach_with_prefix dl {3 2 1} {
@@ -221,8 +219,7 @@ proc_with_prefix test_conv_vars {} {
     # Restarting GDB so that we can test setting a breakpoint
     # using the convenience variable, while a proper bp syntax
     # isn't implemented for namespaces
-    clean_restart
-    gdb_load $::binfile
+    clean_restart $::testfile
     if {![runto_main]} {
 	return
     }
@@ -238,8 +235,7 @@ proc_with_prefix test_conv_vars {} {
 
 # Run several tests relating to the command "info namespaces".
 proc test_info_linker_namespaces {} {
-    clean_restart
-    gdb_load $::binfile
+    clean_restart $::testfile
 
     # Check that "info linker-namespaces" while the inferior is not running
     # doesn't crash.

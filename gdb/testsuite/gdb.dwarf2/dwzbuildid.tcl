@@ -1,4 +1,4 @@
-# Copyright 2013-2025 Free Software Foundation, Inc.
+# Copyright 2013-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -51,11 +51,12 @@ proc write_just_debugaltlink {filename dwzname buildid} {
 	# Only the DWARF reader checks .gnu_debugaltlink, so make sure
 	# there is a bit of DWARF in here.
 	cu { label cu_start } {
-	    compile_unit {{language @DW_LANG_C}} {
+	    compile_unit {
+		DW_AT_language @DW_LANG_C
+	    } {
 	    }
 	}
 	aranges {} cu_start {
-	    arange {} 0 0
 	}
     }
 }
@@ -64,7 +65,7 @@ proc write_just_debugaltlink {filename dwzname buildid} {
 proc write_dwarf_file {filename buildid {value 99}} {
     set asm_file [standard_output_file $filename]
 
-    Dwarf::assemble $asm_file {
+    Dwarf::assemble [list filename $asm_file add_dummy_cus 0] {
 	declare_labels int_label int_label2
 
 	upvar buildid buildid
@@ -77,23 +78,24 @@ proc write_dwarf_file {filename buildid {value 99}} {
 	}
 
 	cu { label cu_start } {
-	    compile_unit {{language @DW_LANG_C}} {
+	    compile_unit {
+		DW_AT_language @DW_LANG_C
+	    } {
 		int_label2: base_type {
-		    {name int}
-		    {byte_size 4 sdata}
-		    {encoding @DW_ATE_signed}
+		    DW_AT_name int
+		    DW_AT_byte_size 4 sdata
+		    DW_AT_encoding @DW_ATE_signed
 		}
 
 		constant {
-		    {name the_int}
-		    {type :$int_label2}
-		    {const_value $value data1}
+		    DW_AT_name the_int
+		    DW_AT_type :$int_label2
+		    DW_AT_const_value $value data1
 		}
 	    }
 	}
 
 	aranges {} cu_start {
-	    arange {} 0 0
 	}
     }
 }

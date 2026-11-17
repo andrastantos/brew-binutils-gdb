@@ -1,5 +1,5 @@
 /* MI Command Set for GDB, the GNU debugger.
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -26,7 +26,7 @@
 
 /* MI command table (built at run time). */
 
-static gdb::unordered_map<std::string, mi_command_up> mi_cmd_table;
+static gdb::unordered_string_map<mi_command_up> mi_cmd_table;
 
 /* MI command with a pure MI implementation.  */
 

@@ -1,4 +1,4 @@
-/* Copyright (C) 2013-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2013-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,6 +23,7 @@
 #include "symtab.h"
 #include "xcoffread.h"
 #include "observable.h"
+#include "cli/cli-style.h"
 
 /* solib_ops for AIX systems.  */
 
@@ -96,13 +97,7 @@ static const registry<inferior>::key<solib_aix_inferior_data>
 static struct solib_aix_inferior_data *
 get_solib_aix_inferior_data (struct inferior *inf)
 {
-  struct solib_aix_inferior_data *data;
-
-  data = solib_aix_inferior_data_handle.get (inf);
-  if (data == NULL)
-    data = solib_aix_inferior_data_handle.emplace (inf);
-
-  return data;
+  return &solib_aix_inferior_data_handle.try_emplace (inf);
 }
 
 #if !defined(HAVE_LIBEXPAT)
@@ -173,7 +168,7 @@ library_list_start_list (struct gdb_xml_parser *parser,
   char *version
     = (char *) xml_find_attribute (attributes, "version")->value.get ();
 
-  if (strcmp (version, "1.0") != 0)
+  if (!streq (version, "1.0"))
     gdb_xml_error (parser,
 		   _("Library list has unsupported version \"%s\""),
 		   version);
@@ -335,7 +330,7 @@ aix_solib_ops::relocate_section_addresses (solib &so,
   const char *section_name = bfd_section_name (bfd_sect);
   auto *info = gdb::checked_static_cast<lm_info_aix *> (so.lm_info.get ());
 
-  if (strcmp (section_name, ".text") == 0)
+  if (streq (section_name, ".text"))
     {
       sec->addr = info->text_addr;
       sec->endaddr = sec->addr + info->text_size;
@@ -344,12 +339,12 @@ aix_solib_ops::relocate_section_addresses (solib &so,
 	 XCOFF headers, so we need to adjust by this much.  */
       sec->addr += bfd_sect->filepos;
     }
-  else if (strcmp (section_name, ".data") == 0)
+  else if (streq (section_name, ".data"))
     {
       sec->addr = info->data_addr;
       sec->endaddr = sec->addr + info->data_size;
     }
-  else if (strcmp (section_name, ".bss") == 0)
+  else if (streq (section_name, ".bss"))
     {
       /* The information provided by the loader does not include
 	 the address of the .bss section, but we know that it gets
@@ -380,13 +375,13 @@ aix_solib_ops::relocate_section_addresses (solib &so,
 /* Compute and return the OBJFILE's section_offset array, using
    the associated loader info (INFO).  */
 
-static section_offsets
+static std::vector<CORE_ADDR>
 solib_aix_get_section_offsets (struct objfile *objfile,
 			       lm_info_aix *info)
 {
   bfd *abfd = objfile->obfd.get ();
 
-  section_offsets offsets (objfile->section_offsets.size ());
+  std::vector<CORE_ADDR> offsets (objfile->section_offsets.size ());
 
   /* .text */
 
@@ -451,8 +446,8 @@ aix_solib_ops::create_inferior_hook (int from_tty) const
   if (current_program_space->symfile_object_file != NULL)
     {
       objfile *objf = current_program_space->symfile_object_file;
-      section_offsets offsets = solib_aix_get_section_offsets (objf,
-							       &exec_info);
+      std::vector<CORE_ADDR> offsets
+	= solib_aix_get_section_offsets (objf, &exec_info);
 
       objfile_relocate (objf, offsets);
     }
@@ -495,10 +490,8 @@ aix_solib_ops::current_sos () const
 	}
 
       /* Add it to the list.  */
-      auto &new_solib = sos.emplace_back (*this);
-      new_solib.original_name = so_name;
-      new_solib.name = so_name;
-      new_solib.lm_info = std::make_unique<lm_info_aix> (info);
+      sos.emplace_back (std::make_unique<lm_info_aix> (info), so_name, so_name,
+			*this);
     }
 
   return sos;
@@ -548,18 +541,20 @@ aix_solib_ops::bfd_open (const char *pathname) const
 						found_file));
   if (archive_bfd == NULL)
     {
-      warning (_("Could not open `%s' as an executable file: %s"),
-	       filename.c_str (), bfd_errmsg (bfd_get_error ()));
+      warning (_("Could not open `%ps' as an executable file: %s"),
+	       styled_string (file_name_style.style (), filename.c_str ()),
+	       bfd_errmsg (bfd_get_error ()));
       return NULL;
     }
 
-  if (bfd_check_format (archive_bfd.get (), bfd_object))
+  if (gdb_bfd_check_format (archive_bfd.get (), bfd_object))
     return archive_bfd;
 
-  if (! bfd_check_format (archive_bfd.get (), bfd_archive))
+  if (! gdb_bfd_check_format (archive_bfd.get (), bfd_archive))
     {
-      warning (_("\"%s\": not in executable format: %s."),
-	       filename.c_str (), bfd_errmsg (bfd_get_error ()));
+      warning (_("\"%ps\": not in executable format: %s."),
+	       styled_string (file_name_style.style (), filename.c_str ()),
+	       bfd_errmsg (bfd_get_error ()));
       return NULL;
     }
 
@@ -595,10 +590,11 @@ aix_solib_ops::bfd_open (const char *pathname) const
       return NULL;
     }
 
-  if (! bfd_check_format (object_bfd.get (), bfd_object))
+  if (! gdb_bfd_check_format (object_bfd.get (), bfd_object))
     {
-      warning (_("%s(%s): not in object format: %s."),
-	       filename.c_str (), member_name.c_str (),
+      warning (_("%ps(%s): not in object format: %s."),
+	       styled_string (file_name_style.style (), filename.c_str ()),
+	       member_name.c_str (),
 	       bfd_errmsg (bfd_get_error ()));
       return NULL;
     }
@@ -623,7 +619,7 @@ static struct obj_section *
 data_obj_section_from_objfile (struct objfile *objfile)
 {
   for (obj_section &osect : objfile->sections ())
-    if (strcmp (bfd_section_name (osect.the_bfd_section), ".data") == 0)
+    if (streq (bfd_section_name (osect.the_bfd_section), ".data"))
       return &osect;
 
   return NULL;

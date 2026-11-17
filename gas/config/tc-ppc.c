@@ -1,5 +1,5 @@
 /* tc-ppc.c -- Assemble for the PowerPC or POWER (RS/6000)
-   Copyright (C) 1994-2025 Free Software Foundation, Inc.
+   Copyright (C) 1994-2026 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
 
    This file is part of GAS, the GNU Assembler.
@@ -123,6 +123,10 @@ static void ppc_weak (int);
 static void ppc_GNU_visibility (int);
 #endif
 
+/* This string holds the chars that always start a comment.  If the
+   pre-processor is disabled, these aren't very useful.  */
+const char ppc_comment_chars[] = "#";
+
 #ifdef OBJ_ELF
 static void ppc_elf_rdata (int);
 static void ppc_elf_lcomm (int);
@@ -133,23 +137,6 @@ static void ppc_elf_gnu_attribute (int);
 
 /* Generic assembler global variables which must be defined by all
    targets.  */
-
-#ifdef OBJ_ELF
-/* This string holds the chars that always start a comment.  If the
-   pre-processor is disabled, these aren't very useful.  The macro
-   tc_comment_chars points to this.  We use this, rather than the
-   usual comment_chars, so that we can switch for Solaris conventions.  */
-static const char ppc_solaris_comment_chars[] = "#!";
-static const char ppc_eabi_comment_chars[] = "#";
-
-#ifdef TARGET_SOLARIS_COMMENT
-const char *ppc_comment_chars = ppc_solaris_comment_chars;
-#else
-const char *ppc_comment_chars = ppc_eabi_comment_chars;
-#endif
-#else
-const char comment_chars[] = "#";
-#endif
 
 /* Characters which start a comment at the beginning of a line.  */
 const char line_comment_chars[] = "#";
@@ -351,7 +338,6 @@ static const struct pd_reg pre_defined_registers[] =
   { "ctr", 9, PPC_OPERAND_SPR },
   { "dar", 19, PPC_OPERAND_SPR },
   { "dec", 22, PPC_OPERAND_SPR },
-  { "dsisr", 18, PPC_OPERAND_SPR },
 
   /* Dense Math Registers.  */
   { "dm0", 0, PPC_OPERAND_DMR },
@@ -362,6 +348,8 @@ static const struct pd_reg pre_defined_registers[] =
   { "dm5", 5, PPC_OPERAND_DMR },
   { "dm6", 6, PPC_OPERAND_DMR },
   { "dm7", 7, PPC_OPERAND_DMR },
+
+  { "dsisr", 18, PPC_OPERAND_SPR },
 
   /* Floating point registers */
   { "f.0", 0, PPC_OPERAND_FPR },
@@ -833,11 +821,16 @@ md_operand (expressionS *expressionP)
   char *start;
   char c;
 
-  if (input_line_pointer[0] != '%' || !ISALPHA (input_line_pointer[1]))
+  if (input_line_pointer[0] != '%')
     return;
 
+  if (!ISALPHA (*++input_line_pointer))
+    {
+      expressionP->X_op = O_illegal;
+      return;
+    }
+
   start = input_line_pointer;
-  ++input_line_pointer;
 
   c = get_symbol_name (&name);
   reg = reg_name_search (pre_defined_registers,
@@ -851,7 +844,10 @@ md_operand (expressionS *expressionP)
       expressionP->X_md = reg->flags;
     }
   else
-    input_line_pointer = start;
+    {
+      expressionP->X_op = O_illegal;
+      input_line_pointer = start;
+    }
 }
 
 /* Whether to do the special parsing.  */
@@ -993,15 +989,6 @@ static enum { SHLIB_NONE, SHLIB_PIC, SHLIB_MRELOCATABLE } shlib = SHLIB_NONE;
 
 /* Flags to set in the elf header.  */
 static flagword ppc_flags = 0;
-
-/* Whether this is Solaris or not.  */
-#ifdef TARGET_SOLARIS_COMMENT
-#define SOLARIS_P true
-#else
-#define SOLARIS_P false
-#endif
-
-static bool msolaris = SOLARIS_P;
 #endif
 
 #ifdef OBJ_XCOFF
@@ -1247,17 +1234,6 @@ md_parse_option (int c, const char *arg)
 	  set_target_endian = 1;
 	}
 
-      else if (strcmp (arg, "solaris") == 0)
-	{
-	  msolaris = true;
-	  ppc_comment_chars = ppc_solaris_comment_chars;
-	}
-
-      else if (strcmp (arg, "no-solaris") == 0)
-	{
-	  msolaris = false;
-	  ppc_comment_chars = ppc_eabi_comment_chars;
-	}
       else if (strcmp (arg, "spe2") == 0)
 	{
 	  ppc_cpu |= PPC_OPCODE_SPE2;
@@ -1444,10 +1420,6 @@ PowerPC options:\n"));
   fprintf (stream, _("\
 -mbig, -mbig-endian, -be\n\
                         generate code for a big endian machine\n"));
-  fprintf (stream, _("\
--msolaris               generate code for Solaris\n"));
-  fprintf (stream, _("\
--mno-solaris            do not generate code for Solaris\n"));
   fprintf (stream, _("\
 -K PIC                  set EF_PPC_RELOCATABLE_LIB in ELF flags\n"));
   fprintf (stream, _("\
@@ -1891,7 +1863,7 @@ md_begin (void)
 
 #ifdef OBJ_ELF
   /* Set the ELF flags if desired.  */
-  if (ppc_flags && !msolaris)
+  if (ppc_flags)
     bfd_set_private_flags (stdoutput, ppc_flags);
 #endif
 
@@ -1920,6 +1892,8 @@ md_begin (void)
 void
 ppc_md_end (void)
 {
+  if (!ENABLE_LEAK_CHECK)
+    return;
   if (ppc_hash)
     {
       htab_delete (ppc_hash);
@@ -2125,8 +2099,8 @@ ppc_elf_suffix (char **str_p, expressionS *exp_p)
     MAP ("plt@l",		BFD_RELOC_LO16_PLTOFF),
     MAP ("plt@h",		BFD_RELOC_HI16_PLTOFF),
     MAP ("plt@ha",		BFD_RELOC_HI16_S_PLTOFF),
-    MAP ("copy",		BFD_RELOC_PPC_COPY),
-    MAP ("globdat",		BFD_RELOC_PPC_GLOB_DAT),
+    MAP ("copy",		BFD_RELOC_COPY),
+    MAP ("globdat",		BFD_RELOC_GLOB_DAT),
     MAP ("sectoff",		BFD_RELOC_16_BASEREL),
     MAP ("sectoff@l",		BFD_RELOC_LO16_BASEREL),
     MAP ("sectoff@h",		BFD_RELOC_HI16_BASEREL),
@@ -2359,7 +2333,7 @@ ppc_elf_cons_fix_check (expressionS *exp ATTRIBUTE_UNUSED,
     }
 }
 
-/* Solaris pseduo op to change to the .rodata section.  */
+/* Solaris pseudo op to change to the .rodata section.  */
 static void
 ppc_elf_rdata (int xxx)
 {
@@ -2576,7 +2550,7 @@ ppc_elf_abiversion (int ignore ATTRIBUTE_UNUSED)
 static void
 ppc_elf_gnu_attribute (int ignored ATTRIBUTE_UNUSED)
 {
-  int tag = obj_elf_vendor_attribute (OBJ_ATTR_GNU);
+  obj_attr_tag_t tag = obj_attr_process_attribute (OBJ_ATTR_GNU);
 
   /* Check validity of defined powerpc tags.  */
   if (tag == Tag_GNU_Power_ABI_FP
@@ -3201,10 +3175,10 @@ fixup_size (bfd_reloc_code_real_type reloc, bool *pc_relative)
 #ifndef OBJ_XCOFF
     case BFD_RELOC_CTOR:
 #endif
-    case BFD_RELOC_PPC_COPY:
+    case BFD_RELOC_COPY:
     case BFD_RELOC_PPC_DTPMOD:
     case BFD_RELOC_PPC_DTPREL:
-    case BFD_RELOC_PPC_GLOB_DAT:
+    case BFD_RELOC_GLOB_DAT:
     case BFD_RELOC_PPC_TPREL:
       size = ppc_obj64 ? 8 : 4;
       break;
@@ -3479,10 +3453,18 @@ md_assemble (char *str)
       resolve_register (&ex);
 
       if (ex.X_op == O_illegal)
-	as_bad (_("illegal operand"));
-      else if (ex.X_op == O_absent)
-	as_bad (_("missing operand"));
-      else if (ex.X_op == O_register)
+	{
+	  as_bad (_("illegal operand"));
+	  break;
+	}
+
+      if (ex.X_op == O_absent)
+	{
+	  as_bad (_("missing operand"));
+	  break;
+	}
+
+      if (ex.X_op == O_register)
 	{
 	  if ((ex.X_md
 	       & ~operand->flags
@@ -3685,7 +3667,7 @@ md_assemble (char *str)
 
 		case BFD_RELOC_PPC_TLS:
 		case BFD_RELOC_PPC64_TLS_PCREL:
-		  if (!_bfd_elf_ppc_at_tls_transform (opcode->opcode, 0))
+		  if (!bfd_elf_ppc_at_tls_transform (opcode->opcode, 0))
 		    as_bad (_("@tls may not be used with \"%s\" operands"),
 			    opcode->name);
 		  else if (operand->shift != 11)
@@ -3995,11 +3977,14 @@ md_assemble (char *str)
 	}
     }
 
-  while (is_whitespace (*str))
-    ++str;
+  if (*opindex_ptr == 0)
+    {
+      while (is_whitespace (*str))
+	++str;
 
-  if (*str != '\0')
-    as_bad (_("junk at end of line: `%s'"), str);
+      if (*str != '\0')
+	as_bad (_("junk at end of line: `%s'"), str);
+    }
 
 #ifdef OBJ_ELF
   /* Do we need/want an APUinfo section? */
@@ -5074,8 +5059,14 @@ ppc_rename (int ignore ATTRIBUTE_UNUSED)
     }
   ++input_line_pointer;
 
-  symbol_get_tc (sym)->real_name = demand_copy_C_string (&len);
+  name = demand_copy_C_string (&len);
+  if (name == NULL)
+    {
+      ignore_rest_of_line ();
+      return;
+    }
 
+  symbol_get_tc (sym)->real_name = name;
   demand_empty_rest_of_line ();
 }
 
@@ -5095,6 +5086,11 @@ ppc_stabx (int ignore ATTRIBUTE_UNUSED)
   expressionS exp;
 
   name = demand_copy_C_string (&len);
+  if (name == NULL)
+    {
+      ignore_rest_of_line ();
+      return;
+    }
 
   if (*input_line_pointer != ',')
     {
@@ -5214,56 +5210,75 @@ ppc_file (int ignore ATTRIBUTE_UNUSED)
 {
   char *sfname, *s1 = NULL, *s2 = NULL, *s3 = NULL;
   int length, auxnb = 1;
+  coff_symbol_type *coffsym;
 
   /* Some assemblers tolerate immediately following '"'.  */
-  if ((sfname = demand_copy_string (&length)) != 0)
+  sfname = demand_copy_string (&length);
+  if (sfname == NULL)
     {
-      coff_symbol_type *coffsym;
+      ignore_rest_of_line ();
+      return;
+    }
+
+  if (*input_line_pointer == ',')
+    {
+      ++input_line_pointer;
+      s1 = demand_copy_string (&length);
+      if (s1 == NULL)
+	{
+	  ignore_rest_of_line ();
+	  return;
+	}
+      auxnb++;
+
       if (*input_line_pointer == ',')
 	{
 	  ++input_line_pointer;
-	  s1 = demand_copy_string (&length);
+	  s2 = demand_copy_string (&length);
+	  if (s2 == NULL)
+	    {
+	      ignore_rest_of_line ();
+	      return;
+	    }
 	  auxnb++;
 
 	  if (*input_line_pointer == ',')
 	    {
 	      ++input_line_pointer;
-	      s2 = demand_copy_string (&length);
-	      auxnb++;
-
-	      if (*input_line_pointer == ',')
+	      s3 = demand_copy_string (&length);
+	      if (s3 == NULL)
 		{
-		  ++input_line_pointer;
-		  s3 = demand_copy_string (&length);
-		  auxnb++;
+		  ignore_rest_of_line ();
+		  return;
 		}
+	      auxnb++;
 	    }
 	}
-
-      /* Use coff dot_file creation and adjust auxiliary entries.  */
-      c_dot_file_symbol (sfname);
-      S_SET_NUMBER_AUXILIARY (symbol_rootP, auxnb);
-      coffsym = coffsymbol (symbol_get_bfdsym (symbol_rootP));
-      coffsym->native[1].u.auxent.x_file.x_ftype = XFT_FN;
-
-      if (s1)
-	{
-	  coffsym->native[2].u.auxent.x_file.x_ftype = XFT_CT;
-	  coffsym->native[2].extrap = s1;
-	}
-      if (s2)
-	{
-	  coffsym->native[3].u.auxent.x_file.x_ftype = XFT_CV;
-	  coffsym->native[3].extrap = s2;
-	}
-      if (s3)
-	{
-	  coffsym->native[4].u.auxent.x_file.x_ftype = XFT_CD;
-	  coffsym->native[4].extrap = s3;
-	}
-
-      demand_empty_rest_of_line ();
     }
+
+  /* Use coff dot_file creation and adjust auxiliary entries.  */
+  c_dot_file_symbol (sfname);
+  S_SET_NUMBER_AUXILIARY (symbol_rootP, auxnb);
+  coffsym = coffsymbol (symbol_get_bfdsym (symbol_rootP));
+  coffsym->native[1].u.auxent.x_file.x_ftype = XFT_FN;
+
+  if (s1)
+    {
+      coffsym->native[2].u.auxent.x_file.x_ftype = XFT_CT;
+      coffsym->native[2].extrap = s1;
+    }
+  if (s2)
+    {
+      coffsym->native[3].u.auxent.x_file.x_ftype = XFT_CV;
+      coffsym->native[3].extrap = s2;
+    }
+  if (s3)
+    {
+      coffsym->native[4].u.auxent.x_file.x_ftype = XFT_CD;
+      coffsym->native[4].extrap = s3;
+    }
+
+  demand_empty_rest_of_line ();
 }
 
 /* The .function pseudo-op.  This takes several arguments.  The first
@@ -5312,13 +5327,7 @@ ppc_function (int ignore ATTRIBUTE_UNUSED)
 
   if (ext_sym != lab_sym)
     {
-      expressionS exp;
-
-      exp.X_op = O_symbol;
-      exp.X_add_symbol = lab_sym;
-      exp.X_op_symbol = NULL;
-      exp.X_add_number = 0;
-      exp.X_unsigned = 0;
+      expressionS exp = { .X_op = O_symbol, .X_add_symbol = lab_sym };
       symbol_set_value_expression (ext_sym, &exp);
     }
 
@@ -5435,6 +5444,11 @@ ppc_biei (int ei)
   symbolS *look;
 
   name = demand_copy_C_string (&len);
+  if (name == NULL)
+    {
+      ignore_rest_of_line ();
+      return;
+    }
 
   /* The value of these symbols is actually file offset.  Here we set
      the value to the index into the line number entries.  In
@@ -5594,6 +5608,12 @@ ppc_bc (int ignore ATTRIBUTE_UNUSED)
   symbolS *sym;
 
   name = demand_copy_C_string (&len);
+  if (name == NULL)
+    {
+      ignore_rest_of_line ();
+      return;
+    }
+
   sym = symbol_make (name);
   S_SET_SEGMENT (sym, ppc_coff_debug_section);
   symbol_get_bfdsym (sym)->flags |= BSF_DEBUGGING;
@@ -7355,8 +7375,8 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg)
 	case BFD_RELOC_PPC_DTPMOD:
 	case BFD_RELOC_PPC_TPREL:
 	case BFD_RELOC_PPC_DTPREL:
-	case BFD_RELOC_PPC_COPY:
-	case BFD_RELOC_PPC_GLOB_DAT:
+	case BFD_RELOC_COPY:
+	case BFD_RELOC_GLOB_DAT:
 	case BFD_RELOC_32_PLT_PCREL:
 	case BFD_RELOC_PPC_EMB_NADDR32:
 	case BFD_RELOC_PPC64_TOC:
@@ -7522,8 +7542,8 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg)
 	case BFD_RELOC_LO16_PLTOFF:
 	case BFD_RELOC_HI16_PLTOFF:
 	case BFD_RELOC_HI16_S_PLTOFF:
-	case BFD_RELOC_PPC_COPY:
-	case BFD_RELOC_PPC_GLOB_DAT:
+	case BFD_RELOC_COPY:
+	case BFD_RELOC_GLOB_DAT:
 	case BFD_RELOC_16_BASEREL:
 	case BFD_RELOC_LO16_BASEREL:
 	case BFD_RELOC_HI16_BASEREL:

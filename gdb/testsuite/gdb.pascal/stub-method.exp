@@ -1,4 +1,4 @@
-# Copyright 2007-2025 Free Software Foundation, Inc.
+# Copyright 2007-2026 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ load_lib "pascal.exp"
 standard_testfile .pas
 
 if {[gdb_compile_pascal "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable [list debug ]] != "" } {
-  return -1
+  return
 }
 
 # If this fails, the failure will have already been recorded.

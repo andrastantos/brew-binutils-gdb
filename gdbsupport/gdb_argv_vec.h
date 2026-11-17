@@ -1,6 +1,6 @@
 /* Wrap std::vector<char *> that owns the 'char *' strings.
 
-   Copyright (C) 2025 Free Software Foundation, Inc.
+   Copyright (C) 2025-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -48,14 +48,14 @@ public:
     /* Nothing.  */
   }
 
+  /* Don't currently support copying the strings from OTHER.  */
+  DISABLE_COPY_AND_ASSIGN (argv_vec);
+
   /* Move the owned strings from OTHER.  */
   argv_vec (argv_vec &&other)
   {
     this->m_args = std::move (other.m_args);
   }
-
-  /* Don't currently support copying the strings from OTHER.  */
-  argv_vec (const argv_vec &other) = delete;
 
   /* Move elements from OTHER.  Free currently owned strings.  */
   argv_vec &operator= (argv_vec &&other)
@@ -64,9 +64,6 @@ public:
     this->m_args = std::move (other.m_args);
     return *this;
   }
-
-  /* Don't currently support copying the strings from OTHER.  */
-  argv_vec &operator= (const argv_vec &other) = delete;
 
   /* Release the owned strings.  */
   ~argv_vec ()
@@ -88,6 +85,15 @@ public:
   void push_back (value_type &&value)
   {
     m_args.push_back (value);
+  }
+
+  /* Like calling emplace_back on the underlying vector.  This class takes
+     ownership of the value added to the vector, and will release the value
+     by calling xfree() on it when this object is destroyed.  */
+  template<typename... Args>
+  reference emplace_back (Args &&...args)
+  {
+    return m_args.emplace_back (std::forward<Args> (args)...);
   }
 
   /* Non constant iterator to start of m_args.  */
@@ -132,6 +138,12 @@ public:
   bool empty () const
   {
     return m_args.empty ();
+  }
+
+  /* Clear the argument vector.  */
+  void clear ()
+  {
+    free_vector_argv (m_args);
   }
 };
 } /* namespac gdb */

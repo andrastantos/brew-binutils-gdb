@@ -1,6 +1,6 @@
 /* Target-dependent code for the IA-64 for GDB, the GNU debugger.
 
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,7 +29,6 @@
 #include "solib-svr4-linux.h"
 #include "regset.h"
 
-#include <ctype.h>
 
 /* The sigtramp code is in a non-readable (executable-only) region
    of memory called the ``gate page''.  The addresses in question
@@ -125,12 +124,12 @@ ia64_linux_write_pc (struct regcache *regcache, CORE_ADDR pc)
 /* Implementation of `gdbarch_stap_is_single_operand', as defined in
    gdbarch.h.  */
 
-static int
+static bool
 ia64_linux_stap_is_single_operand (struct gdbarch *gdbarch, const char *s)
 {
-  return ((isdigit (*s) && s[1] == '[' && s[2] == 'r') /* Displacement.  */
+  return ((c_isdigit (*s) && s[1] == '[' && s[2] == 'r') /* Displacement.  */
 	  || *s == 'r' /* Register value.  */
-	  || isdigit (*s));  /* Literal number.  */
+	  || c_isdigit (*s));  /* Literal number.  */
 }
 
 /* Core file support. */

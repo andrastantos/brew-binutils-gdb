@@ -1,4 +1,4 @@
-# Copyright 1997-2025 Free Software Foundation, Inc.
+# Copyright 1997-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,23 +18,31 @@
 
 standard_testfile .c
 
-if [test_compiler_info "xlc-*"] {
-    # By default, IBM'x xlc compiler doesn't add static variables into the symtab.
-    # Use "-qstatsym" to do so. 
-    set exec_opts additional_flags=-qstatsym
-} else {
-    set exec_opts ""
+set exec_opts {}
+if {[have_compile_flag -std=c99]} {
+    # Gcc 15 defaults to c23, which no longer supports unprototyped functions.
+    # Use a c dialect that does support this.
+    lappend exec_opts additional_flags=-std=c99
 }
 
-if  { [gdb_compile $srcdir/$subdir/$srcfile $binfile executable $exec_opts] != "" } {
-    untested "failed to compile"
-    return -1
+if {[test_compiler_info "clang-*"]} {
+    # Even with -std=c99, Clang warns like so:
+    #
+    #  warning: a function definition without a prototype is deprecated
+    #  in all versions of C and is not supported in C23
+    #  [-Wdeprecated-non-prototype]
+    lappend exec_opts additional_flags=-Wno-deprecated-non-prototype
 }
 
-# Start with a fresh gdb.
+if {[test_compiler_info "xlc-*"]} {
+    # By default, IBM's xlc compiler doesn't add static variables into the symtab.
+    # Use "-qstatsym" to do so.
+    lappend exec_opts additional_flags=-qstatsym
+}
 
-clean_restart
-gdb_load $binfile
+if { [prepare_for_testing "prepare" $testfile $srcfile $exec_opts] != 0 } {
+    return
+}
 
 # Run to FUNC and unload symbols from system shared libraries, to
 # avoid conflicts with the minsyms in the program.  E.g.,
@@ -42,7 +50,7 @@ gdb_load $binfile
 
 proc nodebug_runto {func} {
     with_test_prefix $func {
-	if ![runto $func] {
+	if {![runto $func]} {
 	    return false
 	}
 	gdb_test_no_output "nosharedlibrary" \
@@ -52,23 +60,24 @@ proc nodebug_runto {func} {
 }
 
 # Test calling no-debug functions involving argument types that may
-# require coercion/promotion, both prototyped and unprototyped, both
-# return-type-cast style, and function-pointer-cast styles.
+# require coercion or promotion, both prototyped and unprototyped,
+# both return-type-cast style, and function-pointer-cast styles.
 proc test_call_promotion {} {
-    if [target_info exists gdb,cannot_call_functions] {
+    if {[target_info exists gdb,cannot_call_functions]} {
 	return
     }
 
     # Call prototyped function with float parameters via both
     # return-type cast and function-pointer cast.  This checks that
-    # GDB doesn't do float->double coercion.
+    # GDB doesn't do float->double promotion.
     gdb_test "p (float) multf(2.0f, 3.0f)" " = 6"
-    gdb_test "p ((float (*) (float, float)) multf)(2, 3)" " = 6"
     gdb_test "p ((float (*) (float, float)) multf)(2.0f, 3.0f)" " = 6"
+    # This tests int->float coercion.
+    gdb_test "p ((float (*) (float, float)) multf)(2, 3)" " = 6"
 
     # Call unprototyped function with float parameters via
     # function-pointer cast, only.  return-type cast assumes
-    # protototyped.  Check that GDB does float->double coercion.
+    # prototyped.  Check that GDB does float->double promotion.
     gdb_test "p ((float (*) ()) multf_noproto)(2.0f, 3.0f)" " = 6"
     gdb_test "p ((float (*) ()) multf_noproto)(2.0, 3.0)" " = 6"
 
@@ -79,6 +88,16 @@ proc test_call_promotion {} {
     gdb_test "p ((double (*) ()) mult_noproto)(2.0f, 3.0f)" " = 6"
     gdb_test "p ((double (*) ()) mult_noproto)(2.0, 3.0)" " = 6"
 
+    # Same, but for long double.
+    gdb_test "p (long double) mult_long_double(2.0L, 3.0L)" " = 6"
+    gdb_test "p ((long double (*) (long double, long double)) mult_long_double)(2.0L, 3.0L)" " = 6"
+    gdb_test "p ((long double (*) (long double, long double)) mult_long_double)(2, 3)" " = 6"
+    # For unprototyped calls, the standard C default argument
+    # promotion (for floating point) applies only to float and
+    # promotes to double, so test only with the expected type, using
+    # L-suffixed literals to pass long doubles.
+    gdb_test "p ((long double (*) ()) mult_long_double_noproto)(2.0L, 3.0L)" " = 6"
+
     # Check that GDB promotes char->int correctly.
     gdb_test "p /d (uint8) add8((uint8) 2, (uint8) 3)" " = 5"
     gdb_test "p /d ((uint8 (*) (uint8, uint8)) add8)((uint8) 2, (uint8) 3)" " = 5"
@@ -86,9 +105,9 @@ proc test_call_promotion {} {
 }
 
 if {[nodebug_runto inner]} {
-    
+
     # Expect to find global/local symbols in each of text/data/bss.
-    
+
     # The exact format for some of this output is not necessarily
     # ideal, particularly interpreting "p top" requires a fair bit of
     # savvy about gdb's workings and the meaning of the "{}"
@@ -100,7 +119,7 @@ if {[nodebug_runto inner]} {
     # to detect that gdb does not know the type, rather than just
     # being told they are ints or functions returning int like old
     # versions of gdb used to do.
-    
+
     # On alpha (and other ecoff systems) the native compilers put
     # out debugging info for non-aggregate return values of functions
     # even without -g, which should be accepted.
@@ -145,9 +164,9 @@ if {[nodebug_runto inner]} {
 	    set whatis_re [lindex $lang_line 2]
 	    set ptype_re [lindex $lang_line 3]
 
-	    set print_re [subst "$print_re"]
-	    set whatis_re [subst "$whatis_re"]
-	    set ptype_re [subst "$ptype_re"]
+	    set print_re [subst_vars "$print_re"]
+	    set whatis_re [subst_vars "$whatis_re"]
+	    set ptype_re [subst_vars "$ptype_re"]
 
 	    with_test_prefix "$lang" {
 		gdb_test_no_output "set language $lang"
@@ -205,9 +224,9 @@ if {[nodebug_runto inner]} {
     } {
 	set exp [lindex $line 0]
 	# Expand variables.
-	set fmt [subst -nobackslashes [lindex $line 1]]
-	set print [subst  -nobackslashes [lindex $line 2]]
-	set whatis [subst -nobackslashes [lindex $line 3]]
+	set fmt [subst_vars [lindex $line 1]]
+	set print [subst_vars [lindex $line 2]]
+	set whatis [subst_vars [lindex $line 3]]
 	if {$fmt == ""} {
 	    gdb_test "p $exp" $print
 	} else {
@@ -220,7 +239,7 @@ if {[nodebug_runto inner]} {
     # Check that pointer arithmetic works as expected.
     set addr1 [get_hexadecimal_valueof "&dataglobal" "*UNKNOWN*"]
     set addr2 [get_hexadecimal_valueof "(int *) &dataglobal + 1" "*UNKNOWN*"]
-    set offset [expr $addr2 - $addr1]
+    set offset [expr {$addr2 - $addr1}]
     set int_size [get_integer_valueof "sizeof (int)" "*UNKNOWN*"]
     gdb_assert { $offset == $int_size }
 
@@ -271,14 +290,14 @@ if {[nodebug_runto inner]} {
     # ever, why bother with a weaker test?
     #gdb_test "backtrace 10" "#0.*inner.*#1.*#2.*top.*#3.*main.*" \
 	#    "backtrace from inner for externals"
-    
+
     # This test is not as obscure as it might look.  `p getenv ("TERM")'
     # is a real-world example, at least on many systems.
     foreach cmd {"p/c" "ptype" "whatis"} {
 	gdb_test "$cmd array_index(\"abcdef\",2)" \
 	    "'array_index' has unknown return type; cast the call to its declared return type"
     }
-    if [target_info exists gdb,cannot_call_functions] {
+    if {[target_info exists gdb,cannot_call_functions]} {
 	unsupported "p/c (int) array_index(\"abcdef\",2)"
     } else {
 	# We need to up this because this can be really slow on some boards.

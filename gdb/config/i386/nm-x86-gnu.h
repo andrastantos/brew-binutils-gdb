@@ -1,5 +1,5 @@
 /* Native-dependent definitions for Intel 386 running the GNU Hurd
-   Copyright (C) 1994-2025 Free Software Foundation, Inc.
+   Copyright (C) 1994-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,9 +29,9 @@
 	((((struct i386_thread_state *) (state))->rfl &= ~0x100), 1)
 #else
 #define THREAD_STATE_SET_TRACED(state) \
-  	((struct i386_thread_state *) (state))->efl |= 0x100
+	((struct i386_thread_state *) (state))->efl |= 0x100
 #define THREAD_STATE_CLEAR_TRACED(state) \
-  	((((struct i386_thread_state *) (state))->efl &= ~0x100), 1)
+	((((struct i386_thread_state *) (state))->efl &= ~0x100), 1)
 #endif /* __x86_64__ */
 
 #endif /* GDB_CONFIG_I386_NM_X86_GNU_H */

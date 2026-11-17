@@ -1,6 +1,6 @@
 /* BSD Kernel Data Access Library (libkvm) interface.
 
-   Copyright (C) 2004-2025 Free Software Foundation, Inc.
+   Copyright (C) 2004-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -137,7 +137,7 @@ bsd_kvm_target_open (const char *arg, int from_tty)
   target_fetch_registers (get_thread_regcache (thr), -1);
 
   reinit_frame_cache ();
-  print_stack_frame (get_selected_frame (NULL), 0, SRC_AND_LOC, 1);
+  print_stack_frame (get_selected_frame (), 0, SRC_AND_LOC, 1);
 }
 
 void
@@ -335,7 +335,7 @@ bsd_kvm_proc_cmd (const char *arg, int fromtty)
   target_fetch_registers (get_thread_regcache (inferior_thread ()), -1);
 
   reinit_frame_cache ();
-  print_stack_frame (get_selected_frame (NULL), 0, SRC_AND_LOC, 1);
+  print_stack_frame (get_selected_frame (), 0, SRC_AND_LOC, 1);
 }
 
 #endif
@@ -355,7 +355,7 @@ bsd_kvm_pcb_cmd (const char *arg, int fromtty)
   target_fetch_registers (get_thread_regcache (inferior_thread ()), -1);
 
   reinit_frame_cache ();
-  print_stack_frame (get_selected_frame (NULL), 0, SRC_AND_LOC, 1);
+  print_stack_frame (get_selected_frame (), 0, SRC_AND_LOC, 1);
 }
 
 bool
@@ -381,7 +381,7 @@ bsd_kvm_add_target (int (*supply_pcb)(struct regcache *, struct pcb *))
   bsd_kvm_supply_pcb = supply_pcb;
 
   add_target (bsd_kvm_target_info, bsd_kvm_target_open);
-  
+
   add_prefix_cmd ("kvm", class_obscure, bsd_kvm_cmd, _("\
 Generic command for manipulating the kernel memory interface."),
 		  &bsd_kvm_cmdlist, 0, &cmdlist);

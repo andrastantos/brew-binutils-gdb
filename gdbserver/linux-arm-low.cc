@@ -1,5 +1,5 @@
 /* GNU/Linux/ARM specific low level interface, for the remote server for GDB.
-   Copyright (C) 1995-2025 Free Software Foundation, Inc.
+   Copyright (C) 1995-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -100,7 +100,7 @@ protected:
 
   bool low_stopped_by_watchpoint () override;
 
-  CORE_ADDR low_stopped_data_address () override;
+  std::vector<CORE_ADDR> low_stopped_data_addresses () override;
 
   arch_process_info *low_new_process () override;
 
@@ -175,16 +175,16 @@ static struct
 } arm_linux_hwbp_cap;
 
 /* Enum describing the different types of ARM hardware break-/watch-points.  */
-typedef enum
+enum arm_hwbp_type
 {
   arm_hwbp_break = 0,
   arm_hwbp_load = 1,
   arm_hwbp_store = 2,
   arm_hwbp_access = 3
-} arm_hwbp_type;
+};
 
 /* Type describing an ARM Hardware Breakpoint Control register value.  */
-typedef unsigned int arm_hwbp_control_t;
+using arm_hwbp_control_t = unsigned int;
 
 /* Structure used to keep track of hardware break-/watch-points.  */
 struct arm_linux_hw_breakpoint
@@ -729,11 +729,11 @@ arm_target::low_stopped_by_watchpoint ()
 
 /* Return data address that triggered watchpoint.  Called only if
    low_stopped_by_watchpoint returned true.  */
-CORE_ADDR
-arm_target::low_stopped_data_address ()
+std::vector<CORE_ADDR>
+arm_target::low_stopped_data_addresses ()
 {
   struct lwp_info *lwp = get_thread_lwp (current_thread);
-  return lwp->arch_private->stopped_data_address;
+  return { lwp->arch_private->stopped_data_address };
 }
 
 /* Called when a new process is created.  */

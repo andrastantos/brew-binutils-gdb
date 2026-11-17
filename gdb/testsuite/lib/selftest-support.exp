@@ -1,4 +1,4 @@
-# Copyright 2003-2025 Free Software Foundation, Inc.
+# Copyright 2003-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -64,11 +64,11 @@ proc _selftest_has_libtool {} {
 # wrapper.
 
 proc selftest_libtool_get_real_gdb_executable { executable } {
-    if [_selftest_gdb_is_installed] {
+    if {[_selftest_gdb_is_installed]} {
 	return $executable
     }
 
-    if ![_selftest_has_libtool] {
+    if {![_selftest_has_libtool]} {
 	return $executable
     }
 
@@ -142,7 +142,7 @@ proc _selftest_setup { } {
 
     # Set a breakpoint at main
     set function main
-    if { [gdb_breakpoint $function "no-message"] != 1 } {
+    if { [gdb_breakpoint $function -no-message] != 1 } {
 	untested "Cannot set breakpoint at $function, skipping testcase."
 	return -2
     }
@@ -206,14 +206,14 @@ proc selftest_prepare {} {
 
     # ... or seemingly testing with a cross debugger?  Likely GDB
     # wouldn't be able to debug itself then...
-    if ![isnative] {
+    if {![isnative]} {
 	return
     }
 
     # ... or with a stub-like server?  I.e., gdbserver + "target
     # remote"?  In that case we won't be able to pass command line
     # arguments to GDB, and _selftest_setup wants to do exactly that.
-    if [use_gdb_stub] {
+    if {[use_gdb_stub]} {
 	return
     }
 

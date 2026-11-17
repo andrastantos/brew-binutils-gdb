@@ -1,6 +1,6 @@
 /* Cache and manage the values of registers for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -429,7 +429,7 @@ get_thread_regcache (process_stratum_target *target, ptid_t ptid)
 struct regcache *
 get_thread_regcache (thread_info *thread)
 {
-  gdb_assert (thread->state != THREAD_EXITED);
+  gdb_assert (thread->state () != THREAD_EXITED);
 
   return get_thread_regcache (thread->inf->process_target (),
 			      thread->ptid);
@@ -1542,7 +1542,7 @@ register_dump::dump (ui_out *out, const char *name)
 
   for (regnum = 0; regnum < descr->nr_cooked_registers; regnum++)
     {
-      ui_out_emit_tuple tuple_emitter (out, nullptr);
+      ui_out_emit_tuple tuple_emitter (out);
 
       /* Name.  */
       const char *p = gdbarch_register_name (m_gdbarch, regnum);
@@ -1841,9 +1841,10 @@ reg_buffer_raw_compare_zero_len_test ()
   const regcache *regcache
     = get_thread_arch_regcache (&inf, ptid_t (1, 1), inf.arch ());
 
-  /* The buffer address is irrelevant since we end up comparing 0 bytes, we just
-     need to pass something.  */
-  gdb_byte buf;
+  /* The buffer address is irrelevant since we end up comparing 0 bytes, we
+     just need to pass something.  The variable needs to be initialized to
+     avoid compiler warnings about uninitialized values.  */
+  gdb_byte buf = 0;
   SELF_CHECK (regcache->raw_compare (0, &buf, register_size (inf.arch (), 0)));
 }
 

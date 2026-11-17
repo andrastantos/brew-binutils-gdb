@@ -1,5 +1,5 @@
 dnl Autoconf configure script for GDB, the GNU debugger.
-dnl Copyright (C) 1995-2025 Free Software Foundation, Inc.
+dnl Copyright (C) 1995-2026 Free Software Foundation, Inc.
 dnl
 dnl This file is part of GDB.
 dnl
@@ -38,6 +38,7 @@ fi
 # The options we'll try to enable.
 build_warnings=" \
 -Wall \
+-Wdangling-reference \
 -Wdeprecated-copy \
 -Wdeprecated-copy-dtor \
 -Wduplicated-cond \
@@ -55,6 +56,7 @@ build_warnings=" \
 -Wshadow=local \
 -Wstrict-null-sentinel \
 -Wsuggest-override \
+-Wunterminated-string-initialization \
 -Wunused-but-set-parameter \
 -Wunused-but-set-variable \
 -Wunused-const-variable=1 \
@@ -99,9 +101,9 @@ AS_HELP_STRING([--enable-build-warnings], [enable build-time compiler warnings i
   yes)	;;
   no)	build_warnings="-w";;
   ,*)   t=`echo "${enableval}" | sed -e "s/,/ /g"`
-        build_warnings="${build_warnings} ${t}";;
+	build_warnings="${build_warnings} ${t}";;
   *,)   t=`echo "${enableval}" | sed -e "s/,/ /g"`
-        build_warnings="${t} ${build_warnings}";;
+	build_warnings="${t} ${build_warnings}";;
   *)    build_warnings=`echo "${enableval}" | sed -e "s/,/ /g"`;;
 esac
 if test x"$silent" != x"yes" && test x"$build_warnings" != x""; then
@@ -113,9 +115,9 @@ AS_HELP_STRING([--enable-gdb-build-warnings], [enable GDB specific build-time co
   yes)	;;
   no)	build_warnings="-w";;
   ,*)   t=`echo "${enableval}" | sed -e "s/,/ /g"`
-        build_warnings="${build_warnings} ${t}";;
+	build_warnings="${build_warnings} ${t}";;
   *,)   t=`echo "${enableval}" | sed -e "s/,/ /g"`
-        build_warnings="${t} ${build_warnings}";;
+	build_warnings="${t} ${build_warnings}";;
   *)    build_warnings=`echo "${enableval}" | sed -e "s/,/ /g"`;;
 esac
 if test x"$silent" != x"yes" && test x"$build_warnings" != x""; then
@@ -138,7 +140,7 @@ then
 	case $w in
 	-Wno-*)
 		wtest=`echo $w | sed 's/-Wno-/-W/g'` ;;
-        -Wformat-nonliteral)
+	-Wformat-nonliteral)
 		# gcc requires -Wformat before -Wformat-nonliteral
 		# will work, so stick them together.
 		w="-Wformat $w"

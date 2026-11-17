@@ -1,6 +1,6 @@
 /* Self tests for function_view for GDB, the GNU debugger.
 
-   Copyright (C) 2017-2025 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -213,7 +213,7 @@ test_make_function_view ()
   SELF_CHECK (3 == tmpl_func (1, gdb::make_function_view (&make_fv_test_func)));
 
   /* Reference to const and non-const function pointers.  */
-  typedef int (*func_ptr) (int);
+  using func_ptr = int (*) (int);
   func_ptr ptr = make_fv_test_func;
   const func_ptr cptr = make_fv_test_func;
   SELF_CHECK (3 == tmpl_func (1, gdb::make_function_view (ptr)));

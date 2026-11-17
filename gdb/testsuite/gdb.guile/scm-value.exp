@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2025 Free Software Foundation, Inc.
+# Copyright (C) 2008-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -67,7 +67,7 @@ proc test_value_in_inferior {} {
     gdb_scm_test_silent_cmd "gu (define i (history-append! (make-value 42)))" \
 	"append 42"
 
-    gdb_test "gu i" "\[0-9\]+"
+    gdb_test "gu i" "${::decimal}"
     gdb_test "gu (history-ref i)" "#<gdb:value 42>"
     gdb_test "p \$" "= 42"
 
@@ -312,7 +312,7 @@ proc test_subscript_regression {exefile lang} {
     clean_restart
     gdb_load ${exefile}
 
-    if ![gdb_guile_runto_main ] {
+    if {![gdb_guile_runto_main ]} {
 	return
     }
 
@@ -409,7 +409,7 @@ proc test_value_hash {} {
 	"(define one (make-value 1))" "" \
 	"(define two (make-value 2))" "" \
 	"(define three (make-value 3))" "" \
-        "(define vdict (make-hash-table 5))" "" \
+	"(define vdict (make-hash-table 5))" "" \
 	"(hash-set! vdict one \"one str\")" "" \
 	"(hash-set! vdict two \"two str\")" "" \
 	"(hash-set! vdict three \"three str\")" "" \
@@ -438,7 +438,7 @@ test_value_hash
 
 # The following tests require execution.
 
-if ![gdb_guile_runto_main] {
+if {![gdb_guile_runto_main]} {
     return
 }
 
@@ -447,7 +447,7 @@ test_inferior_function_call
 test_strings
 test_value_after_death
 
-# Test either C or C++ values. 
+# Test either C or C++ values.
 
 test_subscript_regression "${binfile}" "c"
 

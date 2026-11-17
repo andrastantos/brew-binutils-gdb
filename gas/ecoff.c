@@ -1,5 +1,5 @@
 /* ECOFF debugging support.
-   Copyright (C) 1993-2025 Free Software Foundation, Inc.
+   Copyright (C) 1993-2026 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
    This file was put together by Ian Lance Taylor <ian@cygnus.com>.  A
    good deal of it comes directly from mips-tfile.c, by Michael
@@ -3086,6 +3086,11 @@ ecoff_directive_file (int ignore ATTRIBUTE_UNUSED)
 
   /* FIXME: we don't have to save the name here.  */
   name = demand_copy_C_string (&len);
+  if (name == NULL)
+    {
+      ignore_rest_of_line ();
+      return;
+    }
 
   add_file (name, indx - 1, 0);
 
@@ -3322,6 +3327,9 @@ ecoff_directive_weakext (int ignore ATTRIBUTE_UNUSED)
       SKIP_WHITESPACE ();
       if (! is_end_of_stmt (*input_line_pointer))
 	{
+#ifdef md_expr_init_rest
+	  md_expr_init_rest (&exp);
+#endif
 	  expression (&exp);
 	  if (exp.X_op != O_symbol)
 	    {
@@ -3480,6 +3488,9 @@ ecoff_stab (int what,
 	  sc = sc_Nil;
 	  st = st_Nil;
 
+#ifdef md_expr_init_rest
+	  md_expr_init_rest (&exp);
+#endif
 	  expression (&exp);
 	  if (exp.X_op == O_constant)
 	    {

@@ -1,5 +1,5 @@
 /* as.c - GAS main program.
-   Copyright (C) 1987-2025 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -118,6 +118,9 @@ bool flag_generate_build_notes = DEFAULT_GENERATE_BUILD_NOTES;
 #if DEFAULT_SFRAME
 enum gen_sframe_option flag_gen_sframe = GEN_SFRAME_CONFIG_ENABLED;
 #endif
+/* Version of SFrame stack trace info to generate.  Default version is
+   SFRAME_VERSION_3.  */
+enum gen_sframe_version flag_gen_sframe_version = GEN_SFRAME_VERSION_3;
 
 segT reg_section;
 segT expr_section;
@@ -318,7 +321,15 @@ Options:\n\
                           generate GNU Build notes if none are present in the input\n"));
   fprintf (stream, _("\
   --gsframe[={no|yes}]    whether to generate SFrame stack trace information\n\
-                          (default: %s)\n"), DEFAULT_SFRAME ? "yes" : "no");
+                          (default: %s)\n\
+			  Default version emitted is V3\n"),
+	   DEFAULT_SFRAME ? "yes" : "no");
+  fprintf (stream, _("\
+  --gsframe-<N>           generate SFrame version <N> information. 3 == <N>\n"));
+  fprintf (stream, _("\
+  --reloc-section-sym=[all|internal|none]\n\
+                          adjust eligible relocations to use section symbols\n\
+                          (default: all)\n"));
 # if defined (TARGET_USE_SCFI) && defined (TARGET_USE_GINSN)
   fprintf (stream, _("\
   --scfi=experimental     Synthesize DWARF CFI for hand-written asm\n\
@@ -513,9 +524,11 @@ parse_args (int * pargc, char *** pargv)
       OPTION_NO_PAD_SECTIONS,
       OPTION_MULTIBYTE_HANDLING,  /* = STD_BASE + 40 */
       OPTION_SFRAME,
+      OPTION_SFRAME_3,
       OPTION_SCFI,
       OPTION_INFO,
-      OPTION_NOINFO
+      OPTION_NOINFO,
+      OPTION_RELOC_SECTION_SYM
     /* When you add options here, check that they do
        not collide with OPTION_MD_BASE.  See as.h.  */
     };
@@ -547,6 +560,8 @@ parse_args (int * pargc, char *** pargv)
     ,{"sectname-subst", no_argument, NULL, OPTION_SECTNAME_SUBST}
     ,{"generate-missing-build-notes", required_argument, NULL, OPTION_ELF_BUILD_NOTES}
     ,{"gsframe", optional_argument, NULL, OPTION_SFRAME}
+    ,{"gsframe-3", no_argument, NULL, OPTION_SFRAME_3}
+    ,{"reloc-section-sym", required_argument, NULL, OPTION_RELOC_SECTION_SYM}
 # if defined (TARGET_USE_SCFI) && defined (TARGET_USE_GINSN)
     ,{"scfi", required_argument, NULL, OPTION_SCFI}
 # endif
@@ -721,7 +736,7 @@ parse_args (int * pargc, char *** pargv)
 	case OPTION_VERSION:
 	  /* This output is intended to follow the GNU standards document.  */
 	  printf (_("GNU assembler %s\n"), BFD_VERSION_STRING);
-	  printf (_("Copyright (C) 2025 Free Software Foundation, Inc.\n"));
+	  printf (_("Copyright (C) 2026 Free Software Foundation, Inc.\n"));
 	  printf (_("\
 This program is free software; you may redistribute it under the terms of\n\
 the GNU General Public License version 3 or later.\n\
@@ -1034,6 +1049,18 @@ This program has absolutely no warranty.\n"));
 	  flag_sectname_subst = 1;
 	  break;
 
+	case OPTION_RELOC_SECTION_SYM:
+	  if (strcasecmp (optarg, "all") == 0)
+	    flag_reloc_section_sym = reloc_section_sym_all;
+	  else if (strcasecmp (optarg, "internal") == 0)
+	    flag_reloc_section_sym = reloc_section_sym_internal;
+	  else if (strcasecmp (optarg, "none") == 0)
+	    flag_reloc_section_sym = reloc_section_sym_none;
+	  else
+	    as_fatal (_("Invalid --reloc-section-sym= option: `%s'"),
+		      optarg);
+	  break;
+
 	case OPTION_ELF_BUILD_NOTES:
 	  if (strcasecmp (optarg, "no") == 0)
 	    flag_generate_build_notes = false;
@@ -1056,6 +1083,11 @@ This program has absolutely no warranty.\n"));
 	    }
 	  else
 	    flag_gen_sframe = GEN_SFRAME_ENABLED;
+	  break;
+
+	case OPTION_SFRAME_3:
+	  flag_gen_sframe = GEN_SFRAME_ENABLED;
+	  flag_gen_sframe_version = GEN_SFRAME_VERSION_3;
 	  break;
 
 #endif /* OBJ_ELF */
@@ -1252,15 +1284,15 @@ perform_an_assembly_pass (int argc, char ** argv)
   if (strstr (BFD_VERSION_STRING, "." XSTRING (BFD_VERSION_DATE)) != NULL)
     predefine_symbol ("date", BFD_VERSION_DATE);
 
+#ifdef obj_begin
+  obj_begin ();
+#endif
+
   /* This may add symbol table entries, which requires having an open BFD,
      and sections already created.  */
   md_begin ();
-
 #ifdef USING_CGEN
   gas_cgen_begin ();
-#endif
-#ifdef obj_begin
-  obj_begin ();
 #endif
 
   /* Skip argv[0].  */
@@ -1316,7 +1348,8 @@ gas_early_init (int *argcp, char ***argvp)
     as_fatal (_("libbfd ABI mismatch"));
 
   obstack_begin (&notes, chunksize);
-  xatexit (free_notes);
+  if (ENABLE_LEAK_CHECK)
+    xatexit (free_notes);
 
   myname = **argvp;
   xmalloc_set_program_name (myname);
@@ -1505,7 +1538,7 @@ main (int argc, char ** argv)
       gnustack = subseg_new (".note.GNU-stack", 0);
       bfd_set_section_flags (gnustack,
 			     SEC_READONLY | (flag_execstack ? SEC_CODE : 0));
-
+      elf_section_type (gnustack) = SHT_NOTE;
     }
 #endif
 

@@ -411,7 +411,7 @@ static CORE_ADDR brew_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
     {
       return func_addr;
     }
-  sal = find_pc_line(func_addr, 0);
+  sal = find_sal_for_pc(func_addr, 0);
   if (sal.end && sal.end < func_end)
     {
       // Found a line number, use it as end of prologue.
@@ -725,7 +725,7 @@ static struct brew_frame_info *brew_alloc_frame_info (void)
 {
   struct brew_frame_info *frame_info;
 
-  frame_info = FRAME_OBSTACK_ZALLOC(struct brew_frame_info);
+  frame_info = frame_obstack_zalloc<brew_frame_info>();
 
   frame_info->valid = false;
 
@@ -1080,8 +1080,6 @@ static int brew_process_record (struct gdbarch *gdbarch, struct regcache *regcac
 finish:
   if (record_full_arch_list_add_reg(regcache, BREW_GDB_REG_PC))
     return -1;
-  if (record_full_arch_list_add_end())
-    return -1;
   return 0;
 }
 
@@ -1115,7 +1113,7 @@ static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbar
   gdbarch = gdbarch_alloc(&info, gdbarch_tdep_up (new brew_gdbarch_tdep));
 
   set_gdbarch_wchar_bit(gdbarch, 32);
-  set_gdbarch_wchar_signed(gdbarch, 0);
+  set_gdbarch_wchar_signed(gdbarch, false);
 
   set_gdbarch_num_regs(gdbarch, BREW_GDB_NUM_REGS);
   set_gdbarch_sp_regnum(gdbarch, BREW_REG_SP);

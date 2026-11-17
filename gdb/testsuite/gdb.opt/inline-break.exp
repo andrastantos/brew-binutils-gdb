@@ -1,4 +1,4 @@
-# Copyright 2012-2025 Free Software Foundation, Inc.
+# Copyright 2012-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,8 +20,8 @@
 standard_testfile
 
 if { [prepare_for_testing "failed to prepare" $testfile $srcfile \
-          {debug additional_flags=-Winline}] } {
-    return -1
+	  {debug additional_flags=-Winline}] } {
+    return
 }
 
 # Return a string that may be used to match the output of "info break NUM".
@@ -195,21 +195,21 @@ foreach_with_prefix cmd [list "break" "tbreak"] {
     # Start with a clean state.
     delete_breakpoints
     if {![runto_main]} {
-	return -1
+	return
     }
 
     # Assemble flags to pass to gdb_breakpoint.  Lame but this is just
     # a test suite!
-    set break_flags "message"
+    set break_flags "-message"
     if {[string match $cmd "tbreak"]} {
-	lappend break_flags "temporary"
+	lappend break_flags "-temporary"
     }
 
     # Insert breakpoints for all inline_func? and not_inline_func? and check
     # that we actually stop where we think we should.
     for {set i 1} {$i < 4} {incr i} {
 	foreach inline {"not_inline" "inline"} {
-	    eval gdb_breakpoint "${inline}_func$i" $break_flags
+	    gdb_breakpoint "${inline}_func$i" {*}$break_flags
 	}
     }
 

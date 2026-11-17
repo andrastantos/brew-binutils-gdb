@@ -1,5 +1,5 @@
 /* Print i386 instructions for GDB, the GNU debugger.
-   Copyright (C) 1988-2025 Free Software Foundation, Inc.
+   Copyright (C) 1988-2026 Free Software Foundation, Inc.
 
    This file is part of the GNU opcodes library.
 
@@ -121,6 +121,9 @@ static void ATTRIBUTE_PRINTF_3 i386_dis_printf (const disassemble_info *,
 /* The maximum operand buffer size.  */
 #define MAX_OPERAND_BUFFER_SIZE 128
 
+/* The comment buffer size.  */
+#define COMMENT_BUFFER_SIZE 128
+
 enum address_mode
 {
   mode_16bit,
@@ -176,6 +179,7 @@ struct instr_info
 
   char obuf[MAX_OPERAND_BUFFER_SIZE];
   char *obufp;
+  char *cbufp;
   char *mnemonicendp;
   const uint8_t *start_codep;
   uint8_t *codep;
@@ -253,6 +257,7 @@ struct instr_info
   signed char op_index[MAX_OPERANDS];
   bool op_riprel[MAX_OPERANDS];
   char *op_out[MAX_OPERANDS];
+  char *cm_out[MAX_OPERANDS];
   bfd_vma op_address[MAX_OPERANDS];
   bfd_vma start_pc;
 
@@ -269,6 +274,8 @@ struct instr_info
   char close_char;
   char separator_char;
   char scale_char;
+
+  bool annotate_immediates;
 
   enum x86_64_isa isa64;
 };
@@ -1358,6 +1365,10 @@ enum
   X86_64_0F388A,
   X86_64_0F388B,
   X86_64_0F38F8_M_1,
+  X86_64_0FAE_REG_0_MOD_3_PREFIX_1,
+  X86_64_0FAE_REG_1_MOD_3_PREFIX_1,
+  X86_64_0FAE_REG_2_MOD_3_PREFIX_1,
+  X86_64_0FAE_REG_3_MOD_3_PREFIX_1,
   X86_64_0FC7_REG_6_MOD_3_PREFIX_1,
 
   X86_64_VEX_0F3848,
@@ -1602,6 +1613,8 @@ enum
 
   EVEX_LEN_MAP5_6E,
   EVEX_LEN_MAP5_7E,
+  EVEX_LEN_MAP6_80_W_0,
+  EVEX_LEN_MAP6_80_W_1,
 };
 
 enum
@@ -1855,6 +1868,8 @@ enum
   EVEX_W_MAP5_6E_P_1,
   EVEX_W_MAP5_7A_P_3,
   EVEX_W_MAP5_7E_P_1,
+  EVEX_W_MAP6_80,
+  EVEX_W_MAP6_81,
 };
 
 typedef bool (*op_rtn) (instr_info *ins, int bytemode, int sizeflag);
@@ -2390,23 +2405,23 @@ static const struct dis386 dis386_twobyte[] = {
   { PREFIX_TABLE (PREFIX_0F7E) },
   { PREFIX_TABLE (PREFIX_0F7F) },
   /* 80 */
-  { "joH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jnoH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jbH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jaeH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jeH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jneH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jbeH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jaH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jo@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jno@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jb@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jae@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "je@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jne@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jbe@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "ja@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
   /* 88 */
-  { "jsH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jnsH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jpH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jnpH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jlH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jgeH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jleH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
-  { "jgH",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "js@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jns@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jp@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jnp@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jl@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jge@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jle@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
+  { "jg@H",		{ Jv, BND, cond_jump_flag }, PREFIX_REX2_ILLEGAL },
   /* 90 */
   { "seto",		{ Eb }, 0 },
   { "setno",		{ Eb }, 0 },
@@ -3595,25 +3610,25 @@ static const struct dis386 prefix_table[][4] = {
   /* PREFIX_0FAE_REG_0_MOD_3 */
   {
     { Bad_Opcode },
-    { "rdfsbase", { Ev }, 0 },
+    { X86_64_TABLE (X86_64_0FAE_REG_0_MOD_3_PREFIX_1) },
   },
 
   /* PREFIX_0FAE_REG_1_MOD_3 */
   {
     { Bad_Opcode },
-    { "rdgsbase", { Ev }, 0 },
+    { X86_64_TABLE (X86_64_0FAE_REG_1_MOD_3_PREFIX_1) },
   },
 
   /* PREFIX_0FAE_REG_2_MOD_3 */
   {
     { Bad_Opcode },
-    { "wrfsbase", { Ev }, 0 },
+    { X86_64_TABLE (X86_64_0FAE_REG_2_MOD_3_PREFIX_1) },
   },
 
   /* PREFIX_0FAE_REG_3_MOD_3 */
   {
     { Bad_Opcode },
-    { "wrgsbase", { Ev }, 0 },
+    { X86_64_TABLE (X86_64_0FAE_REG_3_MOD_3_PREFIX_1) },
   },
 
   /* PREFIX_0FAE_REG_4_MOD_0 */
@@ -4514,7 +4529,7 @@ static const struct dis386 x86_64_table[][2] = {
 
   /* X86_64_D6 */
   {
-    { Bad_Opcode },
+    { "salc", { XX }, 0 },
     { "udb", { XX }, 0 },
   },
 
@@ -4705,6 +4720,30 @@ static const struct dis386 x86_64_table[][2] = {
     /* X86_64_0F38F8_M_1 */
     { Bad_Opcode },
     { PREFIX_TABLE (PREFIX_0F38F8_M_1_X86_64) },
+  },
+
+  /* X86_64_0FAE_REG_0_MOD_3_PREFIX_1 */
+  {
+    { Bad_Opcode },
+    { "rdfsbase", { Edq }, 0 },
+  },
+
+  /* X86_64_0FAE_REG_1_MOD_3_PREFIX_1 */
+  {
+    { Bad_Opcode },
+    { "rdgsbase", { Edq }, 0 },
+  },
+
+  /* X86_64_0FAE_REG_2_MOD_3_PREFIX_1 */
+  {
+    { Bad_Opcode },
+    { "wrfsbase", { Edq }, 0 },
+  },
+
+  /* X86_64_0FAE_REG_3_MOD_3_PREFIX_1 */
+  {
+    { Bad_Opcode },
+    { "wrgsbase", { Edq }, 0 },
   },
 
   /* X86_64_0FC7_REG_6_MOD_3_PREFIX_1 */
@@ -9011,6 +9050,7 @@ with the -M switch (multiple options should be separated by commas):\n"));
   fprintf (stream, _("  suffix      Always display instruction suffix in AT&T syntax\n"));
   fprintf (stream, _("  amd64       Display instruction in AMD64 ISA\n"));
   fprintf (stream, _("  intel64     Display instruction in Intel64 ISA\n"));
+  fprintf (stream, _("  annotate-immediates  Annotate immediate operands that match symbols\n"));
 }
 
 /* Bad opcode.  */
@@ -9720,6 +9760,7 @@ print_insn (bfd_vma pc, disassemble_info *info, int intel_syntax)
     .fwait_prefix = -1,
   };
   char op_out[MAX_OPERANDS][MAX_OPERAND_BUFFER_SIZE];
+  char cm_out[MAX_OPERANDS][COMMENT_BUFFER_SIZE];
 
   priv.orig_sizeflag = AFLAG | DFLAG;
   if ((info->mach & bfd_mach_i386_i386) != 0)
@@ -9792,6 +9833,8 @@ print_insn (bfd_vma pc, disassemble_info *info, int intel_syntax)
 	}
       else if (startswith (p, "suffix"))
 	priv.orig_sizeflag |= SUFFIX_ALWAYS;
+      else if (startswith (p, "annotate"))
+	ins.annotate_immediates = true;
 
       p = strchr (p, ',');
       if (p != NULL)
@@ -9831,6 +9874,8 @@ print_insn (bfd_vma pc, disassemble_info *info, int intel_syntax)
     {
       op_out[i][0] = 0;
       ins.op_out[i] = op_out[i];
+      cm_out[i][0] = 0;
+      ins.cm_out[i] = cm_out[i];
     }
 
   sizeflag = priv.orig_sizeflag;
@@ -9949,6 +9994,7 @@ print_insn (bfd_vma pc, disassemble_info *info, int intel_syntax)
 	  for (i = 0; i < MAX_OPERANDS; ++i)
 	    {
 	      ins.obufp = ins.op_out[i];
+	      ins.cbufp = ins.cm_out[i];
 	      ins.op_ad = MAX_OPERANDS - 1 - i;
 	      if (dp->op[i].rtn
 		  && !dp->op[i].rtn (&ins, dp->op[i].bytemode, sizeflag))
@@ -10274,6 +10320,10 @@ print_insn (bfd_vma pc, disassemble_info *info, int intel_syntax)
 	  riprel = ins.op_riprel[i];
 	  ins.op_riprel[i] = ins.op_riprel[MAX_OPERANDS - 1 - i];
 	  ins.op_riprel[MAX_OPERANDS - 1 - i] = riprel;
+
+	  char *tmp = ins.cm_out[i];
+	  ins.cm_out[i] = ins.cm_out[MAX_OPERANDS - 1 - i];
+	  ins.cm_out[MAX_OPERANDS - 1 - i] = tmp;
 	}
     }
   else
@@ -10321,16 +10371,24 @@ print_insn (bfd_vma pc, disassemble_info *info, int intel_syntax)
 	needcomma = 1;
       }
 
+  const char *sep = "        # ";
   for (i = 0; i < MAX_OPERANDS; i++)
     if (ins.op_index[i] != -1 && ins.op_riprel[i])
       {
-	i386_dis_printf (info, dis_style_comment_start, "        # ");
+	i386_dis_printf (info, dis_style_comment_start, "%s", sep);
+	sep = ", ";
 	(*info->print_address_func)
 	  ((bfd_vma)(ins.start_pc + (ins.codep - ins.start_codep)
 		     + ins.op_address[ins.op_index[i]]),
-	  info);
-	break;
+	   info);
       }
+    else if (*ins.cm_out[i])
+      {
+	i386_dis_printf (info, dis_style_comment_start, "%s", sep);
+	sep = ", ";
+	i386_dis_printf (info, dis_style_symbol, "%s", ins.cm_out[i]);
+      }
+
   ret = ins.codep - priv.the_buffer;
  out:
   info->private_data = NULL;
@@ -10710,6 +10768,7 @@ dofloat (instr_info *ins, int sizeflag)
 
       putop (ins, float_mem[fp_indx], sizeflag);
       ins->obufp = ins->op_out[0];
+      ins->cbufp = ins->cm_out[0];
       ins->op_ad = 2;
       return OP_E (ins, float_mem_mode[fp_indx], sizeflag);
     }
@@ -10731,12 +10790,14 @@ dofloat (instr_info *ins, int sizeflag)
       putop (ins, dp->name, sizeflag);
 
       ins->obufp = ins->op_out[0];
+      ins->cbufp = ins->cm_out[0];
       ins->op_ad = 2;
       if (dp->op[0].rtn
 	  && !dp->op[0].rtn (ins, dp->op[0].bytemode, sizeflag))
 	return false;
 
       ins->obufp = ins->op_out[1];
+      ins->cbufp = ins->cm_out[1];
       ins->op_ad = 1;
       if (dp->op[1].rtn
 	  && !dp->op[1].rtn (ins, dp->op[1].bytemode, sizeflag))
@@ -11532,6 +11593,29 @@ oappend_with_style (instr_info *ins, const char *s,
   ins->obufp = stpcpy (ins->obufp, s);
 }
 
+/* Add a comment to the comment buffer.  */
+
+static void
+cappend_with_style (instr_info *ins, const char *s,
+		    enum disassembler_style style)
+{
+  size_t len = strlen (ins->cbufp);
+
+  if (len + !!len + strlen (s) + 4 >= COMMENT_BUFFER_SIZE)
+    return;
+
+  unsigned num = (unsigned) style;
+
+  if (len)
+    *ins->cbufp++ = ' ';
+  *ins->cbufp++ = STYLE_MARKER_CHAR;
+  *ins->cbufp++ = (num < 10 ? ('0' + num)
+		   : ((num < 16) ? ('a' + (num - 10)) : '0'));
+  *ins->cbufp++ = STYLE_MARKER_CHAR;
+
+  ins->cbufp = stpcpy (ins->cbufp, s);
+}
+
 /* Add a single character C to the buffer pointer to by INS->obufp, marking
    the style for the character as STYLE.  */
 
@@ -11605,7 +11689,35 @@ oappend_immediate (instr_info *ins, bfd_vma imm)
 {
   if (!ins->intel_syntax)
     oappend_char_with_style (ins, '$', dis_style_immediate);
+
   print_operand_value (ins, imm, dis_style_immediate);
+
+  /* Determine if we can display some more information about this immediate.  */
+  if (! ins->annotate_immediates
+      /* Don't bother with zero, even if there is symbol associated with it.  */
+      || imm == 0
+      /* For the next tests we need a BFD.  If we do not have one then do not proceed.  */
+      || ins->info->section == NULL
+      || ins->info->section->owner == NULL
+      /* Save time by avoiding immediates that cannot reference part of the address space.  */
+      || imm < ins->info->section->owner->start_address
+      /* Also skip static object files as their symbols have not been resolved.  */
+      || (ins->info->section->owner->flags & (EXEC_P | DYNAMIC)) == 0)
+    return;
+
+  asymbol * sym = ins->info->symbol_at_address_func (imm, ins->info);
+  if (sym == NULL)
+    return;
+
+  char * annotation = NULL;
+
+  if (asprintf (& annotation, "[%s]", sym->name) > 0)
+    {
+      /* Display the symbol associated with address 'imm'.  */
+      cappend_with_style (ins, annotation, dis_style_symbol);
+    }
+
+  free (annotation);
 }
 
 /* Put DISP in BUF as signed hex number.  */
@@ -13185,7 +13297,11 @@ OP_C (instr_info *ins, int dummy ATTRIBUTE_UNUSED,
       USED_REX (REX_R);
       add = 8;
     }
-  else if (ins->address_mode != mode_64bit && (ins->prefixes & PREFIX_LOCK))
+  else if (/* Only %cr0 -> %cr8 is dealt with this way (and also really only on
+	      most AMD hardware).  */
+	   ins->modrm.reg == 0
+	   && (ins->prefixes & PREFIX_LOCK)
+	   && ins->isa64 != intel64)
     {
       ins->all_prefixes[ins->last_lock_prefix] = 0;
       ins->used_prefixes |= PREFIX_LOCK;
@@ -14157,6 +14273,10 @@ OP_VexW (instr_info *ins, int bytemode, int sizeflag)
 
       ins->op_out[2] = ins->op_out[1];
       ins->op_out[1] = tmp;
+
+      tmp = ins->cm_out[2];
+      ins->cm_out[2] = ins->cm_out[1];
+      ins->cm_out[1] = tmp;
     }
   return true;
 }
@@ -14190,6 +14310,10 @@ OP_REG_VexI4 (instr_info *ins, int bytemode, int sizeflag ATTRIBUTE_UNUSED)
 
       ins->op_out[3] = ins->op_out[2];
       ins->op_out[2] = tmp;
+
+      tmp = ins->cm_out[2];
+      ins->cm_out[3] = ins->cm_out[2];
+      ins->cm_out[2] = tmp;
     }
   return true;
 }

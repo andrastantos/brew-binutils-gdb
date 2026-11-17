@@ -1,5 +1,5 @@
 # Expect script for tests for >64k sections
-#   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+#   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -38,6 +38,11 @@ if {[istarget "ft32-*-*"]
     || [istarget "h8300-*-*"]
     || [istarget "ip2k-*-*"]
     || [istarget "m68hc1*-*"] } {
+    return
+}
+
+# Test creates too many sections on hppa64.
+if [istarget "hppa*64*-*-*"] {
     return
 }
 
@@ -147,7 +152,7 @@ if { ![istarget "m32r-*-*"] } then {
     puts $ofd "#..."
     puts $ofd " 340..: 0+\[ \]+0\[ \]+SECTION\[ \]+LOCAL\[ \]+DEFAULT\[ \]+68... .*"
     puts $ofd "#..."
-    puts $ofd " 340..: 0+(2|4|8)\[ \]+0\[ \]+NOTYPE\[ \]+LOCAL\[ \]+DEFAULT\[ \]+\[2-7\] bar_1$"
+    puts $ofd " 340..: 0+(2|4|8)\[ \]+0\[ \]+NOTYPE\[ \]+LOCAL\[ \]+DEFAULT\[ \]+\[2-8\] bar_1$"
     puts $ofd "#..."
     puts $ofd ".* bar_34000$"
     puts $ofd "#..."
@@ -243,6 +248,6 @@ if { ![istarget "d10v-*-*"]
 }
 
 # Tidy up.
-for { set i 1 } { $i < $max_sec / $secs_per_file } { incr i } {
-    catch "exec rm -f tmpdir/dump$i.o" status
+for { set i 0 } { $i < $max_sec / $secs_per_file } { incr i } {
+    catch "exec rm -f tmpdir/sec64-$i.o" status
 }

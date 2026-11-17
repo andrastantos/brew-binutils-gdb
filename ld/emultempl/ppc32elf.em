@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+#   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -145,7 +145,7 @@ ppc_before_allocation (void)
 	    einfo (_("%X%P: inline PLT: %E\n"));
 	}
 
-      if (ppc_elf_tls_setup (link_info.output_bfd, &link_info)
+      if (ppc_elf_tls_setup (&link_info)
 	  && !notlsopt)
 	{
 	  if (!ppc_elf_tls_optimize (link_info.output_bfd, &link_info))

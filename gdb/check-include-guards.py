@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (C) 2024-2025 Free Software Foundation, Inc.
+# Copyright (C) 2024-2026 Free Software Foundation, Inc.
 #
 # This file is part of GDB.
 #
@@ -23,6 +23,7 @@
 # When --update is used, rewrite the files in place as needed.
 
 
+import fnmatch
 import re
 import sys
 from typing import List
@@ -32,7 +33,9 @@ OLDDEF = re.compile("^#if !defined *\\(([A-Za-z0-9_]+)\\)\n")
 
 # Some headers -- in particular, ones that aren't maintained by gdb --
 # should be excluded from the checks.
-EXCLUDED = frozenset(["gdbsupport/unordered_dense.h"])
+#
+# This is interpreted as a list of patterns as interpreted by fnmatch.
+EXCLUDED = ("gdbsupport/unordered_dense/*",)
 
 
 # See if
@@ -68,8 +71,9 @@ def write_header(filename: str, contents: List[str]):
 
 
 def check_header(filename: str):
-    if filename in EXCLUDED:
-        return
+    for pat in EXCLUDED:
+        if fnmatch.fnmatch(filename, pat):
+            return
 
     # Turn x/y-z.h into X_Y_Z_H.
     assert filename.endswith(".h")

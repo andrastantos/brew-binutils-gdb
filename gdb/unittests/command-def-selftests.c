@@ -1,6 +1,6 @@
 /* Self tests for GDB command definitions for GDB, the GNU debugger.
 
-   Copyright (C) 2019-2025 Free Software Foundation, Inc.
+   Copyright (C) 2019-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -72,7 +72,7 @@ check_doc (struct cmd_list_element *commandlist, const char *prefix)
 	   "first line is not terminated with a '.' character");
 
       /* Checks the doc is not terminated with a new line.  */
-      if (isspace (c->doc[strlen (c->doc) - 1]))
+      if (c_isspace (c->doc[strlen (c->doc) - 1]))
 	broken_doc_invariant
 	  (prefix, c->name,
 	   "has superfluous trailing whitespace");
@@ -87,7 +87,7 @@ check_doc (struct cmd_list_element *commandlist, const char *prefix)
 	  else
 	    {
 	      /* \n\n is ok, so we check that explicitly here.  */
-	      if (isspace (nl[-1]) && nl[-1] != '\n')
+	      if (c_isspace (nl[-1]) && nl[-1] != '\n')
 		broken_doc_invariant (prefix, c->name,
 				      "has whitespace before a newline");
 	    }
@@ -217,6 +217,29 @@ command_structure_invariants_tests ()
 
 }
 
+namespace essential_command_tests {
+
+/* The maximum number of commands that can be considered
+   essential by GDB.  This value was chosen arbitrarily,
+   but it must be kept low, so as to not overwhelm new
+   users.  */
+static constexpr int max_essential_cmds = 20;
+
+static void
+essential_command_count_tests ()
+{
+  int nr_essential_cmds = 0;
+
+  for (struct cmd_list_element *c = cmdlist; c != nullptr; c = c->next)
+    {
+      if (c->is_essential ())
+	nr_essential_cmds ++;
+    }
+
+  SELF_CHECK (nr_essential_cmds <= max_essential_cmds);
+}
+}
+
 } /* namespace selftests */
 
 INIT_GDB_FILE (command_def_selftests)
@@ -228,4 +251,8 @@ INIT_GDB_FILE (command_def_selftests)
   selftests::register_test
     ("command_structure_invariants",
      selftests::command_structure_tests::command_structure_invariants_tests);
+
+  selftests::register_test
+    ("essential_command_count",
+     selftests::essential_command_tests::essential_command_count_tests);
 }

@@ -1,6 +1,6 @@
 /* Target-dependent code for OpenBSD/i386.
 
-   Copyright (C) 1988-2025 Free Software Foundation, Inc.
+   Copyright (C) 1988-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -355,7 +355,7 @@ i386obsd_trapframe_this_id (const frame_info_ptr &this_frame,
 {
   struct trad_frame_cache *cache =
     i386obsd_trapframe_cache (this_frame, this_cache);
-  
+
   trad_frame_get_id (cache, this_id);
 }
 
@@ -384,10 +384,11 @@ i386obsd_trapframe_sniffer (const struct frame_unwind *self,
     return 0;
 
   find_pc_partial_function (get_frame_pc (this_frame), &name, NULL, NULL);
-  return (name && (strcmp (name, "calltrap") == 0
-		   || strcmp (name, "syscall1") == 0
-		   || startswith (name, "Xintr")
-		   || startswith (name, "Xsoft")));
+  return (name != nullptr
+	  && (streq (name, "calltrap")
+	      || streq (name, "syscall1")
+	      || startswith (name, "Xintr")
+	      || startswith (name, "Xsoft")));
 }
 
 static const struct frame_unwind_legacy i386obsd_trapframe_unwind (
@@ -405,7 +406,7 @@ static const struct frame_unwind_legacy i386obsd_trapframe_unwind (
 );
 
 
-static void 
+static void
 i386obsd_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
   i386_gdbarch_tdep *tdep = gdbarch_tdep<i386_gdbarch_tdep> (gdbarch);

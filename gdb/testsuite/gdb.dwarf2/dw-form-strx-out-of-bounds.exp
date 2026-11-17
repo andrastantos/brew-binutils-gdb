@@ -1,4 +1,4 @@
-# Copyright 2025 Free Software Foundation, Inc.
+# Copyright 2025-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,7 +24,7 @@ require !readnow
 
 set prepare_for_testing_done 0
 source $srcdir/$subdir/dw-form-strx.exp.tcl
-require {expr $prepare_for_testing_done == 1}
+require {expr {$prepare_for_testing_done == 1}}
 
 set re_dwarf_error \
     [string_list_to_regexp \
@@ -34,8 +34,7 @@ set re_dwarf_error \
 set re_in_module \
     {in module [^\r\n]+}
 set re_in_module [string_to_regexp {[}]$re_in_module[string_to_regexp {]}]
+gdb_assert {[regexp "$re_dwarf_error $re_in_module" $gdb_file_cmd_msg]}
+
 set re_no_symbol [string_to_regexp {No symbol "global_var" in current context.}]
-gdb_test "ptype global_var" \
-    [multi_line \
-	 "$re_dwarf_error $re_in_module"\
-	 $re_no_symbol]
+gdb_test "ptype global_var" $re_no_symbol

@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025 Free Software Foundation, Inc.
+# Copyright (C) 2021-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,15 +13,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import re
 import sys
+
+import gdb
 
 # Avoid generating
 # src/gdb/testsuite/gdb.python/__pycache__/gdb_leak_detector.cpython-<n>.pyc.
 sys.dont_write_bytecode = True
 
-import re
 
-import gdb_leak_detector
+import gdb_leak_detector  # noqa: E402
 
 
 class inferior_leak_detector(gdb_leak_detector.gdb_leak_detector):

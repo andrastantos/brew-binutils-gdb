@@ -1,7 +1,7 @@
 /* Variables that describe the inferior process running under GDB:
    Where it is, why it stopped, and how to step it.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -62,6 +62,7 @@ struct thread_info;
 #include "displaced-stepping.h"
 
 #include "gdbsupport/unordered_map.h"
+#include "gdbsupport/common-inferior.h"
 
 struct infcall_suspend_state;
 struct infcall_control_state;
@@ -91,8 +92,8 @@ struct infcall_suspend_state_deleter
 };
 
 /* A unique_ptr specialization for infcall_suspend_state.  */
-typedef std::unique_ptr<infcall_suspend_state, infcall_suspend_state_deleter>
-    infcall_suspend_state_up;
+using infcall_suspend_state_up
+  = std::unique_ptr<infcall_suspend_state, infcall_suspend_state_deleter>;
 
 extern infcall_suspend_state_up save_infcall_suspend_state ();
 
@@ -107,8 +108,8 @@ struct infcall_control_state_deleter
 };
 
 /* A unique_ptr specialization for infcall_control_state.  */
-typedef std::unique_ptr<infcall_control_state, infcall_control_state_deleter>
-    infcall_control_state_up;
+using infcall_control_state_up
+  = std::unique_ptr<infcall_control_state, infcall_control_state_deleter>;
 
 extern infcall_control_state_up save_infcall_control_state ();
 
@@ -149,7 +150,7 @@ extern void reopen_exec_file (void);
 extern void default_print_registers_info (struct gdbarch *gdbarch,
 					  struct ui_file *file,
 					  const frame_info_ptr &frame,
-					  int regnum, int all);
+					  int regnum, bool all);
 
 /* Default implementation of gdbarch_print_float_info.  Print
    the values of all floating point registers.  */
@@ -172,7 +173,7 @@ extern tribool sharing_input_terminal (int pid);
 
 /* The type of the function that is called when SIGINT is handled.  */
 
-typedef void c_c_handler_ftype (int);
+using c_c_handler_ftype = void (int);
 
 /* Install a new SIGINT handler in a host-dependent way.  The previous
    handler is returned.  It is fine to pass SIG_IGN for FN, but not
@@ -199,8 +200,8 @@ extern void child_interrupt (struct target_ops *self);
 /* From fork-child.c */
 
 /* Helper function to call STARTUP_INFERIOR with PID and NUM_TRAPS.
-   This function already calls set_executing.  Return the ptid_t from
-   STARTUP_INFERIOR.  */
+   This function already sets the threads' internal state to
+   THREAD_STOPPED.  Return the ptid_t from STARTUP_INFERIOR.  */
 extern ptid_t gdb_startup_inferior (pid_t pid, int num_traps);
 
 /* From infcmd.c */
@@ -222,9 +223,9 @@ extern void post_create_inferior (int from_tty, bool set_pspace_solib_ops);
 
 extern void attach_command (const char *, int);
 
-extern void registers_info (const char *, int);
+extern void registers_info (const char *, bool);
 
-extern void continue_1 (int all_threads);
+extern void continue_1 (bool all_threads_p);
 
 extern void interrupt_target_1 (bool all_threads);
 
@@ -469,31 +470,45 @@ public:
   /* Returns a range adapter covering the inferior's threads,
      including exited threads.  Used like this:
 
-       for (thread_info *thr : inf->threads ())
+       for (thread_info &thr : inf->threads ())
 	 { .... }
   */
   inf_threads_range threads ()
-  { return inf_threads_range (this->thread_list.begin ()); }
+  {
+    inf_threads_iterator begin (this->thread_list.begin ());
+
+    return inf_threads_range (std::move (begin));
+  }
 
   /* Returns a range adapter covering the inferior's non-exited
      threads.  Used like this:
 
-       for (thread_info *thr : inf->non_exited_threads ())
+       for (thread_info &thr : inf->non_exited_threads ())
 	 { .... }
   */
   inf_non_exited_threads_range non_exited_threads ()
-  { return inf_non_exited_threads_range (this->thread_list.begin ()); }
+  {
+    inf_threads_iterator begin (this->thread_list.begin ());
+    inf_non_exited_threads_iterator filtered_begin (std::move (begin));
+
+    return inf_non_exited_threads_range (std::move (filtered_begin));
+  }
 
   /* Like inferior::threads(), but returns a range adapter that can be
      used with range-for, safely.  I.e., it is safe to delete the
      currently-iterated thread, like this:
 
-     for (thread_info *t : inf->threads_safe ())
+     for (thread_info &t : inf->threads_safe ())
        if (some_condition ())
-	 delete f;
+	 delete &f;
   */
   inline safe_inf_threads_range threads_safe ()
-  { return safe_inf_threads_range (this->thread_list.begin ()); }
+  {
+    inf_threads_iterator begin (this->thread_list.begin ());
+    safe_inf_threads_iterator safe_begin (std::move (begin));
+
+    return safe_inf_threads_range (std::move (safe_begin));
+  }
 
   /* Find (non-exited) thread PTID of this inferior.  */
   thread_info *find_thread (ptid_t ptid);
@@ -525,13 +540,17 @@ public:
   void set_args (std::string args)
   {
     m_args = std::move (args);
-  };
+  }
 
   /* Set the argument string from some strings in ARGS.  When
      ESCAPE_SHELL_CHAR is true all special shell characters in ARGS are
      escaped, When false only the characters that GDB sees as special will
      be escaped.  See construct_inferior_arguments for more details.  */
-  void set_args (gdb::array_view<char * const> args, bool escape_shell_char);
+  template<typename T>
+  void set_args (gdb::array_view<T const> args, bool escape_shell_char)
+  {
+    this->set_args (construct_inferior_arguments (args, escape_shell_char));
+  }
 
   /* Get the argument string to use when running this inferior.
 
@@ -820,7 +839,10 @@ extern intrusive_list<inferior> inferior_list;
 inline all_inferiors_safe_range
 all_inferiors_safe ()
 {
-  return all_inferiors_safe_range (nullptr, inferior_list);
+  all_inferiors_iterator begin (nullptr, inferior_list);
+  all_inferiors_safe_iterator safe_begin (std::move (begin));
+
+  return all_inferiors_safe_range (std::move (safe_begin));
 }
 
 /* Returns a range representing all inferiors, suitable to use with
@@ -833,7 +855,9 @@ all_inferiors_safe ()
 inline all_inferiors_range
 all_inferiors (process_stratum_target *proc_target = nullptr)
 {
-  return all_inferiors_range (proc_target, inferior_list);
+  all_inferiors_iterator begin (proc_target, inferior_list);
+
+  return all_inferiors_range (std::move (begin));
 }
 
 /* Return a range that can be used to walk over all inferiors with PID
@@ -842,7 +866,10 @@ all_inferiors (process_stratum_target *proc_target = nullptr)
 inline all_non_exited_inferiors_range
 all_non_exited_inferiors (process_stratum_target *proc_target = nullptr)
 {
-  return all_non_exited_inferiors_range (proc_target, inferior_list);
+  all_inferiors_iterator begin (proc_target, inferior_list);
+  all_non_exited_inferiors_iterator filtered_begin (std::move (begin));
+
+  return all_non_exited_inferiors_range (std::move (filtered_begin));
 }
 
 /* Prune away automatically added inferiors that aren't required
@@ -856,9 +883,10 @@ extern struct inferior *add_inferior_with_spaces (void);
 /* Print the current selected inferior.  */
 extern void print_selected_inferior (struct ui_out *uiout);
 
-/* Switch to inferior NEW_INF, a new inferior, and unless
-   NO_CONNECTION is true, push the process_stratum_target of ORG_INF
-   to NEW_INF.  */
+/* Switch to inferior NEW_INF, a new inferior, and unless NO_CONNECTION is
+   true, or the process_stratum_target of ORG_INF is not shareable, or the
+   process_stratum_target cannot start new inferiors, push the
+   process_stratum_target of ORG_INF to NEW_INF.  */
 
 extern void switch_to_inferior_and_push_target
   (inferior *new_inf, bool no_connection, inferior *org_inf);

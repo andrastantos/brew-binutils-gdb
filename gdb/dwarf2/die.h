@@ -1,6 +1,6 @@
 /* DWARF DIEs
 
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -108,11 +108,13 @@ struct die_info
      DIE.  */
   next_range<die_info> children () const
   {
-    return next_range<die_info> (child);
+    next_iterator<die_info> begin (child);
+
+    return next_range<die_info> (std::move (begin));
   }
 
   /* DWARF-2 tag for this DIE.  */
-  ENUM_BITFIELD(dwarf_tag) tag : 16;
+  dwarf_tag tag : 16;
 
   /* Number of attributes */
   unsigned char num_attrs;

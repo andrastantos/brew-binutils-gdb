@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2025 Free Software Foundation, Inc.
+# Copyright (C) 2022-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@ standard_testfile
 
 if { [prepare_for_testing "failed to prepare" $testfile $srcfile debug] } {
     untested "failed to compile"
-    return -1
+    return
 }
 
 # This proc restarts GDB, makes the inferior reach the desired spot - marked
@@ -108,6 +108,8 @@ with_test_prefix "frame movement down" {
 with_test_prefix "frame movement up" {
     if { [start_test "TAG: final frame"] == 0 } {
 	gdb_test "up" [multi_line "#1 .*in g \\(mt=mytype is .*\\, depth=1\\).*" ".*first frame.*"]
+	gdb_test "p f ()" " = 2"
+	gdb_test "frame" [multi_line "#1 .*in g \\(mt=mytype is .*\\, depth=1\\).*" ".*first frame.*"]
     }
 }
 

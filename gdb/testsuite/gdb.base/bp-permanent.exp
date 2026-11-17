@@ -1,4 +1,4 @@
-# Copyright (C) 2014-2025 Free Software Foundation, Inc.
+# Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@ if { ![target_info exists gdb,nosignals] } {
 }
 
 if {[build_executable "failed to prepare" $testfile $srcfile $options]} {
-    return -1
+    return
 }
 
 set line_bp [gdb_get_line_number "write permanent bp"]
@@ -40,10 +40,9 @@ proc test {always_inserted sw_watchpoint} {
     global line_bp
     global hex decimal
     global gdb_prompt
-    global srcfile binfile
+    global srcfile
 
-    clean_restart
-    gdb_load $binfile
+    clean_restart $::testfile
 
     if {![runto_main]} {
 	return -1
@@ -103,7 +102,7 @@ proc test {always_inserted sw_watchpoint} {
 
 	# We now have the breakpoint instruction stored in 'buffer'.  Poke it
 	# to memory manually.
-	set count [expr $address_after_bp - $address_bp]
+	set count [expr {$address_after_bp - $address_bp}]
 	for {set i 0} {$i < $count} {incr i} {
 	    set test "p /x addr_bp\[$i\] = buffer\[$i\]"
 	    gdb_test_multiple $test $test {
@@ -132,11 +131,11 @@ proc test {always_inserted sw_watchpoint} {
 	set test "permanent breakpoint causes random signal"
 	gdb_test_multiple "continue" $test {
 	    -re "exited normally.*$gdb_prompt $" {
-	        unsupported "failed to stop at permanent breakpoint"
+		unsupported "failed to stop at permanent breakpoint"
 		return
 	    }
 	    -re "received signal SIGTRAP.*$gdb_prompt $" {
-	    	pass $test
+		pass $test
 	    }
 	}
 
@@ -185,9 +184,9 @@ proc test {always_inserted sw_watchpoint} {
 	gdb_test "print \$commands_ran" " = void" \
 	    "breakpoint commands didn't run"
 
-	# Reenable the breakpoint, and check that it gets hit and accounted
+	# Re-enable the breakpoint, and check that it gets hit and accounted
 	# for this time.
-	gdb_test "enable \$bpnum" "" "reenable breakpoint"
+	gdb_test "enable \$bpnum" "" "re-enable breakpoint"
 
 	gdb_test "continue" "Breakpoint .*" \
 	    "stop at permanent breakpoint thrice"
@@ -216,7 +215,7 @@ proc test {always_inserted sw_watchpoint} {
 	gdb_test "next" "after next .*"
     }
 
-    if ![target_info exists gdb,nosignals] {
+    if {![target_info exists gdb,nosignals]} {
 
 	with_test_prefix "continue trips on nested permanent bp" {
 	    delete_breakpoints
@@ -242,7 +241,7 @@ proc test {always_inserted sw_watchpoint} {
 	    gdb_test "p counter" " = 2"
 	}
 
-	if [can_single_step_to_signal_handler] {
+	if {[can_single_step_to_signal_handler]} {
 
 	    with_test_prefix "stepi signal with handler" {
 		delete_breakpoints

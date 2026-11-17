@@ -1,5 +1,5 @@
 /* Linker file opening and searching.
-   Copyright (C) 1991-2025 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -876,6 +876,9 @@ ldfile_find_command_file (const char *name,
 
   /* Restore the original path list.  */
   *search_tail_ptr = NULL;
+
+  if (!filename)
+    return NULL;
 
  success:
   /* PR 24576: Catch the case where the user has accidentally included

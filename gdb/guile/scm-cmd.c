@@ -1,6 +1,6 @@
 /* GDB commands implemented in Scheme.
 
-   Copyright (C) 2008-2025 Free Software Foundation, Inc.
+   Copyright (C) 2008-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,7 +20,6 @@
 /* See README file in this directory for implementation notes, coding
    conventions, et.al.  */
 
-#include <ctype.h>
 #include "charset.h"
 #include "cli/cli-cmds.h"
 #include "cli/cli-decode.h"
@@ -549,7 +548,7 @@ gdbscm_parse_command_name (const char *name,
   /* NOTREACHED */
 }
 
-static const scheme_integer_constant command_classes[] =
+static const scheme_integer_constant gdbscm_command_classes[] =
 {
   /* Note: alias and user are special; pseudo appears to be unused,
      and there is no reason to expose tui, I think.  */
@@ -565,6 +564,7 @@ static const scheme_integer_constant command_classes[] =
   { "COMMAND_OBSCURE", class_obscure },
   { "COMMAND_MAINTENANCE", class_maintenance },
   { "COMMAND_USER", class_user },
+  { "COMMAND_ESSENTIAL", class_essential },
 
   END_INTEGER_CONSTANTS
 };
@@ -576,9 +576,9 @@ gdbscm_valid_command_class_p (int command_class)
 {
   int i;
 
-  for (i = 0; command_classes[i].name != NULL; ++i)
+  for (i = 0; gdbscm_command_classes[i].name != NULL; ++i)
     {
-      if (command_classes[i].value == command_class)
+      if (gdbscm_command_classes[i].value == command_class)
 	return 1;
     }
 
@@ -903,7 +903,7 @@ gdbscm_initialize_commands (void)
     = gdbscm_make_smob_type (command_smob_name, sizeof (command_smob));
   scm_set_smob_print (command_smob_tag, cmdscm_print_command_smob);
 
-  gdbscm_define_integer_constants (command_classes, 1);
+  gdbscm_define_integer_constants (gdbscm_command_classes, 1);
   gdbscm_define_functions (command_functions, 1);
 
   for (i = 0; i < N_COMPLETERS; ++i)

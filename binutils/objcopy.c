@@ -1,5 +1,5 @@
 /* objcopy.c -- copy object file from input to output, optionally massaging it.
-   Copyright (C) 1991-2025 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -334,6 +334,7 @@ enum command_line_switch
   OPTION_HEAP,
   OPTION_IMAGE_BASE,
   OPTION_IMPURE,
+  OPTION_BINARY_SYMBOL_PREFIX,
   OPTION_INTERLEAVE_WIDTH,
   OPTION_KEEPGLOBAL_SYMBOLS,
   OPTION_KEEP_FILE_SYMBOLS,
@@ -465,6 +466,7 @@ static struct option copy_options[] =
   {"info", no_argument, 0, OPTION_FORMATS_INFO},
   {"input-format", required_argument, 0, 'I'}, /* Obsolete */
   {"input-target", required_argument, 0, 'I'},
+  {"binary-symbol-prefix", required_argument, 0, OPTION_BINARY_SYMBOL_PREFIX},
   {"interleave", optional_argument, 0, 'i'},
   {"interleave-width", required_argument, 0, OPTION_INTERLEAVE_WIDTH},
   {"keep-file-symbols", no_argument, 0, OPTION_KEEP_FILE_SYMBOLS},
@@ -540,6 +542,11 @@ extern char *program_name;
 extern int is_strip;
 #endif
 
+/* The symbol prefix of a binary input blob.
+ * <p>_start, <p>_end, <p>_size
+ */
+extern char *bfd_binary_symbol_prefix;
+
 /* The maximum length of an S record.  This variable is defined in srec.c
    and can be modified by the --srec-len parameter.  */
 extern unsigned int _bfd_srec_len;
@@ -570,6 +577,12 @@ static bool write_debugging_info (bfd *, void *, long *, asymbol ***);
 static const char *lookup_sym_redefinition (const char *);
 static const char *find_section_rename (const char *, flagword *);
 
+#ifdef HAVE_ZSTD
+#define ZSTD_OPT "|zstd"
+#else
+#define ZSTD_OPT ""
+#endif
+
 ATTRIBUTE_NORETURN static void
 copy_usage (FILE *stream, int exit_status)
 {
@@ -672,6 +685,9 @@ copy_usage (FILE *stream, int exit_status)
      --globalize-symbols <file>    --globalize-symbol for all in <file>\n\
      --keep-global-symbols <file>  -G for all symbols listed in <file>\n\
      --weaken-symbols <file>       -W for all symbols listed in <file>\n\
+     --binary-symbol-prefix <prefix>\n\
+                                    Use <prefix> as the base symbol name for the input file\n\
+                                     (default: derived from file name)\n\
      --add-symbol <name>=[<section>:]<value>[,<flags>]  Add a symbol\n\
      --alt-machine-code <index>    Use the target's <index>'th alternative machine\n\
      --writable-text               Mark the output text as writable\n\
@@ -692,8 +708,8 @@ copy_usage (FILE *stream, int exit_status)
                                    <commit>\n\
      --subsystem <name>[:<version>]\n\
                                    Set PE subsystem to <name> [& <version>]\n\
-     --compress-debug-sections[={none|zlib|zlib-gnu|zlib-gabi|zstd}]\n\
-				   Compress DWARF debug sections\n\
+     --compress-debug-sections[={none|zlib|zlib-gnu|zlib-gabi%s}]\n\
+                                   Compress DWARF debug sections\n\
      --decompress-debug-sections   Decompress DWARF debug sections using zlib\n\
      --elf-stt-common=[yes|no]     Generate ELF common symbols with STT_COMMON\n\
                                      type\n\
@@ -705,7 +721,7 @@ copy_usage (FILE *stream, int exit_status)
   -V --version                     Display this program's version number\n\
   -h --help                        Display this output\n\
      --info                        List object formats & architectures supported\n\
-"));
+"), ZSTD_OPT);
   list_supported_targets (program_name, stream);
   if (REPORT_BUGS_TO[0] && exit_status == 0)
     fprintf (stream, _("Report bugs to %s\n"), REPORT_BUGS_TO);
@@ -1330,8 +1346,39 @@ is_mergeable_note_section (bfd * abfd, asection * sec)
 /* See if a non-group section is being removed.  */
 
 static bool
-is_strip_section_1 (bfd *abfd ATTRIBUTE_UNUSED, asection *sec)
+is_strip_section_1 (bfd *abfd, asection *sec)
 {
+  if (strip_symbols == STRIP_ALL
+      && bfd_get_flavour (abfd) == bfd_target_elf_flavour
+      && elf_elfheader (abfd)->e_ident[EI_OSABI] == ELFOSABI_SOLARIS)
+    {
+      struct bfd_elf_section_data *e = elf_section_data (sec);
+      Elf_Internal_Shdr **sections = elf_elfsections (abfd);
+      switch (e->this_hdr.sh_type)
+	{
+	case SHT_SUNW_symsort:
+	case SHT_SUNW_symnsort:
+	  /* On Solaris, non-SHF_ALLOC SHT_SUNW_symsort and
+	     SHT_SUNW_symnsort sections are linked with a non-SHF_ALLOC
+	     SHT_SYMTAB section.  Since strip removes non-SHF_ALLOC
+	     SHT_SYMTAB section with STRIP_ALL, also remove non-SHF_ALLOC
+	     SHT_SUNW_symsort and SHT_SUNW_symnsort sections.  */
+	  if ((e->this_hdr.sh_flags & SHF_ALLOC) == 0
+	      && sections != NULL
+	      && e->this_hdr.sh_link < elf_numsections (abfd))
+	    {
+	      Elf_Internal_Shdr *l = sections[e->this_hdr.sh_link];
+	      if (l->sh_type == SHT_SYMTAB
+		  && (l->sh_flags & SHF_ALLOC) == 0)
+		return true;
+	    }
+	  break;
+
+	default:
+	  break;
+	}
+    }
+
   if (find_section_list (bfd_section_name (sec), false, SECTION_CONTEXT_KEEP)
       != NULL)
     return false;
@@ -1483,6 +1530,15 @@ is_hidden_symbol (asymbol *sym)
 	return true;
       }
   return false;
+}
+
+static void
+clear_visibility (asymbol *sym)
+{
+  elf_symbol_type *elf_sym = elf_symbol_from (sym);
+
+  if (elf_sym != NULL)
+    elf_sym->internal_elf_sym.st_other &= ~ELF_ST_VISIBILITY (~0);
 }
 
 /* Empty name is hopefully never a valid symbol name.  */
@@ -1718,6 +1774,7 @@ filter_symbols (bfd *abfd, bfd *obfd, asymbol **osyms,
 	    {
 	      flags &= ~(BSF_GLOBAL | BSF_WEAK);
 	      flags |= BSF_LOCAL;
+	      clear_visibility (sym);
 	    }
 
 	  else if (!undefined
@@ -2800,7 +2857,7 @@ copy_object (bfd *ibfd, bfd *obfd, const bfd_arch_info_type *input_arch)
       && bfd_get_flavour (ibfd) != bfd_target_elf_flavour
       && bfd_get_flavour (obfd) == bfd_target_elf_flavour)
     {
-      const struct elf_backend_data *bed = get_elf_backend_data (obfd);
+      elf_backend_data *bed = get_elf_backend_data (obfd);
       iarch = bed->arch;
       imach = 0;
     }
@@ -3015,13 +3072,13 @@ copy_object (bfd *ibfd, bfd *obfd, const bfd_arch_info_type *input_arch)
 	   pupdate = pupdate->next)
 	{
 	  pupdate->section = bfd_get_section_by_name (ibfd, pupdate->name);
-	  if (pupdate->section == NULL)
+	  if (pupdate->section == NULL
+	      || (osec = pupdate->section->output_section) == NULL)
 	    {
-	      non_fatal (_("error: %s not found, can't be updated"), pupdate->name);
+	      non_fatal (_("error: %s can't be updated"), pupdate->name);
 	      return false;
 	    }
 
-	  osec = pupdate->section->output_section;
 	  if (!bfd_set_section_size (osec, pupdate->size))
 	    {
 	      bfd_nonfatal_message (NULL, obfd, osec, NULL);
@@ -3304,8 +3361,8 @@ copy_object (bfd *ibfd, bfd *obfd, const bfd_arch_info_type *input_arch)
   if (convert_debugging)
     dhandle = read_debugging_info (ibfd, isympp, symcount, false);
 
-   if ((obfd->flags & (EXEC_P | DYNAMIC)) != 0
-       && (obfd->flags & HAS_RELOC) == 0)
+  if ((obfd->flags & (EXEC_P | DYNAMIC)) != 0
+      && (obfd->flags & HAS_RELOC) == 0)
     {
       if (bfd_keep_unused_section_symbols (obfd) || keep_section_symbols)
 	{
@@ -3376,7 +3433,7 @@ copy_object (bfd *ibfd, bfd *obfd, const bfd_arch_info_type *input_arch)
     }
 
   for (long s = 0; s < symcount; s++)
-    if (!bfd_copy_private_symbol_data (ibfd, osympp[s], obfd, osympp[s]))
+    if (!bfd_copy_private_symbol_data (ibfd, osympp + s, obfd, osympp + s))
       goto fail;
 
   if (dhandle != NULL)
@@ -3755,9 +3812,6 @@ copy_archive (bfd *ibfd, bfd *obfd, const char *output_target,
 	  goto cleanup_and_exit;
 	}
 
-      /* Copy slim LTO IR file as unknown object.  */
-      if (this_element->lto_type == lto_slim_ir_object)
-	ok_object = false;
       if (ok_object)
 	{
 	  ok = copy_object (this_element, output_element, input_arch);
@@ -3876,7 +3930,10 @@ copy_file (const char *input_filename, const char *output_filename, int ofd,
   ibfd = bfd_openr (input_filename, target);
   if (ibfd == NULL || bfd_stat (ibfd, in_stat) != 0)
     {
-      bfd_nonfatal_message (input_filename, NULL, NULL, NULL);
+      if (bfd_get_error () == bfd_error_invalid_target && target != NULL)
+	bfd_nonfatal_message (target, NULL, NULL, NULL);
+      else
+	bfd_nonfatal_message (input_filename, NULL, NULL, NULL);
       if (ibfd != NULL)
 	bfd_close (ibfd);
       status = 1;
@@ -3951,7 +4008,10 @@ copy_file (const char *input_filename, const char *output_filename, int ofd,
 	{
 	  if (ofd >= 0)
 	    close (ofd);
-	  bfd_nonfatal_message (output_filename, NULL, NULL, NULL);
+	  if (force_output_target && bfd_get_error () == bfd_error_invalid_target)
+	    bfd_nonfatal_message (output_target, NULL, NULL, NULL);
+	  else
+	    bfd_nonfatal_message (output_filename, NULL, NULL, NULL);
 	  bfd_close (ibfd);
 	  status = 1;
 	  return;
@@ -4036,15 +4096,15 @@ copy_file (const char *input_filename, const char *output_filename, int ofd,
  	{
 	  if (ofd >= 0)
 	    close (ofd);
- 	  bfd_nonfatal_message (output_filename, NULL, NULL, NULL);
+	  if (bfd_get_error () == bfd_error_invalid_target)
+	    bfd_nonfatal_message (output_target, NULL, NULL, NULL);
+	  else
+	    bfd_nonfatal_message (output_filename, NULL, NULL, NULL);
 	  bfd_close (ibfd);
  	  status = 1;
  	  return;
  	}
 
-      /* Copy slim LTO IR file as unknown file.  */
-      if (ibfd->lto_type == lto_slim_ir_object)
-	ok_object = false;
       if (ok_object
 	  ? !copy_object (ibfd, obfd, input_arch)
 	  : !copy_unknown_file (ibfd, obfd,
@@ -4530,7 +4590,10 @@ copy_relocations_in_section (bfd *ibfd, sec_ptr isection, bfd *obfd)
     }
 
   if (relsize == 0)
-    bfd_set_reloc (obfd, osection, NULL, 0);
+    {
+      if (!bfd_finalize_section_relocs (obfd, osection, NULL, 0))
+	return false;
+    }
   else
     {
       if (isection->orelocation != NULL)
@@ -4571,7 +4634,10 @@ copy_relocations_in_section (bfd *ibfd, sec_ptr isection, bfd *obfd)
 	  *w_relpp = 0;
 	}
 
-      bfd_set_reloc (obfd, osection, relcount == 0 ? NULL : relpp, relcount);
+      if (!bfd_finalize_section_relocs (obfd, osection,
+					relcount == 0 ? NULL : relpp,
+					relcount))
+	return false;
     }
   return true;
 }
@@ -5071,6 +5137,7 @@ strip_main (int argc, char *argv[])
 
       if (tmpname == NULL)
 	{
+	  bfd_set_error (bfd_error_system_call);
 	  bfd_nonfatal_message (argv[i], NULL, NULL,
 				_("could not create temporary file to hold stripped copy"));
 	  status = 1;
@@ -5378,6 +5445,10 @@ copy_main (int argc, char *argv[])
 	case 'I':
 	case 's':		/* "source" - 'I' is preferred */
 	  input_target = optarg;
+	  break;
+
+	case OPTION_BINARY_SYMBOL_PREFIX:
+	  bfd_binary_symbol_prefix = optarg;
 	  break;
 
 	case 'O':

@@ -1,6 +1,6 @@
 /* Generic remote debugging interface for simulators.
 
-   Copyright (C) 1993-2025 Free Software Foundation, Inc.
+   Copyright (C) 1993-2026 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support.
    Steve Chamberlain (sac@cygnus.com).
@@ -25,7 +25,6 @@
 #include "inferior.h"
 #include "infrun.h"
 #include "value.h"
-#include <ctype.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <setjmp.h>
@@ -248,7 +247,7 @@ _("Inferior %d and inferior %d would have identical simulator state.\n"
 
   if (sim_data == NULL)
     {
-      sim_data = sim_inferior_data_key.emplace (inf, sim_desc);
+      sim_data = &sim_inferior_data_key.emplace (inf, sim_desc);
     }
   else if (sim_desc)
     {

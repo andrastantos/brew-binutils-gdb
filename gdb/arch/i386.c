@@ -1,4 +1,4 @@
-/* Copyright (C) 2017-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -32,7 +32,7 @@
 
 /* See arch/i386.h.  */
 
-target_desc *
+target_desc_up
 i386_create_target_description (uint64_t xstate_bv, bool is_linux,
 				bool segments)
 {
@@ -70,5 +70,5 @@ i386_create_target_description (uint64_t xstate_bv, bool is_linux,
   if (xstate_bv & X86_XSTATE_CET_U)
     regnum = create_feature_i386_32bit_ssp (tdesc.get (), regnum);
 
-  return tdesc.release ();
+  return tdesc;
 }

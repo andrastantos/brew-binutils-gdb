@@ -1,5 +1,5 @@
 /* Generic COFF swapping routines, for BFD.
-   Copyright (C) 1990-2025 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -214,9 +214,10 @@
 static void
 coff_swap_reloc_in (bfd * abfd, void * src, void * dst)
 {
-  RELOC *reloc_src = (RELOC *) src;
-  struct internal_reloc *reloc_dst = (struct internal_reloc *) dst;
+  RELOC *reloc_src = src;
+  struct internal_reloc *reloc_dst = dst;
 
+  memset (reloc_dst, 0, sizeof (*reloc_dst));
   reloc_dst->r_vaddr  = GET_RELOC_VADDR (abfd, reloc_src->r_vaddr);
   reloc_dst->r_symndx = H_GET_S32 (abfd, reloc_src->r_symndx);
   reloc_dst->r_type   = H_GET_16 (abfd, reloc_src->r_type);
@@ -775,7 +776,8 @@ coff_swap_scnhdr_in (bfd * abfd, void * ext, void * in)
 
 ATTRIBUTE_UNUSED
 static unsigned int
-coff_swap_scnhdr_out (bfd * abfd, void * in, void * out)
+coff_swap_scnhdr_out (bfd * abfd, void * in, void * out,
+		      const asection *section ATTRIBUTE_UNUSED)
 {
   struct internal_scnhdr *scnhdr_int = (struct internal_scnhdr *) in;
   SCNHDR *scnhdr_ext = (SCNHDR *) out;

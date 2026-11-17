@@ -1,5 +1,5 @@
 /* Support for the generic parts of PE/PEI, for BFD.
-   Copyright (C) 1995-2025 Free Software Foundation, Inc.
+   Copyright (C) 1995-2026 Free Software Foundation, Inc.
    Written by Cygnus Solutions.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -82,6 +82,11 @@ static bool pe_bfd_copy_private_bfd_data (bfd *, bfd *);
 #define coff_mkobject_hook pe_mkobject_hook
 
 #ifdef COFF_IMAGE_WITH_PE
+
+/* For the case of linking ELF objects into a PE binary.  */
+#undef TARGET_MERGE_SECTIONS
+#define TARGET_MERGE_SECTIONS true
+
 /* This structure contains static variables used by the ILF code.  */
 typedef asection * asection_ptr;
 
@@ -129,9 +134,10 @@ bfd_cleanup coff_real_object_p
 static void
 coff_swap_reloc_in (bfd *abfd, void *src, void *dst)
 {
-  RELOC *reloc_src = (RELOC *) src;
-  struct internal_reloc *reloc_dst = (struct internal_reloc *) dst;
+  RELOC *reloc_src = src;
+  struct internal_reloc *reloc_dst = dst;
 
+  memset (reloc_dst, 0, sizeof (*reloc_dst));
   reloc_dst->r_vaddr  = H_GET_32 (abfd, reloc_src->r_vaddr);
   reloc_dst->r_symndx = H_GET_S32 (abfd, reloc_src->r_symndx);
   reloc_dst->r_type   = H_GET_16 (abfd, reloc_src->r_type);

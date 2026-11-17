@@ -1,4 +1,4 @@
-# Copyright (C) 2012-2025 Free Software Foundation, Inc.
+# Copyright (C) 2012-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -573,6 +573,12 @@ if { [istarget mips*-*-vxworks*] } {
 	"MIPS invalid PIC option in VxWorks PIC"
     run_list_test "option-pic-vxworks-2" "-mvxworks-pic" \
 	"MIPS invalid switch to SVR4 PIC from VxWorks PIC"
+
+    run_dump_test "vxworks-mips-hilo"
+    run_dump_test "vxworks-mips16-hilo"
+    run_dump_test "vxworks-mips16e2-hilo"
+    run_dump_test "vxworks-micromips-hilo"
+    run_dump_test "vxworks-pcrel-hilo"
 } elseif { [istarget mips*-*-*] } {
     set addr32 [expr [istarget mipstx39*-*-*] || [istarget mips-*-linux*] || [istarget mipsel-*-linux*] \
 		     || [istarget mipsisa32*-*-linux*]]
@@ -1051,6 +1057,9 @@ if { [istarget mips*-*-vxworks*] } {
 	run_dump_test "mips16e2-hilo-n32"
     }
     run_dump_test "mips16-hilo-match"
+    run_dump_test "mips16-tls-hilo-match"
+    run_dump_test "mips16-tls-hilo-addend"
+    run_dump_test "mips16-hi16-orphan-addend"
     run_dump_test "mips16-reloc-error"
     run_dump_test "mips16e2-reloc-error"
     run_dump_test "mips16-reg-error"
@@ -1335,6 +1344,25 @@ if { [istarget mips*-*-vxworks*] } {
 	run_dump_test "n32-consec"
     }
 
+    # Tests assembling named registers based on ABI setting.
+    run_dump_test "gpr-asm-names-32"
+    run_dump_test "gpr-asm-names-o64"
+    if $has_newabi {
+	run_dump_test "gpr-asm-names-n32"
+	run_dump_test "gpr-asm-names-64"
+    }
+    run_dump_test "gpr-asm-names-eabi32"
+    run_dump_test "gpr-asm-names-eabi64"
+
+    run_dump_test "fpr-asm-names-32"
+    run_dump_test "fpr-asm-names-o64"
+    if $has_newabi {
+	run_dump_test "fpr-asm-names-n32"
+	run_dump_test "fpr-asm-names-64"
+    }
+    run_dump_test "fpr-asm-names-eabi32"
+    run_dump_test "fpr-asm-names-eabi64"
+
     # tests of objdump's ability to disassemble the move mnemonic
     run_dump_test_arches "move"	[mips_arch_list_matching mips64 !micromips]
     run_dump_test_arches "micromips32-move" [mips_arch_list_matching micromips]
@@ -1562,6 +1590,8 @@ if { [istarget mips*-*-vxworks*] } {
 
     run_dump_test "noreorder"
     run_dump_test "align"
+    # Tidy up, to not leave huge files.
+    remote_file host delete tmpdir/align.o
     run_dump_test "align2"
     run_dump_test "align2-el"
     run_dump_test "align3"
@@ -1649,6 +1679,9 @@ if { [istarget mips*-*-vxworks*] } {
 	run_dump_test "micromips-hilo-n64"
     }
     run_dump_test "micromips-hilo-match"
+    run_dump_test "micromips-tls-hilo-match"
+    run_dump_test "micromips-tls-hilo-addend"
+    run_dump_test "micromips-hi16-orphan-addend"
 
     run_dump_test_arches "mcu"		[mips_arch_list_matching mips32r2 \
 					    !octeon]

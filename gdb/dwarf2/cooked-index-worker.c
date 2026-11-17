@@ -1,6 +1,6 @@
 /* DWARF index storage
 
-   Copyright (C) 2022-2025 Free Software Foundation, Inc.
+   Copyright (C) 2022-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -46,8 +46,6 @@ cooked_index_worker_result::get_reader (dwarf2_per_cu *per_cu)
 cutu_reader *
 cooked_index_worker_result::preserve (cutu_reader_up reader)
 {
-  m_abbrev_table_cache.add (reader->release_abbrev_table ());
-
   auto [it, inserted] = m_reader_hash.insert (std::move (reader));
   gdb_assert (inserted);
 
@@ -108,6 +106,16 @@ cooked_index_worker_result::emit_complaints_and_exceptions
 /* See cooked-index-worker.h.  */
 
 void
+cooked_index_worker_result::invert_cu_inclusions ()
+{
+  for (auto &iter : m_inclusions)
+    for (dwarf2_per_cu *included : iter.second)
+      included->add_includer (iter.first);
+}
+
+/* See cooked-index-worker.h.  */
+
+void
 cooked_index_worker::start ()
 {
   gdb::thread_pool::g_thread_pool->post_task ([this] ()
@@ -132,9 +140,8 @@ bool
 cooked_index_worker::wait (cooked_state desired_state, bool allow_quit)
 {
   bool done;
-#if CXX_STD_THREAD
   {
-    std::unique_lock<std::mutex> lock (m_mutex);
+    gdb::unique_lock<gdb::mutex> lock (m_mutex);
 
     /* This may be called from a non-main thread -- this functionality
        is needed for the index cache -- but in this case we require
@@ -146,7 +153,7 @@ cooked_index_worker::wait (cooked_state desired_state, bool allow_quit)
 	if (allow_quit)
 	  {
 	    std::chrono::milliseconds duration { 15 };
-	    if (m_cond.wait_for (lock, duration) == std::cv_status::timeout)
+	    if (m_cond.wait_for (lock, duration) == gdb::cv_status::timeout)
 	      QUIT;
 	  }
 	else
@@ -154,11 +161,6 @@ cooked_index_worker::wait (cooked_state desired_state, bool allow_quit)
       }
     done = m_state == cooked_state::CACHE_DONE;
   }
-#else
-  /* Without threads, all the work is done immediately on the main
-     thread, and there is never anything to wait for.  */
-  done = desired_state == cooked_state::CACHE_DONE;
-#endif /* CXX_STD_THREAD */
 
   /* Only the main thread is allowed to report complaints and the
      like.  */
@@ -213,15 +215,10 @@ cooked_index_worker::set (cooked_state desired_state)
 {
   gdb_assert (desired_state != cooked_state::INITIAL);
 
-#if CXX_STD_THREAD
-  std::lock_guard<std::mutex> guard (m_mutex);
+  gdb::lock_guard<gdb::mutex> guard (m_mutex);
   gdb_assert (desired_state > m_state);
   m_state = desired_state;
   m_cond.notify_one ();
-#else
-  /* Without threads, all the work is done immediately on the main
-     thread, and there is never anything to do.  */
-#endif /* CXX_STD_THREAD */
 }
 
 /* See cooked-index-worker.h.  */
@@ -251,6 +248,10 @@ cooked_index_worker::done_reading ()
     for (auto &one_result : m_results)
       m_all_parents_map.add_map (*one_result.get_parent_map ());
   }
+
+  /* Update all the CU inclusion information.  */
+  for (auto &item : m_results)
+    item.invert_cu_inclusions ();
 
   dwarf2_per_bfd *per_bfd = m_per_objfile->per_bfd;
   cooked_index *table

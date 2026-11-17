@@ -1,6 +1,6 @@
 /* tc-loongarch.c -- Assemble for the LoongArch ISA
 
-   Copyright (C) 2021-2025 Free Software Foundation, Inc.
+   Copyright (C) 2021-2026 Free Software Foundation, Inc.
    Contributed by Loongson Ltd.
 
    This file is part of GAS.
@@ -82,6 +82,9 @@ struct loongarch_cl_insn
      The macros or instructions expanded from macros do not output register
      deprecated warning.  */
   unsigned int expand_from_macro;
+
+  /* Whether the instruction is linker-relaxable.  */
+  bool linker_relax;
 };
 
 #ifndef DEFAULT_ARCH
@@ -116,7 +119,10 @@ const char md_shortopts[] = "O::g::G:";
 
 static const char default_arch[] = DEFAULT_ARCH;
 
-static bool call36 = 0;
+static bool call_reloc = 0;
+
+/* The dwarf2 data alignment, adjusted for 32 or 64 bit.  */
+int loongarch_cie_data_alignment;
 
 /* The lowest 4-bit is the bytes of instructions.  */
 #define RELAX_BRANCH_16 0xc0000014
@@ -178,34 +184,24 @@ int
 md_parse_option (int c, const char *arg)
 {
   int ret = 1;
-  char lp64[256] = "";
-  char ilp32[256] = "";
-
-  lp64['s'] = lp64['S'] = EF_LOONGARCH_ABI_SOFT_FLOAT;
-  lp64['f'] = lp64['F'] = EF_LOONGARCH_ABI_SINGLE_FLOAT;
-  lp64['d'] = lp64['D'] = EF_LOONGARCH_ABI_DOUBLE_FLOAT;
-
-  ilp32['s'] = ilp32['S'] = EF_LOONGARCH_ABI_SOFT_FLOAT;
-  ilp32['f'] = ilp32['F'] = EF_LOONGARCH_ABI_SINGLE_FLOAT;
-  ilp32['d'] = ilp32['D'] = EF_LOONGARCH_ABI_DOUBLE_FLOAT;
+  char fabi[256] = "";
+  fabi['s'] = fabi['S'] = EF_LOONGARCH_ABI_SOFT_FLOAT;
+  fabi['f'] = fabi['F'] = EF_LOONGARCH_ABI_SINGLE_FLOAT;
+  fabi['d'] = fabi['D'] = EF_LOONGARCH_ABI_DOUBLE_FLOAT;
 
   switch (c)
     {
     case OPTION_ABI:
-      if (strncasecmp (arg, "lp64", 4) == 0 && lp64[arg[4] & 0xff] != 0)
+      if (strncasecmp (arg, "lp64", 4) == 0 && fabi[arg[4] & 0xff] != 0)
 	{
 	  LARCH_opts.ase_ilp32 = 1;
 	  LARCH_opts.ase_lp64 = 1;
-	  LARCH_opts.ase_lsx = 1;
-	  LARCH_opts.ase_lasx = 1;
-	  LARCH_opts.ase_lvz = 1;
-	  LARCH_opts.ase_lbt = 1;
-	  LARCH_opts.ase_abi = lp64[arg[4] & 0xff];
+	  LARCH_opts.ase_abi = fabi[arg[4] & 0xff];
 	}
-      else if (strncasecmp (arg, "ilp32", 5) == 0 && ilp32[arg[5] & 0xff] != 0)
+      else if (strncasecmp (arg, "ilp32", 5) == 0 && fabi[arg[5] & 0xff] != 0)
 	{
-	  LARCH_opts.ase_abi = ilp32[arg[5] & 0xff];
 	  LARCH_opts.ase_ilp32 = 1;
+	  LARCH_opts.ase_abi = fabi[arg[5] & 0xff];
 	}
       else
 	ret = 0;
@@ -281,43 +277,54 @@ static struct htab *cfi_f_htab = NULL;
 void
 loongarch_after_parse_args ()
 {
-  /* Set default ABI/ISA LP64D.  */
+  /* If no -mabi specified, set ABI by default_arch.  */
   if (!LARCH_opts.ase_ilp32)
     {
       if (strcmp (default_arch, "loongarch64") == 0)
 	{
-	  LARCH_opts.ase_abi = EF_LOONGARCH_ABI_DOUBLE_FLOAT;
 	  LARCH_opts.ase_ilp32 = 1;
 	  LARCH_opts.ase_lp64 = 1;
-	  LARCH_opts.ase_lsx = 1;
-	  LARCH_opts.ase_lasx = 1;
-	  LARCH_opts.ase_lvz = 1;
-	  LARCH_opts.ase_lbt = 1;
 	}
       else if (strcmp (default_arch, "loongarch32") == 0)
-	{
-	  LARCH_opts.ase_abi = EF_LOONGARCH_ABI_DOUBLE_FLOAT;
 	  LARCH_opts.ase_ilp32 = 1;
-	}
       else
 	as_bad ("unknown default architecture `%s'", default_arch);
     }
 
-  LARCH_opts.ase_abi |= EF_LOONGARCH_OBJABI_V1;
-  /* Set default ISA double-float.  */
-  if (!LARCH_opts.ase_nf
-      && !LARCH_opts.ase_sf
-      && !LARCH_opts.ase_df)
+  /* Enable all instructions defaultly.
+     Glibc checks LSX/LASX support when configure.
+     Kernel has float instructions but with -msoft-float option.
+     TODO: Enable la32 or la64 instructions by march option.
+     TODO: Instruction enable and macro expansion may need to be controlled
+     by different variables. ase_ilp32 and ase_lp64 only use for instruction
+     enable and can both be 1. The variables used for macro expand can't both
+     be 1.  */
+  LARCH_opts.ase_sf = 1;
+  LARCH_opts.ase_df = 1;
+  LARCH_opts.ase_lsx = 1;
+  LARCH_opts.ase_lasx = 1;
+  LARCH_opts.ase_lvz = 1;
+  LARCH_opts.ase_lbt = 1;
+
+  /* If no -mabi specified, set e_flags base ABI by target os.  */
+  if (!LARCH_opts.ase_abi)
     {
-      LARCH_opts.ase_sf = 1;
-      LARCH_opts.ase_df = 1;
+      if (strcmp (TARGET_OS, "linux-gnusf") == 0)
+	LARCH_opts.ase_abi = EF_LOONGARCH_ABI_SOFT_FLOAT;
+      else if (strcmp (TARGET_OS, "linux-gnuf32") == 0)
+	LARCH_opts.ase_abi = EF_LOONGARCH_ABI_SINGLE_FLOAT;
+      else if (strcmp (TARGET_OS, "linux-gnu") == 0)
+	LARCH_opts.ase_abi = EF_LOONGARCH_ABI_DOUBLE_FLOAT;
+      else
+	/* To support lonngarch*-elf targets.  */
+	LARCH_opts.ase_abi = EF_LOONGARCH_ABI_DOUBLE_FLOAT;
     }
 
-  size_t i;
-
-  assert(LARCH_opts.ase_ilp32);
+  /* Set eflags ABI version to v1 (ELF object file ABI 2.0).  */
+  LARCH_opts.ase_abi |= EF_LOONGARCH_OBJABI_V1;
 
   /* Init ilp32/lp64 registers names.  */
+  size_t i;
   if (!r_htab)
     r_htab = str_htab_create ();
   if (!r_deprecated_htab)
@@ -387,12 +394,12 @@ loongarch_after_parse_args ()
 	str_hash_insert_int (f_deprecated_htab, loongarch_f_alias_deprecated[i],
 			     i, 0);
 
-  /* The .cfi directive supports register aliases without the "$" prefix.  */
-  for (i = 0; i < ARRAY_SIZE (loongarch_f_cfi_name); i++)
-    {
-      str_hash_insert_int (cfi_f_htab, loongarch_f_cfi_name[i], i, 0);
-      str_hash_insert_int (cfi_f_htab, loongarch_f_cfi_name_alias[i], i, 0);
-    }
+      /* The .cfi directive supports register aliases without the "$" prefix.  */
+      for (i = 0; i < ARRAY_SIZE (loongarch_f_cfi_name); i++)
+	{
+	  str_hash_insert_int (cfi_f_htab, loongarch_f_cfi_name[i], i, 0);
+	  str_hash_insert_int (cfi_f_htab, loongarch_f_cfi_name_alias[i], i, 0);
+	}
 
       if (!fc_htab)
 	fc_htab = str_htab_create ();
@@ -515,6 +522,8 @@ md_begin ()
   /* FIXME: expressionS use 'offsetT' as constant,
    * we want this is 64-bit type.  */
   assert (8 <= sizeof (offsetT));
+
+  loongarch_cie_data_alignment = LARCH_opts.ase_lp64 ? (-8) : (-4);
 }
 
 /* Called just before the assembler exits.  */
@@ -522,7 +531,8 @@ md_begin ()
 void
 loongarch_md_end (void)
 {
-  htab_delete (align_hash);
+  if (ENABLE_LEAK_CHECK)
+    htab_delete (align_hash);
 }
 
 unsigned long
@@ -554,7 +564,7 @@ s_dtprel (int bytes)
 
   p = frag_more (bytes);
   md_number_to_chars (p, 0, bytes);
-  fix_new_exp (frag_now, p - frag_now->fr_literal, bytes, &ex, FALSE,
+  fix_new_exp (frag_now, p - frag_now->fr_literal, bytes, &ex, false,
 	       (bytes == 8
 		? BFD_RELOC_LARCH_TLS_DTPREL64
 		: BFD_RELOC_LARCH_TLS_DTPREL32));
@@ -809,6 +819,7 @@ loongarch_args_parser_can_match_arg_helper (char esc_ch1, char esc_ch2,
 	  ip->reloc_info[ip->reloc_num].type = BFD_RELOC_LARCH_RELAX;
 	  ip->reloc_info[ip->reloc_num].value = const_0;
 	  ip->reloc_num++;
+	  ip->linker_relax = true;
 	}
       else
 	ip->match_now = 0;
@@ -858,8 +869,10 @@ loongarch_args_parser_can_match_arg_helper (char esc_ch1, char esc_ch2,
 		      _("not support reloc bit-field\nfmt: %c%c %s\nargs: %s"),
 		      esc_ch1, esc_ch2, bit_field, arg);
 
-	  if (ip->reloc_info[0].type >= BFD_RELOC_LARCH_B16
-	      && ip->reloc_info[0].type <= BFD_RELOC_LARCH_TLS_DESC_PCREL20_S2)
+	  if ((ip->reloc_info[0].type >= BFD_RELOC_LARCH_B16
+	       && ip->reloc_info[0].type <= BFD_RELOC_LARCH_TLS_DESC_PCADD_LO12)
+	      || ip->reloc_info[0].type == BFD_RELOC_32_PCREL
+	      || ip->reloc_info[0].type == BFD_RELOC_64_PCREL)
 	    {
 	      /* As we compact stack-relocs, it is no need for pop operation.
 		 But break out until here in order to check the imm field.
@@ -874,11 +887,13 @@ loongarch_args_parser_can_match_arg_helper (char esc_ch1, char esc_ch2,
 			|| BFD_RELOC_LARCH_TLS_LE_LO12 == reloc_type
 			|| BFD_RELOC_LARCH_TLS_LE64_LO20 == reloc_type
 			|| BFD_RELOC_LARCH_TLS_LE64_HI12 == reloc_type
-			|| BFD_RELOC_LARCH_CALL36 == reloc_type))
+			|| BFD_RELOC_LARCH_CALL36 == reloc_type
+			|| BFD_RELOC_LARCH_CALL30 == reloc_type))
 		{
 		  ip->reloc_info[ip->reloc_num].type = BFD_RELOC_LARCH_RELAX;
 		  ip->reloc_info[ip->reloc_num].value = const_0;
 		  ip->reloc_num++;
+		  ip->linker_relax = true;
 		}
 
 	      /* Only one register macros (used in normal code model)
@@ -886,8 +901,7 @@ loongarch_args_parser_can_match_arg_helper (char esc_ch1, char esc_ch2,
 		 LARCH_opts.ase_labs and LARCH_opts.ase_gabs are used
 		 to generate the code model of absolute addresses, and
 		 we do not relax this code model.  */
-	      if (LARCH_opts.relax && (ip->expand_from_macro & 1)
-		    && !(LARCH_opts.ase_labs | LARCH_opts.ase_gabs)
+	      if (LARCH_opts.relax
 		    && (BFD_RELOC_LARCH_PCALA_HI20 == reloc_type
 			|| BFD_RELOC_LARCH_PCALA_LO12 == reloc_type
 			|| BFD_RELOC_LARCH_GOT_PC_HI20 == reloc_type
@@ -899,11 +913,27 @@ loongarch_args_parser_can_match_arg_helper (char esc_ch1, char esc_ch2,
 			|| BFD_RELOC_LARCH_TLS_DESC_LD == reloc_type
 			|| BFD_RELOC_LARCH_TLS_DESC_CALL == reloc_type
 			|| BFD_RELOC_LARCH_TLS_IE_PC_HI20 == reloc_type
-			|| BFD_RELOC_LARCH_TLS_IE_PC_LO12 == reloc_type))
+			|| BFD_RELOC_LARCH_TLS_IE_PC_LO12 == reloc_type
+			|| BFD_RELOC_LARCH_GOT_PCADD_HI20 == reloc_type
+			|| BFD_RELOC_LARCH_GOT_PCADD_LO12 == reloc_type
+			|| BFD_RELOC_LARCH_TLS_DESC_PCADD_HI20 == reloc_type
+			|| BFD_RELOC_LARCH_TLS_DESC_PCADD_LO12 == reloc_type
+			|| BFD_RELOC_LARCH_TLS_IE_PCADD_HI20 == reloc_type
+			|| BFD_RELOC_LARCH_TLS_IE_PCADD_LO12 == reloc_type))
 		{
-		  ip->reloc_info[ip->reloc_num].type = BFD_RELOC_LARCH_RELAX;
-		  ip->reloc_info[ip->reloc_num].value = const_0;
-		  ip->reloc_num++;
+		  /* R_LARCH_RELAX can be emitted by .reloc, so always set
+		     link_relax for instructions.
+		     For example:
+		     .reloc  .,R_LARCH_RELAX
+		     pcalau12i       $r12,%ie_pc_hi20(.LANCHOR0)  */
+		  ip->linker_relax = true;
+		  if ((ip->expand_from_macro & 1)
+		      && !(LARCH_opts.ase_labs | LARCH_opts.ase_gabs))
+		    {
+		      ip->reloc_info[ip->reloc_num].type = BFD_RELOC_LARCH_RELAX;
+		      ip->reloc_info[ip->reloc_num].value = const_0;
+		      ip->reloc_num++;
+		    }
 		}
 	      break;
 	    }
@@ -1096,9 +1126,11 @@ check_this_insn_before_appending (struct loongarch_cl_insn *ip)
       ip->reloc_info[ip->reloc_num].value = const_0;
       ip->reloc_num++;
     }
-  /* check all atomic memory insns */
+  /* check all atomic memory insns except amswap.w.
+     amswap.w $rd,$r1,$rj ($rd==$rj) is used for ud ui5.  */
   else if (ip->insn->mask == LARCH_MK_ATOMIC_MEM
-	   && LARCH_INSN_ATOMIC_MEM (ip->insn_bin))
+	   && LARCH_INSN_ATOMIC_MEM (ip->insn_bin)
+	   && !LARCH_INSN_AMSWAP_W (ip->insn_bin))
     {
       /* For AMO insn amswap.[wd], amadd.[wd], etc.  */
       if (ip->args[0] != 0
@@ -1155,32 +1187,74 @@ move_insn (struct loongarch_cl_insn *insn, fragS *frag, long where)
 	}
     }
   install_insn (insn);
+
+  /* Mark the current section and frag as linker relaxable.  */
+  if (insn->linker_relax)
+    {
+      now_seg->sec_flg1 = true;
+      insn->frag->tc_frag_data.linker_relax = true;
+    }
 }
 
 /* Add INSN to the end of the output.  */
 static void
 append_fixed_insn (struct loongarch_cl_insn *insn)
 {
-  /* Ensure the jirl is emitted to the same frag as the pcaddu18i.  */
-  if (BFD_RELOC_LARCH_CALL36 == insn->reloc_info[0].type)
+  /* Start a new frag only used for relaxable instrucntions.  */
+  if (LARCH_opts.relax && insn->linker_relax)
+    {
+      frag_wane (frag_now);
+      frag_new (0);
+    }
+
+  /* Ensure pcaddu18i/pcaddu12i + jirl in the same frag.  */
+  if (insn->reloc_info[0].type == BFD_RELOC_LARCH_CALL36
+      || insn->reloc_info[0].type == BFD_RELOC_LARCH_CALL30)
     frag_grow (8);
 
   char *f = frag_more (insn->insn_length);
   move_insn (insn, frag_now, f - frag_now->fr_literal);
 
-  if (call36)
+  /* We need to start a new frag after any instruction that can be
+     optimized away or compressed by the linker during relaxation, to prevent
+     the assembler from computing static offsets across such an instruction.
+
+     This is necessary to get correct .eh_frame FDE DW_CFA_advance_loc info.
+     If one cfi_insn_data's two symbols are not in the same frag, it will
+     generate ADD and SUB relocations pairs to calculate DW_CFA_advance_loc.
+     (gas/dw2gencfi.c: output_cfi_insn:
+     if (symbol_get_frag (to) == symbol_get_frag (from)))
+
+     Since the relocations of the normal code model and the extreme code model
+     of the old LE instruction sequence are the same, it is impossible to
+     distinguish which code model it is based on relocation alone, so the
+     extreme code model has to be relaxed.  */
+
+  /* End the frag to ensure it only used for relaxable instructions.  */
+  if (LARCH_opts.relax && insn->linker_relax
+      && insn->reloc_info[0].type != BFD_RELOC_LARCH_CALL36
+      && insn->reloc_info[0].type != BFD_RELOC_LARCH_CALL30)
+    {
+      frag_wane (frag_now);
+      frag_new (0);
+    }
+
+  /* To ensure pcaddu18i/pcaddu12i + jirl in the same frag.
+     End the frag after the jirl instruction.  */
+  if (LARCH_opts.relax && call_reloc)
     {
       if (strcmp (insn->name, "jirl") == 0)
 	{
-	  /* See comment at end of append_fixp_and_insn.  */
 	  frag_wane (frag_now);
 	  frag_new (0);
 	}
-      call36 = 0;
+      call_reloc = 0;
     }
 
-  if (BFD_RELOC_LARCH_CALL36 == insn->reloc_info[0].type)
-    call36 = 1;
+  if (LARCH_opts.relax
+      && (insn->reloc_info[0].type == BFD_RELOC_LARCH_CALL36
+	  || insn->reloc_info[0].type == BFD_RELOC_LARCH_CALL30))
+    call_reloc = 1;
 }
 
 /* Add instructions based on the worst-case scenario firstly.  */
@@ -1237,7 +1311,7 @@ append_fixp_and_insn (struct loongarch_cl_insn *ip)
 
 	      ip->fixp[i] = fix_new_exp (ip->frag, ip->where,
 					 bfd_get_reloc_size (howto),
-					 &reloc_info[i].value, FALSE, r_type);
+					 &reloc_info[i].value, false, r_type);
 	    }
 	  /* Allow LoongArch 64 to use 64-bit addends.  */
 	  if (LARCH_opts.ase_lp64)
@@ -1249,40 +1323,6 @@ append_fixp_and_insn (struct loongarch_cl_insn *ip)
     as_fatal (_("Internal error: not support relax now"));
   else
     append_fixed_insn (ip);
-
-  /* We need to start a new frag after any instruction that can be
-     optimized away or compressed by the linker during relaxation, to prevent
-     the assembler from computing static offsets across such an instruction.
-
-     This is necessary to get correct .eh_frame FDE DW_CFA_advance_loc info.
-     If one cfi_insn_data's two symbols are not in the same frag, it will
-     generate ADD and SUB relocations pairs to calculate DW_CFA_advance_loc.
-     (gas/dw2gencfi.c: output_cfi_insn:
-     if (symbol_get_frag (to) == symbol_get_frag (from)))
-
-     For macro instructions, only the first instruction expanded from macro
-     need to start a new frag.
-     Since the relocations of the normal code model and the extreme code model
-     of the old LE instruction sequence are the same, it is impossible to
-     distinguish which code model it is based on relocation alone, so the
-     extreme code model has to be relaxed.  */
-  if (LARCH_opts.relax
-      && (BFD_RELOC_LARCH_PCALA_HI20 == reloc_info[0].type
-	  || BFD_RELOC_LARCH_GOT_PC_HI20 == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_LE_HI20_R == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_LE_ADD_R == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_LD_PC_HI20 == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_GD_PC_HI20 == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_DESC_PC_HI20 == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_IE_PC_HI20 == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_LE_HI20 == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_LE_LO12 == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_LE64_LO20 == reloc_info[0].type
-	  || BFD_RELOC_LARCH_TLS_LE64_HI12 == reloc_info[0].type))
-    {
-      frag_wane (frag_now);
-      frag_new (0);
-    }
 }
 
 /* Ask helper for returning a malloced c_str or NULL.  */
@@ -1372,6 +1412,18 @@ assember_macro_helper (const char *const args[], void *context_ptr)
   return ret;
 }
 
+static unsigned int pcadd_hi = 0;
+#define PCADD_HI_LABEL_NAME ".Lpcadd_hi"
+
+static char *
+loongarch_pcadd_hi_label_name (unsigned int n)
+{
+  static char symbol_name_build[24];
+  char *p = symbol_name_build;
+  sprintf (p, "%s%u", PCADD_HI_LABEL_NAME, n);
+  return symbol_name_build;
+}
+
 /* Accept instructions separated by ';'
  * assuming 'not starting with space and not ending with space' or pass in
  * empty c_str.  */
@@ -1397,6 +1449,11 @@ loongarch_assemble_INSNs (char *str, unsigned int expand_from_macro)
       if (*str == '\0')
 	break;
 
+      /* LoongArch instructions require 4-byte alignment.  When emitting
+	 instructions into any section, record the appropriate section
+	 alignment.  */
+      record_alignment (now_seg, 2);
+
       struct loongarch_cl_insn the_one;
       memset (&the_one, 0, sizeof (the_one));
       the_one.name = str;
@@ -1409,6 +1466,38 @@ loongarch_assemble_INSNs (char *str, unsigned int expand_from_macro)
 
       loongarch_split_args_by_comma (str, the_one.arg_strs);
       get_loongarch_opcode (&the_one);
+
+      /* Make a new label .Lpcadd_hi* for pcadd_lo12.  */
+      if (expand_from_macro
+	  && the_one.reloc_num > 0
+	  && (the_one.reloc_info[0].type == BFD_RELOC_LARCH_PCADD_HI20
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_GOT_PCADD_HI20
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_TLS_IE_PCADD_HI20
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_TLS_LD_PCADD_HI20
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_TLS_GD_PCADD_HI20
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_TLS_DESC_PCADD_HI20))
+	{
+	  char *name = loongarch_pcadd_hi_label_name (pcadd_hi);
+	  local_symbol_make (name, now_seg, frag_now, frag_now_fix ());
+	}
+
+      /* Change symbol to .Lpcadd_hi*.  */
+      if (expand_from_macro
+	  && the_one.reloc_num > 0
+	  && (the_one.reloc_info[0].type == BFD_RELOC_LARCH_PCADD_LO12
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_GOT_PCADD_LO12
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_TLS_IE_PCADD_LO12
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_TLS_LD_PCADD_LO12
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_TLS_GD_PCADD_LO12
+	      || the_one.reloc_info[0].type == BFD_RELOC_LARCH_TLS_DESC_PCADD_LO12))
+	{
+	  char *name = loongarch_pcadd_hi_label_name (pcadd_hi);
+	  symbolS *s = symbol_find (name);
+	  if (s == NULL)
+	    as_bad (_("no matched pcadd_hi label: %s"), name);
+	  the_one.reloc_info[0].value.X_add_symbol = s;
+	  pcadd_hi++;
+	}
 
       if (!the_one.all_match)
 	{
@@ -1458,7 +1547,7 @@ md_assemble (char *str)
 const char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  return ieee_md_atof (type, litP, sizeP, FALSE);
+  return ieee_md_atof (type, litP, sizeP, false);
 }
 
 void
@@ -1492,6 +1581,8 @@ loongarch_force_relocation (struct fix *fixp)
       case BFD_RELOC_LARCH_GOT_LO12:
       case BFD_RELOC_LARCH_GOT64_LO20:
       case BFD_RELOC_LARCH_GOT64_HI12:
+      case BFD_RELOC_LARCH_GOT_PCADD_HI20:
+      case BFD_RELOC_LARCH_GOT_PCADD_LO12:
 	return 1;
       default:
 	break;
@@ -1514,13 +1605,56 @@ loongarch_force_relocation_sub_local (fixS *fixp, segT sec ATTRIBUTE_UNUSED)
 	       || (S_GET_SEGMENT (fixp->fx_subsy)->flags & SEC_CODE) == 0));
 }
 
-/* Postpone text-section label subtraction calculation until linking, since
-   linker relaxations might change the deltas.  */
-bool
-loongarch_force_relocation_sub_same(fixS *fixp ATTRIBUTE_UNUSED, segT sec)
+
+/* Whether emit relocations for label subtraction in same section.  */
+static bool
+_loongarch_force_relocation_sub_same (segT sec,
+				      fragS *addfrag,
+				      fragS *subfrag)
 {
-  return LARCH_opts.relax && (sec->flags & SEC_CODE) != 0;
+  if (!LARCH_opts.relax)
+    return false;
+
+  /* Not emit relocation if section has no relaxable frag.  */
+  if (!sec->sec_flg1)
+    return false;
+
+  /* Not emit relocation if addsy and subsy are in the same frag.  */
+  if (addfrag == subfrag)
+    return false;
+
+  /* Emit relocation if find a frag is relaxable from addsy to subsy.  */
+  fragS *s;
+  for (s = subfrag; s != NULL && s != addfrag; s = s->fr_next)
+    {
+      if (s->tc_frag_data.linker_relax)
+	return true;
+    }
+  if (s == addfrag)
+    return false;
+
+  for (s = addfrag; s != NULL && s != subfrag; s = s->fr_next)
+    {
+      if (s->tc_frag_data.linker_relax)
+	return true;
+    }
+  if (s == subfrag)
+    return false;
+
+  return true;
 }
+
+
+/* Postpone text-section label subtraction calculation until linking,
+   since linker relaxations might change the deltas.  */
+bool
+loongarch_force_relocation_sub_same (fixS *fixp ATTRIBUTE_UNUSED, segT sec)
+{
+  fragS *addfrag = symbol_get_frag (fixp->fx_addsy);
+  fragS *subfrag = symbol_get_frag (fixp->fx_subsy);
+  return _loongarch_force_relocation_sub_same (sec, addfrag, subfrag);
+}
+
 
 static void fix_reloc_insn (fixS *fixP, bfd_vma reloc_val, char *buf)
 {
@@ -1530,7 +1664,7 @@ static void fix_reloc_insn (fixS *fixP, bfd_vma reloc_val, char *buf)
 
   insn = bfd_getl32 (buf);
 
-  if (!loongarch_adjust_reloc_bitsfield (NULL, howto, &reloc_val))
+  if (!bfd_elf_loongarch_adjust_reloc_bitsfield (NULL, howto, &reloc_val))
     as_bad_where (fixP->fx_file, fixP->fx_line, "Reloc overflow");
 
   insn = (insn & (insn_t)howto->src_mask)
@@ -1581,6 +1715,10 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
     case BFD_RELOC_LARCH_TLS_LE_ADD_R:
     case BFD_RELOC_LARCH_TLS_LE_HI20_R:
     case BFD_RELOC_LARCH_TLS_LE_LO12_R:
+    case BFD_RELOC_LARCH_TLS_IE_PCADD_HI20:
+    case BFD_RELOC_LARCH_TLS_LD_PCADD_HI20:
+    case BFD_RELOC_LARCH_TLS_GD_PCADD_HI20:
+    case BFD_RELOC_LARCH_TLS_DESC_PCADD_HI20:
       /* Add tls lo (got_lo reloc type).  */
       if (fixP->fx_addsy == NULL)
 	as_bad_where (fixP->fx_file, fixP->fx_line,
@@ -1643,10 +1781,10 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	  switch (fixP->fx_r_type)
 	    {
 	    case BFD_RELOC_64:
-	      fixP->fx_r_type = BFD_RELOC_LARCH_64_PCREL;
+	      fixP->fx_r_type = BFD_RELOC_64_PCREL;
 	      break;
 	    case BFD_RELOC_32:
-	      fixP->fx_r_type = BFD_RELOC_LARCH_32_PCREL;
+	      fixP->fx_r_type = BFD_RELOC_32_PCREL;
 	      break;
 	    default:
 	      break;
@@ -1665,7 +1803,7 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	  && S_GET_VALUE (fixP->fx_subsy)
 	  == fixP->fx_frag->fr_address + fixP->fx_where)
 	{
-	  fixP->fx_r_type = BFD_RELOC_LARCH_32_PCREL;
+	  fixP->fx_r_type = BFD_RELOC_32_PCREL;
 	  fixP->fx_subsy = NULL;
 	  break;
 	}
@@ -1745,64 +1883,72 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
       break;
 
     case BFD_RELOC_LARCH_CFA:
-      if (fixP->fx_addsy && fixP->fx_subsy)
-	{
-	  fixP->fx_next = xmemdup (fixP, sizeof (*fixP), sizeof (*fixP));
-	  fixP->fx_next->fx_addsy = fixP->fx_subsy;
-	  fixP->fx_next->fx_subsy = NULL;
-	  fixP->fx_next->fx_offset = 0;
-	  fixP->fx_subsy = NULL;
+      {
+	unsigned int subtype;
+	fragS *opfrag = (fragS *) fixP->fx_frag->fr_opcode;
+	subtype = bfd_get_8 (NULL, opfrag->fr_literal + fixP->fx_where);
 
-	  unsigned int subtype;
-	  offsetT loc;
-	  fragS *opfrag = (fragS *) fixP->fx_frag->fr_opcode;
-	  subtype = bfd_get_8 (NULL, opfrag->fr_literal + fixP->fx_where);
-	  loc = fixP->fx_frag->fr_fix - (subtype & 7);
-	  switch (subtype)
-	    {
-	    case DW_CFA_advance_loc1:
-	      fixP->fx_where = loc + 1;
-	      fixP->fx_next->fx_where = loc + 1;
-	      fixP->fx_r_type = BFD_RELOC_LARCH_ADD8;
-	      fixP->fx_next->fx_r_type = BFD_RELOC_LARCH_SUB8;
-	      md_number_to_chars (buf+1, 0, fixP->fx_size);
-	      break;
+	/* Update to the real size after relax_segment.  */
+	if (subtype == DW_CFA_advance_loc2)
+	  fixP->fx_size = 2;
+	if (subtype == DW_CFA_advance_loc4)
+	  fixP->fx_size = 4;
 
-	    case DW_CFA_advance_loc2:
-	      fixP->fx_size = 2;
-	      fixP->fx_next->fx_size = 2;
-	      fixP->fx_where = loc + 1;
-	      fixP->fx_next->fx_where = loc + 1;
-	      fixP->fx_r_type = BFD_RELOC_LARCH_ADD16;
-	      fixP->fx_next->fx_r_type = BFD_RELOC_LARCH_SUB16;
-	      md_number_to_chars (buf+1, 0, fixP->fx_size);
-	      break;
+	if (fixP->fx_addsy && fixP->fx_subsy)
+	  {
+	    fixP->fx_next = xmemdup (fixP, sizeof (*fixP), sizeof (*fixP));
+	    fixP->fx_next->fx_addsy = fixP->fx_subsy;
+	    fixP->fx_next->fx_subsy = NULL;
+	    fixP->fx_next->fx_offset = 0;
+	    fixP->fx_subsy = NULL;
 
-	    case DW_CFA_advance_loc4:
-	      fixP->fx_size = 4;
-	      fixP->fx_next->fx_size = 4;
-	      fixP->fx_where = loc;
-	      fixP->fx_next->fx_where = loc;
-	      fixP->fx_r_type = BFD_RELOC_LARCH_ADD32;
-	      fixP->fx_next->fx_r_type = BFD_RELOC_LARCH_SUB32;
-	      md_number_to_chars (buf+1, 0, fixP->fx_size);
-	      break;
+	    offsetT loc;
+	    loc = fixP->fx_frag->fr_fix - (subtype & 7);
+	    switch (subtype)
+	      {
+	      case DW_CFA_advance_loc1:
+		fixP->fx_where = loc + 1;
+		fixP->fx_next->fx_where = loc + 1;
+		fixP->fx_r_type = BFD_RELOC_LARCH_ADD8;
+		fixP->fx_next->fx_r_type = BFD_RELOC_LARCH_SUB8;
+		md_number_to_chars (buf+1, 0, fixP->fx_size);
+		break;
 
-	    default:
-	      if (subtype < 0x80 && (subtype & 0x40))
-		{
-		  /* DW_CFA_advance_loc.  */
-		  fixP->fx_frag = opfrag;
-		  fixP->fx_next->fx_frag = fixP->fx_frag;
-		  fixP->fx_r_type = BFD_RELOC_LARCH_ADD6;
-		  fixP->fx_next->fx_r_type = BFD_RELOC_LARCH_SUB6;
-		  md_number_to_chars (buf, 0x40, fixP->fx_size);
+	      case DW_CFA_advance_loc2:
+		fixP->fx_where = loc + 1;
+		fixP->fx_next->fx_where = loc + 1;
+		fixP->fx_r_type = BFD_RELOC_LARCH_ADD16;
+		fixP->fx_next->fx_r_type = BFD_RELOC_LARCH_SUB16;
+		md_number_to_chars (buf+1, 0, fixP->fx_size);
+		break;
+
+	      case DW_CFA_advance_loc4:
+		fixP->fx_where = loc;
+		fixP->fx_next->fx_where = loc;
+		fixP->fx_r_type = BFD_RELOC_LARCH_ADD32;
+		fixP->fx_next->fx_r_type = BFD_RELOC_LARCH_SUB32;
+		md_number_to_chars (buf+1, 0, fixP->fx_size);
+		break;
+
+	      default:
+		if (subtype < 0x80 && (subtype & 0x40))
+		  {
+		    /* DW_CFA_advance_loc.  */
+		    fixP->fx_frag = opfrag;
+		    fixP->fx_next->fx_frag = fixP->fx_frag;
+		    fixP->fx_r_type = BFD_RELOC_LARCH_ADD6;
+		    fixP->fx_next->fx_r_type = BFD_RELOC_LARCH_SUB6;
+		    md_number_to_chars (buf, 0x40, fixP->fx_size);
 		  }
-	      else
-		as_fatal (_("internal: bad CFA value #%d"), subtype);
-	      break;
-	    }
-	}
+		else
+		  as_fatal (_("internal: bad CFA value #%d"), subtype);
+		break;
+	      }
+	  }
+
+	if (fixP->fx_addsy == NULL)
+	  fixP->fx_done = 1;
+      }
       break;
 
     case BFD_RELOC_LARCH_B16:
@@ -1822,7 +1968,10 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 
 	  /* If relax, symbol value may change at link time, so reloc need to
 	     be saved.  */
-	  if (!LARCH_opts.relax)
+	  fragS *addfrag = symbol_get_frag (fixP->fx_addsy);
+	  if (! _loongarch_force_relocation_sub_same (seg,
+						      addfrag,
+						      fixP->fx_frag))
 	    fixP->fx_done = 1;
 	}
       break;
@@ -1832,12 +1981,9 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
     case BFD_RELOC_LARCH_ADD_ULEB128:  */
     case BFD_RELOC_LARCH_SUB_ULEB128:
       {
-	unsigned int len = 0;
-	len = loongarch_get_uleb128_length ((bfd_byte *)buf);
-	bfd_byte *endp = (bfd_byte*) buf + len -1;
 	/* Clean the uleb128 value to 0. Do not reduce the length.  */
-	memset (buf, 0x80, len - 1);
-	*endp = 0;
+	for (bfd_byte *ptr = (bfd_byte *)buf; *ptr &= 0x80; ++ptr)
+	  /* Nothing.  */;
 	break;
       }
 
@@ -1982,6 +2128,8 @@ loongarch_pre_output_hook (void)
 		   frag chains have been chained together.  */
 		subseg_set (s, frch->frch_subseg);
 
+		/* Set the size to 1 temporary.  The size may change in
+		   relax_segment. Update to the real size in md_apply_fix.  */
 		fix_new_exp (frag, (int) frag->fr_offset, 1, &exp, 0,
 			     BFD_RELOC_LARCH_CFA);
 	      }
@@ -2032,6 +2180,11 @@ loongarch_frag_align_code (int n, int max)
   if (!LARCH_opts.relax)
     return false;
 
+  /* Only create an alignment frag if the current section already
+     has relaxed instructions.  */
+  if (!now_seg->sec_flg1)
+    return false;
+
   bfd_vma align_bytes = (bfd_vma) 1 << n;
   bfd_vma worst_case_bytes = align_bytes - 4;
   bfd_vma addend = worst_case_bytes;
@@ -2041,6 +2194,13 @@ loongarch_frag_align_code (int n, int max)
      alignment is required.  */
   if (align_bytes <= 4)
     return true;
+
+  /* Start a new frag only used for alignment.  */
+  frag_wane (frag_now);
+  frag_new (0);
+
+  /* Mark the current frag as linker relaxable.  */
+  frag_now->tc_frag_data.linker_relax = true;
 
   /* If max <= 0, ignore max.
      If max >= worst_case_bytes, max has no effect.
@@ -2085,9 +2245,11 @@ loongarch_frag_align_code (int n, int max)
   /* Default write NOP for aligned bytes.  */
   loongarch_make_nops (nops, worst_case_bytes);
 
-  /* We need to start a new frag after the alignment which may be removed by
-     the linker, to prevent the assembler from computing static offsets.
-     This is necessary to get correct EH info.  */
+  /* We need to start a new frag after the alignment which may be
+     removed by the linker, to prevent the assembler from computing
+     static offsets.  This is necessary to get correct EH info.
+
+     End the frag to ensure it is only used for alignment.  */
   frag_wane (frag_now);
   frag_new (0);
 
@@ -2129,6 +2291,24 @@ loongarch_handle_align (fragS *fragp)
   fragp->fr_var = size;
 }
 
+
+/* Whether force relocation for label subtraction calculation,
+   sincc linker relaxation might change the deltas.  */
+
+static bool
+loongarch_force_reloc_sub (symbolS *addsy, symbolS *subsy)
+{
+  segT addsec = S_GET_SEGMENT (addsy);
+  segT subsec = S_GET_SEGMENT (subsy);
+  if (addsec != subsec)
+    return true;
+
+  fragS *addfrag = symbol_get_frag (addsy);
+  fragS *subfrag = symbol_get_frag (subsy);
+  return _loongarch_force_relocation_sub_same (addsec, addfrag, subfrag);
+}
+
+
 /* Scan uleb128 subtraction expressions and insert fixups for them.
    e.g., .uleb128 .L1 - .L0
    Because relaxation may change the value of the subtraction, we
@@ -2158,6 +2338,9 @@ loongarch_insert_uleb128_fixes (bfd *abfd ATTRIBUTE_UNUSED,
 
       /* FIXME: Skip for .sleb128.  */
       if (fragP->fr_subtype != 0)
+	continue;
+
+      if (! loongarch_force_reloc_sub (exp->X_add_symbol, exp->X_op_symbol))
 	continue;
 
       exp_dup = xmemdup (exp, sizeof (*exp), sizeof (*exp));

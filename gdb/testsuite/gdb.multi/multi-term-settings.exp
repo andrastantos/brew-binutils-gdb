@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 
-# Copyright 2017-2025 Free Software Foundation, Inc.
+# Copyright 2017-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,8 +29,8 @@ require allow_multi_inferior_tests
 
 require can_spawn_for_attach
 
-if [build_executable "failed to prepare" $testfile $srcfile {debug}] {
-    return -1
+if {[build_executable "failed to prepare" $testfile $srcfile {debug}]} {
+    return
 }
 
 # Start the programs running and then wait for a bit, to be sure that
@@ -56,7 +56,7 @@ proc create_inferior {which_inf inf_how} {
 
     # Run to main and delete breakpoints.
     proc my_runto_main {} {
-	if ![runto_main] {
+	if {![runto_main]} {
 	    return 0
 	} else {
 	    # Delete breakpoints otherwise GDB would try to step over
@@ -69,7 +69,7 @@ proc create_inferior {which_inf inf_how} {
     }
 
     if {$inf_how == "run"} {
-	if [my_runto_main] {
+	if {[my_runto_main]} {
 	    global inferior_spawn_id
 	    return $inferior_spawn_id
 	}
@@ -80,7 +80,7 @@ proc create_inferior {which_inf inf_how} {
 	set inf_tty_name $spawn_out(slave,name)
 	gdb_test_no_output "tty $inf_tty_name" "tty TTY"
 
-	if [my_runto_main] {
+	if {[my_runto_main]} {
 	    return $inf_spawn_id
 	}
     } elseif {$inf_how == "attach"} {

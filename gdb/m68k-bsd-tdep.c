@@ -1,6 +1,6 @@
 /* Target-dependent code for Motorola 68000 BSD's.
 
-   Copyright (C) 2004-2025 Free Software Foundation, Inc.
+   Copyright (C) 2004-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -41,7 +41,7 @@ int
 m68kbsd_fpreg_offset (struct gdbarch *gdbarch, int regnum)
 {
   int fp_len = gdbarch_register_type (gdbarch, regnum)->length ();
-  
+
   if (regnum >= M68K_FPC_REGNUM)
     return 8 * fp_len + (regnum - M68K_FPC_REGNUM) * 4;
 

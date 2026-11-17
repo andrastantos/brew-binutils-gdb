@@ -1,6 +1,6 @@
 /* Definitions for values of C expressions, for GDB.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -121,7 +121,7 @@ struct value_ref_policy
 
 /* A gdb:;ref_ptr pointer to a struct value.  */
 
-typedef gdb::ref_ptr<struct value, value_ref_policy> value_ref_ptr;
+using value_ref_ptr = gdb::ref_ptr<struct value, value_ref_policy>;
 
 /* Note that the fields in this structure are arranged to save a bit
    of memory.  */
@@ -167,7 +167,7 @@ public:
 					       type *type = nullptr);
 
   /* Same as `allocate_register_lazy`, but make the value non-lazy.
-  
+
      The caller is responsible for filling the value's contents.  */
   static struct value *allocate_register (const frame_info_ptr &next_frame,
 					  int regnum, type *type = nullptr);
@@ -626,6 +626,14 @@ public:
   struct value *primitive_field (LONGEST offset, int fieldno,
 				 struct type *arg_type);
 
+  /* Given that this value is of a struct or union type, extract and
+     return the value of one of its (non-static) fields.  FIELDNO says
+     which field.  */
+  value *field (int fieldno)
+  {
+    return primitive_field (0, fieldno, type ());
+  }
+
   /* Create a new value by extracting it from this value.  TYPE is the
      type of the new value.  BIT_OFFSET and BIT_LENGTH describe the
      offset and field width of the value to extract from this value --
@@ -977,7 +985,11 @@ struct lval_funcs
 /* Throw an error complaining that the value has been optimized
    out.  */
 
-extern void error_value_optimized_out (void);
+[[noreturn]] extern void error_value_optimized_out ();
+
+/* Throw an error complaining that the value is not available.  */
+
+[[noreturn]] extern void error_value_not_available ();
 
 /* Pointer to internal variable.  */
 #define VALUE_INTERNALVAR(val) (*((val)->deprecated_internalvar_hack ()))
@@ -1156,9 +1168,12 @@ extern struct value *address_of_variable (struct symbol *var,
 
 extern value *value_of_register (int regnum, const frame_info_ptr &next_frame);
 
-/* Same as the above, but the value is not fetched.  */
+/* Same as the above, but the value is not fetched.  If TYPE is
+   non-nullptr, use it as the value type.  Otherwise, 'register_type'
+   will be used to obtain the type.  */
 
-extern value *value_of_register_lazy (const frame_info_ptr &next_frame, int regnum);
+extern value *value_of_register_lazy (const frame_info_ptr &next_frame,
+				      int regnum, struct type *type = nullptr);
 
 /* Return the symbol's reading requirement.  */
 
@@ -1327,8 +1342,6 @@ extern int find_overload_match (gdb::array_view<value *> args,
 				struct value **valp, struct symbol **symp,
 				int *staticp, const int no_adl,
 				enum noside noside);
-
-extern struct value *value_field (struct value *arg1, int fieldno);
 
 extern struct type *value_rtti_indirect_type (struct value *, int *, LONGEST *,
 					      int *);
@@ -1565,11 +1578,46 @@ extern int val_print_string (struct type *elttype, const char *encoding,
 			     struct ui_file *stream,
 			     const struct value_print_options *options);
 
+/* Track the shadowing status of a variable.  */
+enum class var_shadowing
+{
+  /* This variable is not shadowed, and not shadowing.  */
+  NONE,
+
+  /* This variable is shadowed by a later one.  */
+  SHADOWED,
+
+  /* This variable is shadowing an earlier one, and is not itself
+     shadowed.  */
+  SHADOWING
+};
+
+/* Print the value in stack frame FRAME of a variable specified by a
+   struct symbol.  STREAM is the ui_file on which to print the value.
+   INDENT specifies the number of indent levels to print before
+   printing the variable name.  LANGUAGE is the language to use for
+   printing.  SHADOW_STATUS specifies the variable shadowing
+   information.  */
+
+extern void print_variable_value (symbol *var,
+				  const frame_info_ptr &frame,
+				  ui_file *stream, int indent,
+				  const language_defn *language,
+				  var_shadowing shadow_status);
+
+/* Print the value in stack frame FRAME of a variable specified by a
+   struct symbol.  NAME is the name to print; if NULL then VAR's print
+   name will be used.  STREAM is the ui_file on which to print the
+   value.  INDENT specifies the number of indent levels to print
+   before printing the variable name.  SHADOW_STATUS specifies the
+   variable shadowing information.  */
+
 extern void print_variable_and_value (const char *name,
-				      struct symbol *var,
+				      symbol *var,
 				      const frame_info_ptr &frame,
-				      struct ui_file *stream,
-				      int indent);
+				      ui_file *stream,
+				      int indent,
+				      var_shadowing shadow_status);
 
 extern void typedef_print (struct type *type, struct symbol *news,
 			   struct ui_file *stream);
@@ -1586,7 +1634,7 @@ extern struct value *make_cv_value (int, int, struct value *);
 
 extern struct value *varying_to_slice (struct value *);
 
-extern struct value *value_slice (struct value *, int, int);
+extern struct value *value_slice (struct value *, LONGEST, LONGEST);
 
 /* Create a complex number.  The type is the complex type; the values
    are cast to the underlying scalar type before the complex number is

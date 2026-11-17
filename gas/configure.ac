@@ -3,7 +3,7 @@ dnl
 dnl And be careful when changing it!  If you must add tests with square
 dnl brackets, be sure changequote invocations surround it.
 dnl
-dnl   Copyright (C) 2012-2025 Free Software Foundation, Inc.
+dnl   Copyright (C) 2012-2026 Free Software Foundation, Inc.
 dnl
 dnl This file is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -62,6 +62,15 @@ if test x$ac_checking != x ; then
   AC_DEFINE(ENABLE_CHECKING, 1, [Define if you want run-time sanity checks.])
 fi
 
+ac_leak_check=BFD_ASAN
+AC_ARG_ENABLE(leak_check,
+[  --enable-leak-check     enable freeing memory before exit],
+[case "${enableval}" in
+  no)	ac_leak_check=0 ;;
+  *)	ac_leak_check=1 ;;
+esac])dnl
+AC_DEFINE_UNQUOTED(ENABLE_LEAK_CHECK, ${ac_leak_check}, [Define if you want memory to be freed before exit.])
+
 # PR gas/19109
 # Decide the default method for compressing debug sections.
 ac_default_compressed_debug_sections=unset
@@ -82,17 +91,6 @@ AC_ARG_ENABLE(default_compressed_debug_sections_algorithm,
 	      [Default compression algorithm for --enable-compressed-debug-sections.]),
 [case "${enableval}" in
    zstd) ac_default_compressed_debug_sections_algorithm=COMPRESS_DEBUG_ZSTD ;;
-esac])dnl
-
-# PR gas/19520
-# Decide if x86 assembler should generate relax relocations.
-ac_default_x86_relax_relocations=unset
-# Provide a configure time option to override our default.
-AC_ARG_ENABLE(x86_relax_relocations,
-	      AS_HELP_STRING([--enable-x86-relax-relocations],
-	      [generate x86 relax relocations by default]),
-[case "${enableval}" in
-  no)  ac_default_x86_relax_relocations=0 ;;
 esac])dnl
 
 # PR gas/32022
@@ -276,17 +274,6 @@ for this_target in $target $canon_targets ; do
 	fi
 	;;
 
-      i386-*-solaris2 \
-      | x86_64-*-solaris2 \
-      | i386-*-solaris2.[[0-9]] \
-      | i386-*-solaris2.1[[01]] \
-      | x86_64-*-solaris2.1[[01]])
-	if test ${this_target} = $target \
-	   && test ${ac_default_x86_relax_relocations} = unset; then
-	  ac_default_x86_relax_relocations=0
-	fi
-	;;
-
       microblaze*)
         ;;
 
@@ -297,15 +284,6 @@ changequote(,)dnl
 changequote([,])dnl
 	AC_DEFINE(AIX_WEAK_SUPPORT, 1,
 		  [Define if using AIX 5.2 value for C_WEAKEXT.])
-	;;
-      ppc-*-solaris*)
-	if test ${this_target} = $target; then
-	  AC_DEFINE(TARGET_SOLARIS_COMMENT, 1,
-		    [Define if default target is PowerPC Solaris.])
-	fi
-	if test x${endian} = xbig; then
-	  AC_MSG_ERROR(Solaris must be configured little endian)
-	fi
 	;;
     esac
 
@@ -460,6 +438,19 @@ changequote([,])dnl
 	*opcodes*) shared_opcodes=true ;;
 	*) shared_opcodes=false ;;
 	esac
+	;;
+    esac
+
+    # Does the target support Object Attributes ?
+    case ${cpu_type} in
+      aarch64* | arc* | arm* | csky | loongarch | m68k | mips* | msp430 \
+      | ppc* | riscv* | s390* | sparc* | tic6x)
+	for f in config/obj-elf-attr.o; do
+	  case " $extra_objects " in
+	    *" $f "*) ;;
+	    *) extra_objects="$extra_objects $f" ;;
+	  esac
+	done
 	;;
     esac
 
@@ -752,13 +743,6 @@ changequote([,])dnl
     emulations="$emulations $emulation"
 
 done
-
-if test ${ac_default_x86_relax_relocations} = unset; then
-  ac_default_x86_relax_relocations=1
-fi
-AC_DEFINE_UNQUOTED(DEFAULT_GENERATE_X86_RELAX_RELOCATIONS,
-  $ac_default_x86_relax_relocations,
-  [Define to 1 if you want to generate x86 relax relocations by default.])
 
 if test ${ac_default_x86_tls_check} = unset; then
   ac_default_x86_tls_check=1

@@ -1,5 +1,5 @@
 /* tc-s390.c -- Assemble for the S390
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
    Contributed by Martin Schwidefsky (schwidefsky@de.ibm.com).
 
    This file is part of GAS, the GNU Assembler.
@@ -1107,16 +1107,16 @@ s390_lit_suffix (char **str_p, expressionS *exp_p, elf_suffix_type suffix)
       if (nbytes == 2)
 	reloc = BFD_RELOC_390_GOT16;
       else if (nbytes == 4)
-	reloc = BFD_RELOC_32_GOT_PCREL;
+	reloc = BFD_RELOC_390_GOT32;
       else if (nbytes == 8)
 	reloc = BFD_RELOC_390_GOT64;
     }
   else if (suffix == ELF_SUFFIX_PLT)
     {
       if (nbytes == 4)
-	reloc = BFD_RELOC_390_PLT32;
+	reloc = BFD_RELOC_32_PLT_PCREL;
       else if (nbytes == 8)
-	reloc = BFD_RELOC_390_PLT64;
+	reloc = BFD_RELOC_64_PLT_PCREL;
     }
 
   if (suffix != ELF_SUFFIX_NONE && reloc == BFD_RELOC_UNUSED)
@@ -1271,8 +1271,8 @@ s390_elf_cons (int nbytes /* 1=.byte, 2=.word, 4=.long */)
 	      static bfd_reloc_code_real_type tab4[] =
 		{
 		  BFD_RELOC_UNUSED, 		/* ELF_SUFFIX_NONE  */
-		  BFD_RELOC_32_GOT_PCREL,	/* ELF_SUFFIX_GOT  */
-		  BFD_RELOC_390_PLT32,		/* ELF_SUFFIX_PLT  */
+		  BFD_RELOC_390_GOT32,		/* ELF_SUFFIX_GOT  */
+		  BFD_RELOC_32_PLT_PCREL,	/* ELF_SUFFIX_PLT  */
 		  BFD_RELOC_UNUSED,		/* ELF_SUFFIX_GOTENT  */
 		  BFD_RELOC_32_GOTOFF,		/* ELF_SUFFIX_GOTOFF  */
 		  BFD_RELOC_390_GOTPLT32,	/* ELF_SUFFIX_GOTPLT  */
@@ -1292,9 +1292,9 @@ s390_elf_cons (int nbytes /* 1=.byte, 2=.word, 4=.long */)
 		{
 		  BFD_RELOC_UNUSED, 		/* ELF_SUFFIX_NONE  */
 		  BFD_RELOC_390_GOT64,		/* ELF_SUFFIX_GOT  */
-		  BFD_RELOC_390_PLT64,		/* ELF_SUFFIX_PLT  */
+		  BFD_RELOC_64_PLT_PCREL,	/* ELF_SUFFIX_PLT  */
 		  BFD_RELOC_UNUSED,		/* ELF_SUFFIX_GOTENT  */
-		  BFD_RELOC_390_GOTOFF64,	/* ELF_SUFFIX_GOTOFF  */
+		  BFD_RELOC_64_GOTOFF,		/* ELF_SUFFIX_GOTOFF  */
 		  BFD_RELOC_390_GOTPLT64,	/* ELF_SUFFIX_GOTPLT  */
 		  BFD_RELOC_390_PLTOFF64,	/* ELF_SUFFIX_PLTOFF  */
 		  BFD_RELOC_390_TLS_GD64,	/* ELF_SUFFIX_TLS_GD  */
@@ -2383,20 +2383,20 @@ tc_s390_fix_adjustable (fixS *fixP)
   /* adjust_reloc_syms doesn't know about the GOT.  */
   if (   fixP->fx_r_type == BFD_RELOC_16_GOTOFF
       || fixP->fx_r_type == BFD_RELOC_32_GOTOFF
-      || fixP->fx_r_type == BFD_RELOC_390_GOTOFF64
+      || fixP->fx_r_type == BFD_RELOC_64_GOTOFF
       || fixP->fx_r_type == BFD_RELOC_390_PLTOFF16
       || fixP->fx_r_type == BFD_RELOC_390_PLTOFF32
       || fixP->fx_r_type == BFD_RELOC_390_PLTOFF64
       || fixP->fx_r_type == BFD_RELOC_390_PLT12DBL
       || fixP->fx_r_type == BFD_RELOC_390_PLT16DBL
       || fixP->fx_r_type == BFD_RELOC_390_PLT24DBL
-      || fixP->fx_r_type == BFD_RELOC_390_PLT32
+      || fixP->fx_r_type == BFD_RELOC_32_PLT_PCREL
       || fixP->fx_r_type == BFD_RELOC_390_PLT32DBL
-      || fixP->fx_r_type == BFD_RELOC_390_PLT64
+      || fixP->fx_r_type == BFD_RELOC_64_PLT_PCREL
       || fixP->fx_r_type == BFD_RELOC_390_GOT12
       || fixP->fx_r_type == BFD_RELOC_390_GOT20
       || fixP->fx_r_type == BFD_RELOC_390_GOT16
-      || fixP->fx_r_type == BFD_RELOC_32_GOT_PCREL
+      || fixP->fx_r_type == BFD_RELOC_390_GOT32
       || fixP->fx_r_type == BFD_RELOC_390_GOT64
       || fixP->fx_r_type == BFD_RELOC_390_GOTENT
       || fixP->fx_r_type == BFD_RELOC_390_GOTPLT12
@@ -2443,23 +2443,24 @@ tc_s390_force_relocation (struct fix *fixp)
     {
     case BFD_RELOC_390_GOT12:
     case BFD_RELOC_390_GOT20:
-    case BFD_RELOC_32_GOT_PCREL:
+    case BFD_RELOC_390_GOT32:
     case BFD_RELOC_32_GOTOFF:
-    case BFD_RELOC_390_GOTOFF64:
+    case BFD_RELOC_64_GOTOFF:
     case BFD_RELOC_390_PLTOFF16:
     case BFD_RELOC_390_PLTOFF32:
     case BFD_RELOC_390_PLTOFF64:
-    case BFD_RELOC_390_GOTPC:
+    case BFD_RELOC_32_GOT_PCREL:
+    case BFD_RELOC_64_GOT_PCREL:
     case BFD_RELOC_390_GOT16:
     case BFD_RELOC_390_GOTPCDBL:
     case BFD_RELOC_390_GOT64:
     case BFD_RELOC_390_GOTENT:
-    case BFD_RELOC_390_PLT32:
+    case BFD_RELOC_32_PLT_PCREL:
     case BFD_RELOC_390_PLT12DBL:
     case BFD_RELOC_390_PLT16DBL:
     case BFD_RELOC_390_PLT24DBL:
     case BFD_RELOC_390_PLT32DBL:
-    case BFD_RELOC_390_PLT64:
+    case BFD_RELOC_64_PLT_PCREL:
     case BFD_RELOC_390_GOTPLT12:
     case BFD_RELOC_390_GOTPLT16:
     case BFD_RELOC_390_GOTPLT20:
@@ -2592,14 +2593,24 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	  fixP->fx_pcrel_adjust = 3;
 	  fixP->fx_r_type = BFD_RELOC_390_PC24DBL;
 	}
-      else if (operand->bits == 32 && operand->shift == 16
-	       && (operand->flags & S390_OPERAND_PCREL))
+      else if (operand->bits == 32 && operand->shift == 16)
 	{
 	  fixP->fx_size = 4;
 	  fixP->fx_where += 2;
-	  fixP->fx_offset += 2;
-	  fixP->fx_pcrel_adjust = 2;
-	  fixP->fx_r_type = BFD_RELOC_390_PC32DBL;
+	  if (operand->flags & S390_OPERAND_PCREL)
+	    {
+	      fixP->fx_offset += 2;
+	      fixP->fx_pcrel_adjust = 2;
+	      fixP->fx_r_type = BFD_RELOC_390_PC32DBL;
+	    }
+	  else if (fixP->fx_pcrel)
+	    {
+	      fixP->fx_offset += 2;
+	      fixP->fx_pcrel_adjust = 2;
+	      fixP->fx_r_type = BFD_RELOC_32_PCREL;
+	    }
+	  else
+	    fixP->fx_r_type = BFD_RELOC_32;
 	}
       else
 	{
@@ -2718,9 +2729,9 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	  if (fixP->fx_done)
 	    md_number_to_chars (where, value, 4);
 	  break;
-	case BFD_RELOC_32_GOT_PCREL:
+	case BFD_RELOC_390_GOT32:
 	case BFD_RELOC_390_PLTOFF32:
-	case BFD_RELOC_390_PLT32:
+	case BFD_RELOC_32_PLT_PCREL:
 	case BFD_RELOC_390_GOTPLT32:
 	  if (fixP->fx_done)
 	    md_number_to_chars (where, value, 4);
@@ -2740,14 +2751,14 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	    md_number_to_chars (where, value, sizeof (int));
 	  break;
 
-	case BFD_RELOC_390_GOTOFF64:
+	case BFD_RELOC_64_GOTOFF:
 	  if (fixP->fx_done)
 	    md_number_to_chars (where, value, 8);
 	  break;
 
 	case BFD_RELOC_390_GOT64:
 	case BFD_RELOC_390_PLTOFF64:
-	case BFD_RELOC_390_PLT64:
+	case BFD_RELOC_64_PLT_PCREL:
 	case BFD_RELOC_390_GOTPLT64:
 	  if (fixP->fx_done)
 	    md_number_to_chars (where, value, 8);
@@ -2828,10 +2839,11 @@ tc_gen_reloc (asection *seg ATTRIBUTE_UNUSED, fixS *fixp)
   code = fixp->fx_r_type;
   if (GOT_symbol && fixp->fx_addsy == GOT_symbol)
     {
-      if (   (s390_arch_size == 32 && code == BFD_RELOC_32_PCREL)
-	  || (s390_arch_size == 64 && code == BFD_RELOC_64_PCREL))
-	code = BFD_RELOC_390_GOTPC;
-      if (code == BFD_RELOC_390_PC32DBL)
+      if (s390_arch_size == 32 && code == BFD_RELOC_32_PCREL)
+	code = BFD_RELOC_32_GOT_PCREL;
+      else if (s390_arch_size == 64 && code == BFD_RELOC_64_PCREL)
+	code = BFD_RELOC_64_GOT_PCREL;
+      else if (code == BFD_RELOC_390_PC32DBL)
 	code = BFD_RELOC_390_GOTPCDBL;
     }
 
@@ -2865,16 +2877,28 @@ tc_s390_regname_to_dw2regnum (char *regname)
 {
   int regnum = -1;
 
-  if (regname[0] != 'c' && regname[0] != 'a')
+  if (regname[0] != 'c')
     {
       regnum = reg_name_search (regname);
-      if (regname[0] == 'f' && regnum != -1)
-        regnum += 16;
+      if ((regname[0] == 'f' || regname[0] == 'v') && regnum != -1)
+	{
+	  /* Convert from floating-point register number (0..15) and
+	   * vector register number (0..31) to DWARF register number
+	   * (15..31, 68..83):  Right rotate the least significant
+	   * three bits.  For floating-point registers add 16.  For
+	   * vector registers 0..15 add 16 and for 16..31 add 86.  */
+	  int dw2_regnum;
+	  dw2_regnum = (regnum & 0b110) >> 1;
+	  dw2_regnum |= (regnum & 0b1) << 2;
+	  dw2_regnum |= (regnum & 0b1000);
+	  dw2_regnum += (regnum < 16) ? 16 : 68;
+	  regnum = dw2_regnum;
+	}
+      else if (regname[0] == 'a' && regnum != -1)
+	{
+	  regnum += 48;
+	}
     }
-  else if (strcmp (regname, "ap") == 0)
-    regnum = 32;
-  else if (strcmp (regname, "cc") == 0)
-    regnum = 33;
   return regnum;
 }
 
@@ -2885,14 +2909,6 @@ s390_support_sframe_p (void)
 {
   /* At this time, SFrame is supported for s390x (64-bit) only.  */
   return (s390_arch_size == 64);
-}
-
-/* Specify if RA tracking is needed.  */
-
-bool
-s390_sframe_ra_tracking_p (void)
-{
-  return true;
 }
 
 /* Specify the fixed offset to recover RA from CFA.

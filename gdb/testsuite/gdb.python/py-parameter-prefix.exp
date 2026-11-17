@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Free Software Foundation, Inc.
+# Copyright (C) 2025-2026 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -145,7 +145,7 @@ proc_with_prefix test_simple_sub_class {} {
 	"BasicParamPrefixWithMultiLineDoc('prefix-6')" "" \
 	"gdb.Parameter('prefix-6 param-1', gdb.COMMAND_NONE, gdb.PARAM_BOOLEAN)" "" \
 	"class BasicParamPrefixWithDocParameter(gdb.ParameterPrefix):" "" \
-	"  \"\"\"This is an unsused doc string.\"\"\"" "" \
+	"  \"\"\"This is an unused doc string.\"\"\"" "" \
 	"  def __init__(self, name, doc):" "" \
 	"    super().__init__(name, gdb.COMMAND_NONE, doc)" "" \
 	"BasicParamPrefixWithDocParameter('prefix-7'," "" \

@@ -1,4 +1,4 @@
-# Copyright (C) 2013-2025 Free Software Foundation, Inc.
+# Copyright (C) 2013-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,7 +19,6 @@ load_lib perftest.exp
 
 require allow_perf_tests
 
-global GDB
 
 standard_testfile .c
 # Overwrite $binfile
@@ -45,7 +44,7 @@ PerfTest::assemble {
     # we only run to main function of child GDB, so child GDB's
     # prompt can't be printed out.
     if ![runto_main] {
-	return -1
+	return
     }
 
     return 0

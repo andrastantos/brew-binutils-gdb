@@ -1,6 +1,6 @@
 /* Definitions used by event-top.c, for GDB, the GNU debugger.
 
-   Copyright (C) 1999-2025 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
 
    Written by Elena Zannoni <ezannoni@cygnus.com> of Cygnus Solutions.
 
@@ -37,7 +37,7 @@ struct cmd_list_element;
    still want to intercept the Ctrl-C and offer to disconnect if the
    user presses Ctrl-C multiple times while the target is stuck
    waiting for the wedged remote stub.  */
-typedef void (quit_handler_ftype) ();
+using quit_handler_ftype = void ();
 extern quit_handler_ftype *quit_handler;
 
 /* Exported functions from event-top.c.
@@ -64,7 +64,7 @@ extern void set_force_quit_flag ();
 
 /* Control C eventually causes this to be called, at a convenient time.  */
 
-extern void quit ();
+[[noreturn]] extern void quit ();
 
 /* Helper for the QUIT macro.  */
 
@@ -151,7 +151,7 @@ extern void gdb_rl_callback_handler_reinstall (void);
    handles the case where readline received EOF.  */
 extern void gdb_rl_deprep_term_function (void);
 
-typedef void (*segv_handler_t) (int);
+using segv_handler_t = void (*) (int);
 
 /* On construction, replaces the current thread's SIGSEGV handler with
    the provided one.  On destruction, restores the handler to the

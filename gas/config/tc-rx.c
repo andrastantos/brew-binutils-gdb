@@ -1,5 +1,5 @@
 /* tc-rx.c -- Assembler for the Renesas RX
-   Copyright (C) 2008-2025 Free Software Foundation, Inc.
+   Copyright (C) 2008-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -1216,11 +1216,6 @@ md_assemble (char * str)
 	frag_then->tc_frag_data->fixups[i].fixP = f;
     }
   dwarf2_emit_insn (idx);
-}
-
-void
-rx_md_end (void)
-{
 }
 
 /* Write a value out to the object file, using the appropriate endianness.  */

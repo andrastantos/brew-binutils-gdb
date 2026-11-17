@@ -1,4 +1,4 @@
-# Copyright 2025 Free Software Foundation, Inc.
+# Copyright 2025-2026 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # Create a core file with some mapped file regions, but ensure that
-# the the kernel should write the regions into the core file (e.g. r/w
+# the kernel should write the regions into the core file (e.g. r/w
 # file backed mapping).
 #
 # We then delete the file that backed the mapping and load the core
@@ -47,8 +47,7 @@ set backup_filename \
     [standard_output_file coredir.[getpid]/coremmap.data.backup]
 remote_exec host "mv ${data_filename} ${backup_filename}"
 
-clean_restart
-gdb_load $binfile
+clean_restart $testfile
 
 # Load the core file.  The 'coremap.data' file cannot be found by GDB,
 # but all the mappings for that file are r/w and should be present in

@@ -1,5 +1,5 @@
 /* macro.c - macro support for gas
-   Copyright (C) 1994-2025 Free Software Foundation, Inc.
+   Copyright (C) 1994-2026 Free Software Foundation, Inc.
 
    Written by Steve and Judy Chamberlain of Cygnus Support,
       sac@cygnus.com
@@ -28,17 +28,6 @@
 
 /* The routines in this file handle macro definition and expansion.
    They are called by gas.  */
-
-#define ISSEP(x) \
- (is_whitespace (x) || (x) == ',' || (x) == '"' || (x) == ';' \
-  || (x) == ')' || (x) == '(' \
-  || ((flag_macro_alternate || flag_mri) && ((x) == '<' || (x) == '>')))
-
-#define ISBASE(x) \
-  ((x) == 'b' || (x) == 'B' \
-   || (x) == 'q' || (x) == 'Q' \
-   || (x) == 'h' || (x) == 'H' \
-   || (x) == 'd' || (x) == 'D')
 
 /* The macro hash table.  */
 
@@ -78,7 +67,8 @@ macro_init (void)
 void
 macro_end (void)
 {
-  htab_delete (macro_hash);
+  if (ENABLE_LEAK_CHECK)
+    htab_delete (macro_hash);
 }
 
 /* Read input lines till we get to a TO string.
@@ -115,10 +105,12 @@ buffer_and_nest (const char *from, const char *to, sb *ptr,
     const char *prefix = flag_m68k_mri ? "" : ".";
     const char *file = as_where_top (&line);
 
+    if (*input_line_pointer == '\n')
+      line++;
     if (file)
-      linefile = xasprintf ("\t%slinefile %u \"%s\"", prefix, line + 1, file);
+      linefile = xasprintf ("\t%slinefile %u \"%s\"", prefix, line, file);
     else
-      linefile = xasprintf ("\t%slinefile %u .", prefix, line + 1);
+      linefile = xasprintf ("\t%slinefile %u .", prefix, line);
     sb_add_string (ptr, linefile);
     xfree (linefile);
   }
@@ -292,24 +284,25 @@ getstring (size_t idx, sb *in, sb *acc)
 	{
 	  int nest = 0;
 	  idx++;
-	  while (idx < in->len
-		 && (in->ptr[idx] != '>' || nest))
+	  while (idx < in->len)
 	    {
-	      if (in->ptr[idx] == '!')
+	      if (in->ptr[idx] == '!' && idx + 1 < in->len)
+		idx++;
+	      else if (in->ptr[idx] == '>')
 		{
-		  idx++;
-		  sb_add_char (acc, in->ptr[idx++]);
+		  if (nest == 0)
+		    {
+		      idx++;
+		      break;
+		    }
+		  nest--;
 		}
-	      else
-		{
-		  if (in->ptr[idx] == '>')
-		    nest--;
-		  if (in->ptr[idx] == '<')
-		    nest++;
-		  sb_add_char (acc, in->ptr[idx++]);
-		}
+	      else if (in->ptr[idx] == '<')
+		nest++;
+
+	      sb_add_char (acc, in->ptr[idx]);
+	      idx++;
 	    }
-	  idx++;
 	}
       else if (in->ptr[idx] == '"' || in->ptr[idx] == '\'')
 	{
@@ -317,7 +310,6 @@ getstring (size_t idx, sb *in, sb *acc)
 	  int escaped = 0;
 
 	  idx++;
-
 	  while (idx < in->len)
 	    {
 	      if (in->ptr[idx - 1] == '\\')
@@ -325,32 +317,19 @@ getstring (size_t idx, sb *in, sb *acc)
 	      else
 		escaped = 0;
 
-	      if (flag_macro_alternate && in->ptr[idx] == '!')
+	      if (flag_macro_alternate
+		  && in->ptr[idx] == '!' && idx + 1 < in->len)
 		{
-		  idx ++;
-
-		  sb_add_char (acc, in->ptr[idx]);
-
-		  idx ++;
+		  idx++;
 		}
-	      else if (escaped && in->ptr[idx] == tchar)
+	      else if (!escaped && in->ptr[idx] == tchar)
 		{
-		  sb_add_char (acc, tchar);
-		  idx ++;
+		  idx++;
+		  if (idx >= in->len || in->ptr[idx] != tchar)
+		    break;
 		}
-	      else
-		{
-		  if (in->ptr[idx] == tchar)
-		    {
-		      idx ++;
-
-		      if (idx >= in->len || in->ptr[idx] != tchar)
-			break;
-		    }
-
-		  sb_add_char (acc, in->ptr[idx]);
-		  idx ++;
-		}
+	      sb_add_char (acc, in->ptr[idx]);
+	      idx++;
 	    }
 	}
     }
@@ -360,7 +339,6 @@ getstring (size_t idx, sb *in, sb *acc)
 
 /* Fetch string from the input stream,
    rules:
-    'Bxyx<whitespace>  	-> return 'Bxyza
     %<expr>		-> return string of decimal value of <expr>
     "string"		-> return string
     (string)		-> return (string-including-whitespaces)
@@ -374,12 +352,7 @@ get_any_string (size_t idx, sb *in, sb *out)
 
   if (idx < in->len)
     {
-      if (in->len > idx + 2 && in->ptr[idx + 1] == '\'' && ISBASE (in->ptr[idx]))
-	{
-	  while (idx < in->len && !ISSEP (in->ptr[idx]))
-	    sb_add_char (out, in->ptr[idx++]);
-	}
-      else if (in->ptr[idx] == '%' && flag_macro_alternate)
+      if (in->ptr[idx] == '%' && flag_macro_alternate)
 	{
 	  /* Turn the following expression into a string.  */
 	  expressionS ex;
@@ -1082,30 +1055,17 @@ macro_expand (size_t idx, sb *in, macro_entry *m, sb *out)
   idx = sb_skip_white (idx, in);
   while (idx < in->len)
     {
+      /* Look and see if it's a positional or keyword arg.  */
       size_t scan;
 
-      /* Look and see if it's a positional or keyword arg.  */
-      scan = idx;
-      while (scan < in->len
-	     && !ISSEP (in->ptr[scan])
-	     && !(flag_mri && in->ptr[scan] == '\'')
-	     && (!flag_macro_alternate && in->ptr[scan] != '='))
-	scan++;
-      if (scan < in->len && !flag_macro_alternate && in->ptr[scan] == '=')
+      sb_reset (&t);
+      scan = !flag_macro_alternate ? get_token (idx, in, &t) : idx;
+
+      if (scan > idx && scan < in->len && in->ptr[scan] == '=')
 	{
 	  is_keyword = 1;
 
 	  /* It's OK to go from positional to keyword.  */
-
-	  /* This is a keyword arg, fetch the formal name and
-	     then the actual stuff.  */
-	  sb_reset (&t);
-	  idx = get_token (idx, in, &t);
-	  if (idx >= in->len || in->ptr[idx] != '=')
-	    {
-	      err = _("confusion in formal parameters");
-	      break;
-	    }
 
 	  /* Lookup the formal in the macro's list.  */
 	  ptr = str_hash_find (m->formal_hash, sb_terminate (&t));
@@ -1115,7 +1075,8 @@ macro_expand (size_t idx, sb *in, macro_entry *m, sb *out)
 		      t.ptr,
 		      m->name);
 	      sb_reset (&t);
-	      idx = get_any_string (idx + 1, in, &t);
+	      /* Skip what would be the actual stuff.  */
+	      idx = get_any_string (scan + 1, in, &t);
 	    }
 	  else
 	    {
@@ -1127,7 +1088,8 @@ macro_expand (size_t idx, sb *in, macro_entry *m, sb *out)
 			   m->name);
 		  sb_reset (&ptr->actual);
 		}
-	      idx = get_any_string (idx + 1, in, &ptr->actual);
+	      /* Fetch the actual stuff.  */
+	      idx = get_any_string (scan + 1, in, &ptr->actual);
 	      if (ptr->actual.len > 0)
 		++narg;
 	    }

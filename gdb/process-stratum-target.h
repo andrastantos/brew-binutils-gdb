@@ -1,6 +1,6 @@
 /* Abstract base class inherited by all process_stratum targets
 
-   Copyright (C) 2018-2025 Free Software Foundation, Inc.
+   Copyright (C) 2018-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -78,6 +78,11 @@ public:
   void follow_fork (inferior *child_inf, ptid_t child_ptid,
 		    target_waitkind fork_kind, bool follow_child,
 		    bool detach_on_fork) override;
+
+  /* Assume sub-classes are not shareable.  Those that are need to mark
+     themselves as such.  */
+  bool is_shareable () override
+  { return false; }
 
   /* True if any thread is, or may be executing.  We need to track
      this separately because until we fully sync the thread list, we

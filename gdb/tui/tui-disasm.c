@@ -1,6 +1,6 @@
 /* Disassembly display.
 
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -393,15 +393,15 @@ tui_get_begin_asm_address (struct gdbarch **gdbarch_p, CORE_ADDR *addr_p)
 
   if (tui_location.addr () == 0)
     {
-      if (have_full_symbols (current_program_space)
-	  || have_partial_symbols (current_program_space))
+      if (current_program_space->has_full_symbols ()
+	  || current_program_space->has_partial_symbols ())
 	{
 	  set_default_source_symtab_and_line ();
 	  symtab_and_line sal
 	    = get_current_source_symtab_and_line (current_program_space);
 
 	  if (sal.symtab != nullptr)
-	    find_line_pc (sal.symtab, sal.line, &addr);
+	    find_pc_for_line (sal.symtab, sal.line, &addr);
 	}
 
       if (addr == 0)

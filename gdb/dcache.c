@@ -1,6 +1,6 @@
 /* Caching code for GDB, the GNU debugger.
 
-   Copyright (C) 1992-2025 Free Software Foundation, Inc.
+   Copyright (C) 1992-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -121,7 +121,7 @@ struct dcache_struct
   process_stratum_target *proc_target;
 };
 
-typedef void (block_func) (struct dcache_block *block, void *param);
+using block_func = void (struct dcache_block *block, void *param);
 
 static struct dcache_block *dcache_hit (DCACHE *dcache, CORE_ADDR addr);
 
@@ -391,7 +391,7 @@ dcache_alloc (DCACHE *dcache, CORE_ADDR addr)
 }
 
 /* Using the data cache DCACHE, store in *PTR the contents of the byte at
-   address ADDR in the remote machine.  
+   address ADDR in the remote machine.
 
    Returns 1 for success, 0 for error.  */
 
@@ -571,7 +571,7 @@ dcache_print_line (DCACHE *dcache, int index)
       gdb_printf (_("No such cache line exists.\n"));
       return;
     }
-    
+
   db = (struct dcache_block *) n->value;
 
   gdb_printf (_("Line %d: address %s [%d hits]\n"),

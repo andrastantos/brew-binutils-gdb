@@ -1,6 +1,6 @@
 /* Header file for GDB command decoding library.
 
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -47,7 +47,7 @@ enum cmd_types
 
 struct cmd_list_element
 {
-  cmd_list_element (const char *name_, enum command_class theclass_,
+  cmd_list_element (const char *name_, command_classes theclass_,
 		    const char *doc_)
     : name (name_),
       theclass (theclass_),
@@ -102,6 +102,9 @@ struct cmd_list_element
   bool is_prefix () const
   { return this->subcommands != nullptr; }
 
+  bool is_essential () const
+  { return (this->theclass & class_essential) != 0; }
+
   /* Return true if this command is a "command class help" command.  For
      instance, a "stack" dummy command is registered so that one can do
      "help stack" and show help for all commands of the "stack" class.  */
@@ -123,8 +126,9 @@ struct cmd_list_element
   /* Name of this command.  */
   const char *name;
 
-  /* Command class; class values are chosen by application program.  */
-  enum command_class theclass;
+  /* Command classes; class values are chosen by application program
+     and are stored as a bitmask.  */
+  command_classes theclass;
 
   /* When 1 indicated that this command is deprecated.  It may be
      removed from gdb's command set in the future.  */
@@ -167,13 +171,13 @@ struct cmd_list_element
 
   /* Nonzero says this is an abbreviation, and should not
      be mentioned in lists of commands.
-     This allows "br<tab>" to complete to "break", which it
+     This allows "br<TAB>" to complete to "break", which it
      otherwise wouldn't.  */
   unsigned int abbrev_flag : 1;
 
   /* Type of "set" or "show" command (or SET_NOT_SET if not "set"
      or "show").  */
-  ENUM_BITFIELD (cmd_types) type : 2;
+  cmd_types type : 2;
 
   /* Function definition of this command.  NULL for command class
      names and for help topics that are not really commands.  NOTE:

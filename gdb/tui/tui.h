@@ -1,6 +1,6 @@
 /* External/Public TUI Header File.
 
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -95,5 +95,10 @@ extern enum tui_key_mode tui_current_key_mode;
 extern void tui_set_key_mode (enum tui_key_mode mode);
 
 extern bool tui_active;
+
+/* When true, defer rendering the window contents during the initial switch
+   to TUI mode.  Each window's rerender method will be called later before
+   the prompt is displayed.  */
+extern bool tui_defer_rerender;
 
 #endif /* GDB_TUI_TUI_H */

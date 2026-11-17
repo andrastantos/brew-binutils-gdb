@@ -1,6 +1,6 @@
 # Expect control script for GAS testsuite PE object-format-specific tests.
 
-# Copyright (C) 2009-2025 Free Software Foundation, Inc.
+# Copyright (C) 2009-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -38,6 +38,8 @@ run_dump_test "section-exclude"
 
 run_dump_test "set"
 
+run_dump_test "reloc"
+
 if { [istarget "aarch64-*-*"] || [istarget "arm*-*-*"] || [istarget "i*86-*-*"]
     || [istarget "x86_64-*-*"] } then {
   run_dump_test "cv_comp"
@@ -66,6 +68,10 @@ if {[istarget "aarch64-*-pe*"] || [istarget "aarch64-*-mingw*"]} {
 # Big obj
 
 
-if ([istarget "*-*-mingw*"]) then {
+if { [istarget "aarch64-*-*"]
+     || ([istarget "i*86-*-*"] && ![istarget "*-*-interix*"])
+     || [istarget "x86_64-*-*"] } then {
+	run_dump_test "large-obj-normal"
 	run_dump_test "big-obj"
+	run_dump_test "big-obj-auto"
 }

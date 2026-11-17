@@ -1,6 +1,6 @@
 /* C language support definitions for GDB, the GNU debugger.
 
-   Copyright (C) 1992-2025 Free Software Foundation, Inc.
+   Copyright (C) 1992-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,7 +28,6 @@ struct parser_state;
 
 #include "compile/compile.h"
 #include "value.h"
-#include "macroexp.h"
 #include "gdbsupport/enum-flags.h"
 
 
@@ -104,8 +103,7 @@ extern void c_type_print_base (struct type *, struct ui_file *,
 
 /* These are in cp-valprint.c */
 
-extern void cp_print_class_member (const gdb_byte *, struct type *,
-				   struct ui_file *, const char *);
+extern void cp_print_class_memberptr (struct value *, struct ui_file *);
 
 extern void cp_print_value_fields (struct value *,
 				   struct ui_file *, int,

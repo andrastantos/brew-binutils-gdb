@@ -1,4 +1,4 @@
-# Copyright (C) 2012-2025 Free Software Foundation, Inc.
+# Copyright (C) 2012-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -63,10 +63,12 @@ if [gas_32_check] then {
     run_dump_test "opcode-suffix"
     run_dump_test "intel"
     run_dump_test "intel-intel"
+    run_list_test "intel-equ-loop"
     run_dump_test "intel16"
     run_list_test "intelbad" ""
     run_dump_test "intelok"
     run_dump_test "intelok2"
+    run_dump_test "intelpcrel"
     run_dump_test "prefix"
     run_list_test "prefix32" "-al -march=+mpx"
     run_dump_test "insn-32"
@@ -114,6 +116,7 @@ if [gas_32_check] then {
     run_dump_test "quoted2"
     run_dump_test "unary"
     run_dump_test "padlock"
+    run_list_test "padlock-bad"
     run_dump_test "gmi"
     run_dump_test "padlockrng2"
     run_dump_test "padlockphe2"
@@ -214,6 +217,7 @@ if [gas_32_check] then {
     run_dump_test "arch-14-znver3"
     run_dump_test "arch-14-znver4"
     run_dump_test "arch-15-znver5"
+    run_dump_test "arch-16-znver6"
     run_dump_test "arch-10-btver1"
     run_dump_test "arch-10-btver2"
     run_list_test "arch-10-1" "-march=generic32 -I${srcdir}/$subdir -al"
@@ -228,6 +232,7 @@ if [gas_32_check] then {
     run_dump_test "arch-14"
     run_dump_test "arch-14-1"
     run_dump_test "arch-15"
+    run_dump_test "arch-16"
     run_list_test "arch-dflt" "-march=generic32 -al"
     run_list_test "arch-stk" "-march=generic32 -al"
     run_dump_test "8087"
@@ -363,8 +368,6 @@ if [gas_32_check] then {
     run_dump_test "tbm-16bit"
     run_dump_test "f16c"
     run_dump_test "f16c-intel"
-    run_dump_test "fsgs"
-    run_dump_test "fsgs-intel"
     run_dump_test "rdrnd"
     run_dump_test "rdrnd-intel"
     run_dump_test "bundle"
@@ -478,6 +481,9 @@ if [gas_32_check] then {
     run_dump_test "avx512vnni-intel"
     run_dump_test "avx512vnni_vl"
     run_dump_test "avx512vnni_vl-intel"
+    run_dump_test "avx512_bmm"
+    run_dump_test "avx512_bmm_vl"
+    run_list_test "avx512_bmm_vl-inval"
     run_dump_test "avx512bitalg"
     run_dump_test "avx512bitalg-intel"
     run_dump_test "avx512bitalg_vl"
@@ -515,6 +521,10 @@ if [gas_32_check] then {
     run_list_test "user_msr-inval"
     run_list_test "msr_imm-inval"
     run_list_test "apx-push2pop2-inval"
+    run_dump_test "avx10.1-aux-512-cvt"
+    run_dump_test "avx10.1-aux-256-cvt"
+    run_list_test "avx10.1-aux-512-media" "-I${srcdir}/$subdir -almn --divide --listing-lhs-width=2"
+    run_list_test "avx10.1-aux-256-media" "-I${srcdir}/$subdir -almn --divide --listing-lhs-width=2"
     run_dump_test "avx10_2-evex-promote"
     run_dump_test "avx10_2-512-media"
     run_dump_test "avx10_2-512-media-intel"
@@ -647,6 +657,8 @@ if [gas_32_check] then {
     run_dump_test "optimize-6b"
     run_list_test "optimize-7" "-I${srcdir}/$subdir -march=+noavx2 -al"
     run_list_test "optimize-8" "-Os"
+    run_dump_test "optimize16-O2"
+    run_dump_test "optimize16-Os"
     run_dump_test "noopt"
     run_dump_test "lea-optimize"
     run_dump_test "lea16-optimize"
@@ -720,6 +732,7 @@ if [gas_32_check] then {
 	run_dump_test "pcrel-elf"
 	run_dump_test "relax"
 	run_dump_test "gotpc"
+	run_dump_test "equ2"
 	run_dump_test "tlsd"
 	run_dump_test "tlspic"
 	run_dump_test "tlsnopic"
@@ -735,11 +748,14 @@ if [gas_32_check] then {
 	run_dump_test "intel-cmps16"
 	run_list_test "inval-equ-1" "-al"
 	run_list_test "inval-equ-2" "-al"
-	run_dump_test "ifunc"
-	run_list_test "ifunc-2"
-	run_dump_test "ifunc-3"
 	run_dump_test "localpic"
 	run_dump_test "debug1"
+
+	if {[supports_gnu_osabi]} then {
+	    run_dump_test "ifunc"
+	    run_list_test "ifunc-2"
+	    run_dump_test "ifunc-3"
+	}
 
 	run_dump_test "dwarf2-line-1"
 	run_dump_test "dwarf2-line-2"
@@ -776,6 +792,11 @@ if [gas_32_check] then {
 
 	run_dump_test "no-got"
 
+	run_dump_test "plt"
+
+	run_dump_test "gotx-default"
+	run_dump_test "no-gotx-default"
+
 	run_dump_test "addend"
 	run_dump_test "nop-3"
 	run_dump_test "nop-4"
@@ -800,7 +821,7 @@ if [gas_32_check] then {
 	    run_list_test "code64-inval" "-I${srcdir}/$subdir -al"
 	}
 
-	if {![istarget "*-*-vxworks*"]} then {
+	if { [istarget "i*86-*-elfiamcu"] } then {
 	    run_dump_test "iamcu-1"
 	    run_dump_test "iamcu-2"
 	    run_dump_test "iamcu-3"
@@ -861,6 +882,7 @@ if {[is_elf_format] || [istarget "*-*-vxworks*"]} then {
     run_dump_test "dw2-compressed-3b"
 
     if {![istarget "i*86-*-elfiamcu"]} then {
+	run_dump_test nojumps
 	run_dump_test "property-2"
 	run_dump_test "property-3"
 	run_dump_test "property-4"
@@ -886,6 +908,7 @@ if {[is_elf_format] || [istarget "*-*-vxworks*"]} then {
     if {![istarget "*-*-dragonfly*"]
 	&& ![istarget "*-*-gnu*"]
 	&& ![istarget "*-*-freebsd*"]
+	&& ![istarget "*-*-haiku*"]
 	&& ![istarget "*-*-linux*"]
 	&& ![istarget "*-*-netbsd*"]} then {
 	run_dump_test "svr4"

@@ -1,4 +1,4 @@
-# Copyright 2021-2025 Free Software Foundation, Inc.
+# Copyright 2021-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -134,7 +134,7 @@ proc test {target_non_stop non_stop cmd} {
 }
 
 if {[build_executable "failed to prepare" $testfile $srcfile {debug pthreads}] == -1} {
-    return -1
+    return
 }
 
 foreach_with_prefix target-non-stop {"off" "on"} {

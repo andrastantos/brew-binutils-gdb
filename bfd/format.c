@@ -1,5 +1,5 @@
 /* Generic BFD support for file formats.
-   Copyright (C) 1990-2025 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -47,6 +47,7 @@ SUBSECTION
 #include "bfd.h"
 #include "libbfd.h"
 #include "plugin.h"
+#include "elf-bfd.h"
 
 /* IMPORT from targets.c.  */
 extern const size_t _bfd_target_vector_entries;
@@ -446,12 +447,12 @@ bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
 {
   extern const bfd_target binary_vec;
   const bfd_target * const *target;
-  const bfd_target **matching_vector = NULL;
+  const bfd_target **matching_vector;
   const bfd_target *save_targ, *right_targ, *ar_right_targ, *match_targ;
   const bfd_target *fail_targ;
   int match_count, best_count, best_match;
   int ar_match_index;
-  unsigned int initial_section_id = _bfd_section_id;
+  unsigned int initial_section_id;
   struct bfd_preserve preserve, preserve_match;
   bfd_cleanup cleanup = NULL;
   struct per_xvec_messages messages = { abfd, PER_XVEC_NO_TARGET, NULL, NULL };
@@ -471,15 +472,10 @@ bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
   if (abfd->format != bfd_unknown)
     return abfd->format == format;
 
-  if (matching != NULL || *bfd_associated_vector != NULL)
-    {
-      size_t amt;
-
-      amt = sizeof (*matching_vector) * 2 * _bfd_target_vector_entries;
-      matching_vector = (const bfd_target **) bfd_malloc (amt);
-      if (!matching_vector)
-	return false;
-    }
+  matching_vector = bfd_malloc (sizeof (*matching_vector)
+				* 2 * _bfd_target_vector_entries);
+  if (!matching_vector)
+    return false;
 
   /* Avoid clashes with bfd_cache_close_all running in another
      thread.  */
@@ -496,6 +492,7 @@ bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
       free (matching_vector);
       return false;
     }
+  initial_section_id = _bfd_section_id;
 
   /* Presume the answer is yes.  */
   abfd->format = format;
@@ -554,13 +551,7 @@ bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
 	      /* An archive with object files matching the archive
 		 target is OK.  Other archives should be further
 		 tested.  */
-	      || (bfd_has_map (abfd)
-		  && bfd_get_error () != bfd_error_wrong_object_format)
-	      /* Empty archives can match the current target.
-		 Attempting to read the armap will result in a file
-		 truncated error.  */
-	      || (!bfd_has_map (abfd)
-		  && bfd_get_error () == bfd_error_file_truncated))
+	      || bfd_get_error () != bfd_error_wrong_object_format)
 	    goto ok_ret;
 	}
       else
@@ -631,11 +622,8 @@ bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
       cleanup = BFD_SEND_FMT (abfd, _bfd_check_format, (abfd));
       if (cleanup)
 	{
-	  int match_priority = abfd->xvec->match_priority;
-
 	  if (abfd->format != bfd_archive
-	      || (bfd_has_map (abfd)
-		  && bfd_get_error () != bfd_error_wrong_object_format))
+	      || bfd_get_error () != bfd_error_wrong_object_format)
 	    {
 	      /* If this is the default target, accept it, even if
 		 other targets might match.  People who want those
@@ -643,10 +631,21 @@ bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
 	      if (abfd->xvec == bfd_default_vector[0])
 		goto ok_ret;
 
-	      if (matching_vector)
-		matching_vector[match_count] = abfd->xvec;
+	      matching_vector[match_count] = abfd->xvec;
 	      match_count++;
 
+	      int match_priority = abfd->xvec->match_priority;
+	      if (match_priority == 1
+		  && bfd_get_flavour (abfd) == bfd_target_elf_flavour)
+		{
+		  /* If the object e_ident matches the hint elf_osabi,
+		     bump priority up.  */
+		  Elf_Internal_Ehdr *i_ehdrp = elf_elfheader (abfd);
+		  elf_backend_data *bed = get_elf_backend_data (abfd);
+		  if (bed->elf_osabi != ELFOSABI_NONE
+		      && i_ehdrp->e_ident[EI_OSABI] == bed->elf_osabi)
+		    match_priority = 0;
+		}
 	      if (match_priority < best_match)
 		{
 		  best_match = match_priority;
@@ -666,8 +665,7 @@ bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
 		 better matches.  */
 	      if (ar_right_targ != bfd_default_vector[0])
 		ar_right_targ = *target;
-	      if (matching_vector)
-		matching_vector[ar_match_index] = *target;
+	      matching_vector[ar_match_index] = *target;
 	      ar_match_index++;
 	    }
 
@@ -697,7 +695,7 @@ bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
 	{
 	  match_count = ar_match_index - _bfd_target_vector_entries;
 
-	  if (matching_vector && match_count > 1)
+	  if (match_count > 1)
 	    memcpy (matching_vector,
 		    matching_vector + _bfd_target_vector_entries,
 		    sizeof (*matching_vector) * match_count);
@@ -731,7 +729,7 @@ bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
   /* We still have more than one equally good match, and at least some
      of the targets support match priority.  Choose the first of the
      best matches.  */
-  if (matching_vector && match_count > 1 && best_count != match_count)
+  if (match_count > 1 && best_count != match_count)
     {
       int i;
 

@@ -1,6 +1,6 @@
 /* List of target connections for GDB.
 
-   Copyright (C) 2017-2025 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -124,7 +124,7 @@ print_connection (struct ui_out *uiout, const char *requested_connections)
       if (!number_is_in_list (requested_connections, t->connection_number))
 	continue;
 
-      ui_out_emit_tuple tuple_emitter (uiout, NULL);
+      ui_out_emit_tuple tuple_emitter (uiout);
 
       if (current_inferior ()->process_target () == t)
 	uiout->field_string ("current", "*");

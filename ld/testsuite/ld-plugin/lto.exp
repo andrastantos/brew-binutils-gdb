@@ -1,5 +1,5 @@
 # Expect script for ld-plugin LTO tests
-#   Copyright (C) 2011-2025 Free Software Foundation, Inc.
+#   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -132,10 +132,10 @@ set lto_link_tests [list \
    "$plug_opt" "-flto" \
    {lto-14c.c} {} "liblto-14.a"] \
   [list "Compile 15a" \
-   "" "-flto" \
+   "" "-flto $lto_no_fat" \
    {lto-15a.c} {} ""] \
   [list "Build liblto-15.a" \
-   "$plug_opt" "-flto" \
+   "$plug_opt" "-flto $lto_no_fat" \
    {lto-15b.c} {} "liblto-15.a"] \
   [list "PR ld/12696" \
    "-O2 -flto -fuse-linker-plugin -r -nostdlib" "-O2 -flto" \
@@ -399,8 +399,8 @@ set lto_link_elf_tests [list \
    {} {-flto} \
    {pr22220main.cc} {} {} {c++}] \
   [list "Build libpr23818.so" \
-   "-shared -flto -g -Wl,-version-script,pr23818.t" \
-   "-g -flto $lto_fat" \
+   "-shared -fPIC -flto -g -Wl,-version-script,pr23818.t" \
+   "-g -fPIC -flto $lto_fat" \
    {pr23818a.c pr23818b.c} \
    {{"readelf" {-s --wide} "pr23818.d"}} \
    "libpr23818.so"] \
@@ -1212,6 +1212,24 @@ if { [is_elf_format] } {
 	    "pr22983" \
 	] \
     ]
+
+    if { [istarget "aarch64*-*-linux"]
+	 || [istarget "x86_64-*-linux*"] } {
+	run_ld_link_exec_tests [list \
+	    [list \
+		{PR ld/34088} \
+		{-static -flto -fuse-linker-plugin} \
+		{} \
+		{pr34088.c} \
+		{pr34088.exe} \
+		{pass.out} \
+		{-flto -O0} \
+		{c} \
+		{} \
+		{-lm}] \
+	   ] \
+	]
+    }
 }
 
 if { [is_elf_format] && [check_lto_shared_available] } {

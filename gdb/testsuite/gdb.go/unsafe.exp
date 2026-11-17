@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 
-# Copyright 2012-2025 Free Software Foundation, Inc.
+# Copyright 2012-2026 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,11 +24,11 @@ require allow_go_tests support_go_compile
 standard_testfile .go
 
 if { [prepare_for_testing "failed to prepare" ${testfile} ${srcfile} {debug go}] } {
-    return -1
+    return
 }
 
 if { [go_runto_main] < 0 } {
-    return -1
+    return
 }
 
 gdb_test "print unsafe.Sizeof(42)" ".* = 4"

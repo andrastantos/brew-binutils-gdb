@@ -1,6 +1,6 @@
 /* Handle Darwin shared libraries for GDB, the GNU Debugger.
 
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,6 +26,7 @@
 #include "inferior.h"
 #include "regcache.h"
 #include "gdb_bfd.h"
+#include "cli/cli-style.h"
 
 #include "solib.h"
 #include "solib-darwin.h"
@@ -102,11 +103,7 @@ static const registry<program_space>::key<darwin_info>
 static darwin_info *
 get_darwin_info (program_space *pspace)
 {
-  darwin_info *info = solib_darwin_pspace_data.get (pspace);
-  if (info != nullptr)
-    return info;
-
-  return solib_darwin_pspace_data.emplace (pspace);
+  return &solib_darwin_pspace_data.try_emplace (pspace);
 }
 
 /* Return non-zero if the version in dyld_all_image is known.  */
@@ -158,8 +155,12 @@ darwin_load_image_infos (struct darwin_info *info)
 
 struct lm_info_darwin final : public lm_info
 {
+  explicit lm_info_darwin (CORE_ADDR lm_addr)
+    : lm_addr (lm_addr)
+  {}
+
   /* The target location of lm.  */
-  CORE_ADDR lm_addr = 0;
+  CORE_ADDR lm_addr;
 };
 
 /* Lookup the value for a specific symbol.  */
@@ -174,7 +175,7 @@ lookup_symbol_from_bfd (bfd *abfd, const char *symname)
 
   for (const asymbol *sym : symbol_table)
     {
-      if (strcmp (sym->name, symname) == 0
+      if (streq (sym->name, symname)
 	  && (sym->section->flags & (SEC_CODE | SEC_DATA)) != 0)
 	{
 	  /* BFD symbols are section relative.  */
@@ -269,15 +270,8 @@ darwin_solib_ops::current_sos () const
 	break;
 
       /* Create and fill the new struct solib element.  */
-      auto &newobj = sos.emplace_back (*this);
-
-      auto li = std::make_unique<lm_info_darwin> ();
-
-      newobj.name = file_path.get ();
-      newobj.original_name = newobj.name;
-      li->lm_addr = load_addr;
-
-      newobj.lm_info = std::move (li);
+      sos.emplace_back (std::make_unique<lm_info_darwin> (load_addr),
+			file_path.get (), file_path.get (), *this);
     }
 
   return sos;
@@ -630,8 +624,10 @@ darwin_solib_ops::bfd_open (const char *pathname) const
        (abfd.get (), bfd_object,
 	gdbarch_bfd_arch_info (current_inferior ()->arch ())));
   if (res == NULL)
-    error (_("`%s': not a shared-library: %s"),
-	   bfd_get_filename (abfd.get ()), bfd_errmsg (bfd_get_error ()));
+    error (_("`%ps': not a shared-library: %s"),
+	   styled_string (file_name_style.style (),
+			  bfd_get_filename (abfd.get ())),
+	   bfd_errmsg (bfd_get_error ()));
 
   /* The current filename for fat-binary BFDs is a name generated
      by BFD, usually a string containing the name of the architecture.

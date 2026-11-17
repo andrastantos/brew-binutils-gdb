@@ -1,6 +1,6 @@
-/* Work with executable files, for GDB. 
+/* Work with executable files, for GDB.
 
-   Copyright (C) 1988-2025 Free Software Foundation, Inc.
+   Copyright (C) 1988-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -37,12 +37,11 @@
 #include "gcore.h"
 #include "source.h"
 #include "build-id.h"
+#include "filesystem.h"
 
 #include <fcntl.h>
-#include "readline/tilde.h"
 #include "gdbcore.h"
 
-#include <ctype.h>
 #include <sys/stat.h>
 #include "solib.h"
 #include <algorithm>
@@ -79,7 +78,7 @@ struct exec_target final : public target_ops
 
   bool has_memory () override;
   gdb::unique_xmalloc_ptr<char> make_corefile_notes (bfd *, int *) override;
-  int find_memory_regions (find_memory_region_ftype func, void *data) override;
+  bool find_memory_regions (find_memory_region_ftype func) override;
 };
 
 static exec_target exec_ops;
@@ -116,7 +115,7 @@ set_exec_file_mismatch_command (const char *ignore,
        ;
        mode = static_cast<enum exec_file_mismatch_mode>(1 + (int) mode))
     {
-      if (strcmp (exec_file_mismatch, exec_file_mismatch_names[mode]) == 0)
+      if (streq (exec_file_mismatch, exec_file_mismatch_names[mode]))
 	{
 	  exec_file_mismatch_mode = mode;
 	  return;
@@ -232,6 +231,8 @@ validate_exec_file (int from_tty)
   if (pid_exec_file == nullptr)
     return;
 
+  scoped_normalized_path path_storage (&pid_exec_file);
+
   /* In case current_exec_file was changed, reopen_exec_file ensures an up
      to date build_id (will do nothing if the file timestamp did not
      change).  If exec file changed, reopen_exec_file has allocated another
@@ -336,8 +337,10 @@ exec_file_locate_attach (int pid, int defer_bp_reset, int from_tty)
       return;
     }
 
+  scoped_normalized_path path_storage (&exec_file_target);
+
   gdb::unique_xmalloc_ptr<char> exec_file_host
-    = exec_file_find (exec_file_target, NULL);
+    = exec_file_find (exec_file_target);
   if (exec_file_host == nullptr)
     {
       warning (_("No executable has been specified, and target executable "
@@ -465,10 +468,9 @@ exec_file_attach (const char *filename, int from_tty)
       current_program_space->set_exec_bfd (std::move (temp));
 
       if (!current_program_space->exec_bfd ())
-	{
-	  error (_("\"%s\": could not open as an executable file: %s."),
-		 scratch_pathname, bfd_errmsg (bfd_get_error ()));
-	}
+	error (_("\"%ps\": could not open as an executable file: %s."),
+	       styled_string (file_name_style.style (), scratch_pathname),
+	       bfd_errmsg (bfd_get_error ()));
 
       /* gdb_realpath_keepfile resolves symlinks on the local
 	 filesystem and so cannot be used for "target:" files.  */
@@ -482,13 +484,14 @@ exec_file_attach (const char *filename, int from_tty)
 	  (make_unique_xstrdup (gdb_realpath_keepfile
 				  (scratch_pathname).c_str ()));
 
-      if (!bfd_check_format_matches (current_program_space->exec_bfd (),
+      if (!gdb_bfd_check_format_matches (current_program_space->exec_bfd (),
 				     bfd_object, &matching))
 	{
 	  /* Make sure to close exec_bfd, or else "run" might try to use
 	     it.  */
 	  current_program_space->exec_close ();
-	  error (_("\"%s\": not in executable format: %s"), scratch_pathname,
+	  error (_("\"%ps\": not in executable format: %s"),
+		 styled_string (file_name_style.style (), scratch_pathname),
 		 gdb_bfd_errmsg (bfd_get_error (), matching).c_str ());
 	}
 
@@ -514,8 +517,8 @@ exec_file_attach (const char *filename, int from_tty)
   bfd *curr_bfd = current_program_space->exec_bfd ();
   bool reload_p = (((prev_bfd != nullptr) == (curr_bfd != nullptr))
 		   && (prev_bfd == nullptr
-		       || (strcmp (bfd_get_filename (prev_bfd),
-				   bfd_get_filename (curr_bfd)) == 0)));
+		       || (streq (bfd_get_filename (prev_bfd),
+				  bfd_get_filename (curr_bfd)))));
 
   gdb::observers::executable_changed.notify (current_program_space, reload_p);
 }
@@ -526,7 +529,9 @@ void
 no_executable_specified_error ()
 {
   error (_("No executable file specified.\n\
-Use the \"file\" or \"exec-file\" command."));
+Use the \"%ps\" or \"%ps\" command."),
+	 styled_string (command_style.style (), "file"),
+	 styled_string (command_style.style (), "exec-file"));
 }
 
 /*  Process the first arg in ARGS as the new exec file.
@@ -534,7 +539,7 @@ Use the \"file\" or \"exec-file\" command."));
    Note that we have to explicitly ignore additional args, since we can
    be called from file_command(), which also calls symbol_file_command()
    which can take multiple args.
-   
+
    If ARGS is NULL, we just want to close the exec file.  */
 
 static void
@@ -559,7 +564,8 @@ exec_file_command (const char *args, int from_tty)
       if (*argv == NULL)
 	error (_("No executable file name was specified"));
 
-      gdb::unique_xmalloc_ptr<char> filename (tilde_expand (*argv));
+      gdb::unique_xmalloc_ptr<char> filename
+	= gdb_rl_tilde_expand (*argv);
       exec_file_attach (filename.get (), from_tty);
     }
   else
@@ -964,8 +970,8 @@ print_section_info (const std::vector<target_section> *t, bfd *abfd)
 		 styled_string (file_name_style.style (),
 				bfd_get_filename (abfd)));
 
-      entry_point = gdbarch_addr_bits_remove (gdbarch, 
-					      bfd_get_start_address (abfd) 
+      entry_point = gdbarch_addr_bits_remove (gdbarch,
+					      bfd_get_start_address (abfd)
 						+ displacement);
       gdb_printf (_("\tEntry point: %s\n"),
 		  paddress (gdbarch, entry_point));
@@ -1015,7 +1021,7 @@ set_section_command (const char *args, int from_tty)
     error (_("Must specify section name and its virtual address"));
 
   /* Parse out section name.  */
-  for (secname = args; !isspace (*args); args++);
+  for (secname = args; !c_isspace (*args); args++);
   unsigned seclen = args - secname;
 
   /* Parse out new virtual address.  */
@@ -1071,10 +1077,10 @@ exec_target::make_corefile_notes (bfd *obfd, int *note_size)
   error (_("Can't create a corefile"));
 }
 
-int
-exec_target::find_memory_regions (find_memory_region_ftype func, void *data)
+bool
+exec_target::find_memory_regions (find_memory_region_ftype func)
 {
-  return objfile_find_memory_regions (this, func, data);
+  return objfile_find_memory_regions (this, func);
 }
 
 INIT_GDB_FILE (exec)

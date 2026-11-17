@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux x86-64.
 
-   Copyright (C) 2001-2025 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
    Contributed by Jiri Smid, SuSE Labs.
 
    This file is part of GDB.
@@ -50,6 +50,7 @@
 #include "x86-tdep.h"
 #include "dwarf2/frame.h"
 #include "frame-unwind.h"
+#include "cli/cli-style.h"
 
 /* The syscall's XML filename for i386.  */
 #define XML_SYSCALL_FILENAME_AMD64 "syscalls/amd64-linux.xml"
@@ -206,7 +207,7 @@ amd64_linux_sigtramp_p (const frame_info_ptr &this_frame)
   if (name == NULL || strstr (name, "sigaction") != NULL)
     return (amd64_linux_sigtramp_start (this_frame) != 0);
 
-  return (strcmp ("__restore_rt", name) == 0);
+  return (streq ("__restore_rt", name));
 }
 
 /* Offset to struct sigcontext in ucontext, from <asm/ucontext.h>.  */
@@ -292,10 +293,10 @@ static int amd64_linux_sc_reg_offset[] =
   -1				/* %gs */
 };
 
-static int
+static bool
 amd64_linux_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
 				 const struct reggroup *group)
-{ 
+{
   if (regnum == AMD64_LINUX_ORIG_RAX_REGNUM)
     return (group == system_reggroup
 	    || group == save_reggroup
@@ -370,8 +371,8 @@ amd64_all_but_ip_registers_record (struct regcache *regcache)
   return 0;
 }
 
-/* amd64_canonicalize_syscall maps from the native amd64 Linux set 
-   of syscall ids into a canonical set of syscall ids used by 
+/* amd64_canonicalize_syscall maps from the native amd64 Linux set
+   of syscall ids into a canonical set of syscall ids used by
    process record.  */
 
 static enum gdb_syscall
@@ -1521,7 +1522,7 @@ amd64_linux_syscall_record_common (struct regcache *regcache,
     {
       gdb_printf (gdb_stderr,
 		  _("Process record and replay target doesn't "
-		    "support syscall number %s\n"), 
+		    "support syscall number %s\n"),
 		  pulongest (syscall_native));
       return -1;
     }
@@ -1588,9 +1589,6 @@ amd64_linux_record_signal (struct gdbarch *gdbarch,
   if (record_full_arch_list_add_mem (rsp, AMD64_LINUX_redzone
 				     + AMD64_LINUX_xstate
 				     + AMD64_LINUX_frame_size))
-    return -1;
-
-  if (record_full_arch_list_add_end ())
     return -1;
 
   return 0;
@@ -1741,7 +1739,7 @@ const gdb_byte amd64_dtrace_disable_probe_sequence[] = {
 /* Implementation of `gdbarch_dtrace_probe_is_enabled', as defined in
    gdbarch.h.  */
 
-static int
+static bool
 amd64_dtrace_probe_is_enabled (struct gdbarch *gdbarch, CORE_ADDR addr)
 {
   gdb_byte buf[5];
@@ -1752,7 +1750,7 @@ amd64_dtrace_probe_is_enabled (struct gdbarch *gdbarch, CORE_ADDR addr)
 
      Note that ADDR is offset 3 bytes from the beginning of these
      sequences.  */
-  
+
   read_code (addr - 3, buf, 5);
   return (memcmp (buf, amd64_dtrace_disabled_probe_sequence_1, 5) != 0
 	  && memcmp (buf, amd64_dtrace_disabled_probe_sequence_2, 5) != 0);
@@ -1868,8 +1866,8 @@ amd64_linux_lam_untag_mask ()
       errno = 0;
       unsigned long long result = std::strtoul (start, &endptr, 0);
       if (errno != 0 || endptr == start)
-	error (_("Failed to parse untag_mask from file %s."),
-	       std::string (filename).c_str ());
+	error (_("Failed to parse untag_mask from file %ps."),
+	       styled_string (file_name_style.style (), filename.c_str ()));
 
       return result;
     }

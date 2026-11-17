@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Free Software Foundation, Inc.
+# Copyright 2024-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ save_vars { ::env(GLIBC_TUNABLES) } {
     append_environment GLIBC_TUNABLES "glibc.cpu.hwcaps" "SHSTK"
 
     if { [prepare_for_testing "failed to prepare" ${testfile} ${srcfile} \
-	  additional_flags="-fcf-protection=return"] } {
+	  additional_flags=-fcf-protection=return] } {
 	return
     }
 

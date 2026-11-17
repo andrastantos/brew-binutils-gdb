@@ -1,6 +1,6 @@
 /* The ptid_t type and common functions operating on it.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -35,6 +35,7 @@
 #include <functional>
 #include <string>
 #include "gdbsupport/common-types.h"
+#include "gdbsupport/function-view.h"
 
 class ptid_t
 {
@@ -42,6 +43,10 @@ public:
   using pid_type = int;
   using lwp_type = long;
   using tid_type = ULONGEST;
+
+  /* These limits are documented in the manual.  */
+  static_assert (sizeof (pid_type) >= 4);
+  static_assert (sizeof (lwp_type) >= 4);
 
   /* Must have a trivial defaulted default constructor so that the
      type remains POD.  */
@@ -130,6 +135,12 @@ public:
 	    || *this == filter);
   }
 
+  /* Return a remote-protocol-compatible string representation of this
+     ptid.  The MULTI argument controls whether the multi-process
+     representation is used.  */
+
+  std::string to_rsp_string (bool multi) const;
+
   /* Return a string representation of the ptid.
 
      This is only meant to be used in debug messages.  */
@@ -145,6 +156,16 @@ public:
 
   static constexpr ptid_t make_minus_one ()
   { return ptid_t (-1, 0, 0); }
+
+  /* Extract a PTID from BUF.  If non-null, OBUF is set to one past
+     the last parsed char.  FOR_REMOTE is true for "gdbserver" style
+     parsing, that is, applying a special meaning to "-1" (see RSP
+     docs for details).  DEFAULT_PID is called when the parsed string
+     does not provide a process ID; it should return the default PID
+     to use.  This function throws on error.  */
+
+  static ptid_t parse (const char *buf, const char **obuf, bool for_remote,
+		       gdb::function_view<pid_type ()> default_pid);
 
 private:
   /* Process id.  */

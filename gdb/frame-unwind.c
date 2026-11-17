@@ -1,6 +1,6 @@
 /* Definitions for frame unwinder, for GDB, the GNU debugger.
 
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -74,12 +74,9 @@ static const registry<gdbarch>::key<std::vector<const frame_unwind *>>
 static std::vector<const frame_unwind *> &
 get_frame_unwind_table (struct gdbarch *gdbarch)
 {
-  std::vector<const frame_unwind *> *table = frame_unwind_data.get (gdbarch);
-  if (table == nullptr)
-    table = frame_unwind_data.emplace (gdbarch,
-				       standard_unwinders.begin (),
-				       standard_unwinders.end ());
-  return *table;
+  return frame_unwind_data.try_emplace (gdbarch,
+					standard_unwinders.begin (),
+					standard_unwinders.end ());
 }
 
 static const char *
@@ -297,8 +294,16 @@ struct value *
 frame_unwind_got_register (const frame_info_ptr &frame,
 			   int regnum, int new_regnum)
 {
+  struct gdbarch *gdbarch = frame_unwind_arch (frame);
+  struct type *regnum_type = register_type (gdbarch, regnum);
+  struct type *new_regnum_type = register_type (gdbarch, new_regnum);
+
+  /* REGNUM has been copied into NEW_REGNUM, therefore, the former
+     must be smaller or equal in size to the latter.  */
+  gdb_assert (regnum_type->length () <= new_regnum_type->length ());
+
   return value_of_register_lazy (get_next_frame_sentinel_okay (frame),
-				 new_regnum);
+				 new_regnum, regnum_type);
 }
 
 /* Return a value which indicates that FRAME saved REGNUM in memory at
@@ -448,7 +453,7 @@ maintenance_info_frame_unwinders (const char *args, int from_tty)
 
   for (const auto &unwinder : table)
     {
-      ui_out_emit_list tuple_emitter (uiout, nullptr);
+      ui_out_emit_list tuple_emitter (uiout);
       uiout->field_string ("name", unwinder->name ());
       uiout->field_string ("type", frame_type_str (unwinder->type ()));
       uiout->field_string ("class", frame_unwinder_class_str (

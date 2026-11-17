@@ -1,5 +1,5 @@
 /* BFD back-end for MIPS Extended-Coff files.
-   Copyright (C) 1990-2025 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
    Original version by Per Bothner.
    Full support added by Ian Lance Taylor, ian@cygnus.com.
 
@@ -272,8 +272,9 @@ mips_ecoff_swap_reloc_in (bfd *  abfd,
 			  void * ext_ptr,
 			  struct internal_reloc *intern)
 {
-  const RELOC *ext = (RELOC *) ext_ptr;
+  const RELOC *ext = ext_ptr;
 
+  memset (intern, 0, sizeof (*intern));
   intern->r_vaddr = H_GET_32 (abfd, ext->r_vaddr);
   if (bfd_header_big_endian (abfd))
     {
@@ -403,7 +404,7 @@ mips_generic_reloc (bfd *abfd ATTRIBUTE_UNUSED,
 		    bfd *output_bfd,
 		    char **error_message ATTRIBUTE_UNUSED)
 {
-  if (output_bfd != (bfd *) NULL
+  if (output_bfd != NULL
       && (symbol->flags & BSF_SECTION_SYM) == 0
       && reloc_entry->addend == 0)
     {
@@ -438,7 +439,7 @@ mips_refhi_reloc (bfd *abfd,
 
   /* If we're relocating, and this an external symbol, we don't want
      to change anything.  */
-  if (output_bfd != (bfd *) NULL
+  if (output_bfd != NULL
       && (symbol->flags & BSF_SECTION_SYM) == 0
       && reloc_entry->addend == 0)
     {
@@ -448,7 +449,7 @@ mips_refhi_reloc (bfd *abfd,
 
   ret = bfd_reloc_ok;
   if (bfd_is_und_section (symbol->section)
-      && output_bfd == (bfd *) NULL)
+      && output_bfd == NULL)
     ret = bfd_reloc_undefined;
 
   if (bfd_is_com_section (symbol->section))
@@ -460,19 +461,31 @@ mips_refhi_reloc (bfd *abfd,
   relocation += symbol->section->output_offset;
   relocation += reloc_entry->addend;
 
-  if (reloc_entry->address > bfd_get_section_limit (abfd, input_section))
+  bfd_size_type octet = (reloc_entry->address
+			 * OCTETS_PER_BYTE (abfd, input_section));
+  if (!bfd_reloc_offset_in_range (reloc_entry->howto, abfd,
+				  input_section, octet))
     return bfd_reloc_outofrange;
 
+  struct ecoff_section_tdata *sdata = ecoff_section_data (input_section);
+  if (sdata == NULL)
+    {
+      sdata = bfd_zalloc (abfd, sizeof (*sdata));
+      if (sdata == NULL)
+	return bfd_reloc_outofrange;
+      input_section->used_by_bfd = sdata;
+    }
+
   /* Save the information, and let REFLO do the actual relocation.  */
-  n = (struct mips_hi *) bfd_malloc ((bfd_size_type) sizeof *n);
+  n = bfd_malloc (sizeof (*n));
   if (n == NULL)
     return bfd_reloc_outofrange;
   n->addr = (bfd_byte *) data + reloc_entry->address;
   n->addend = relocation;
-  n->next = ecoff_data (abfd)->mips_refhi_list;
-  ecoff_data (abfd)->mips_refhi_list = n;
+  n->next = sdata->mips_refhi_list;
+  sdata->mips_refhi_list = n;
 
-  if (output_bfd != (bfd *) NULL)
+  if (output_bfd != NULL)
     reloc_entry->address += input_section->output_offset;
 
   return ret;
@@ -491,11 +504,11 @@ mips_reflo_reloc (bfd *abfd,
 		  bfd *output_bfd,
 		  char **error_message)
 {
-  if (ecoff_data (abfd)->mips_refhi_list != NULL)
+  struct ecoff_section_tdata *sdata = ecoff_section_data (input_section);
+  if (sdata != NULL)
     {
-      struct mips_hi *l;
+      struct mips_hi *l = sdata->mips_refhi_list;
 
-      l = ecoff_data (abfd)->mips_refhi_list;
       while (l != NULL)
 	{
 	  unsigned long insn;
@@ -537,8 +550,7 @@ mips_reflo_reloc (bfd *abfd,
 	  free (l);
 	  l = next;
 	}
-
-      ecoff_data (abfd)->mips_refhi_list = NULL;
+      sdata->mips_refhi_list = NULL;
     }
 
   /* Now do the REFLO reloc in the usual way.  */
@@ -550,7 +562,7 @@ mips_reflo_reloc (bfd *abfd,
    the offset from the gp register.  */
 
 static bfd_reloc_status_type
-mips_gprel_reloc (bfd *abfd ATTRIBUTE_UNUSED,
+mips_gprel_reloc (bfd *abfd,
 		  arelent *reloc_entry,
 		  asymbol *symbol,
 		  void * data,
@@ -568,7 +580,7 @@ mips_gprel_reloc (bfd *abfd ATTRIBUTE_UNUSED,
      addend, we don't want to change anything.  We will only have an
      addend if this is a newly created reloc, not read from an ECOFF
      file.  */
-  if (output_bfd != (bfd *) NULL
+  if (output_bfd != NULL
       && (symbol->flags & BSF_SECTION_SYM) == 0
       && reloc_entry->addend == 0)
     {
@@ -576,7 +588,7 @@ mips_gprel_reloc (bfd *abfd ATTRIBUTE_UNUSED,
       return bfd_reloc_ok;
     }
 
-  if (output_bfd != (bfd *) NULL)
+  if (output_bfd != NULL)
     relocatable = true;
   else
     {
@@ -649,7 +661,8 @@ mips_gprel_reloc (bfd *abfd ATTRIBUTE_UNUSED,
   relocation += symbol->section->output_section->vma;
   relocation += symbol->section->output_offset;
 
-  if (reloc_entry->address > bfd_get_section_limit (abfd, input_section))
+  if (!bfd_reloc_offset_in_range (reloc_entry->howto, abfd,
+				  input_section, reloc_entry->address))
     return bfd_reloc_outofrange;
 
   insn = bfd_get_32 (abfd, (bfd_byte *) data + reloc_entry->address);
@@ -1404,9 +1417,6 @@ static const struct ecoff_backend_data mips_ecoff_backend_data =
 /* Input section flags is not implemented.  */
 #define _bfd_ecoff_bfd_lookup_section_flags bfd_generic_lookup_section_flags
 
-/* Merging of sections is not done.  */
-#define _bfd_ecoff_bfd_merge_sections bfd_generic_merge_sections
-
 #define _bfd_ecoff_bfd_is_group_section bfd_generic_is_group_section
 #define _bfd_ecoff_bfd_group_name bfd_generic_group_name
 #define _bfd_ecoff_bfd_discard_group bfd_generic_discard_group
@@ -1415,7 +1425,7 @@ static const struct ecoff_backend_data mips_ecoff_backend_data =
 #define _bfd_ecoff_bfd_define_common_symbol bfd_generic_define_common_symbol
 #define _bfd_ecoff_bfd_link_hide_symbol _bfd_generic_link_hide_symbol
 #define _bfd_ecoff_bfd_define_start_stop bfd_generic_define_start_stop
-#define _bfd_ecoff_set_reloc _bfd_generic_set_reloc
+#define _bfd_ecoff_finalize_section_relocs _bfd_generic_finalize_section_relocs
 
 extern const bfd_target mips_ecoff_be_vec;
 
@@ -1437,6 +1447,7 @@ const bfd_target mips_ecoff_le_vec =
   15,				/* ar_max_namelen */
   0,				/* match priority.  */
   TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */
+  TARGET_MERGE_SECTIONS,
   bfd_getl64, bfd_getl_signed_64, bfd_putl64,
      bfd_getl32, bfd_getl_signed_32, bfd_putl32,
      bfd_getl16, bfd_getl_signed_16, bfd_putl16, /* data */
@@ -1496,6 +1507,7 @@ const bfd_target mips_ecoff_be_vec =
   15,				/* ar_max_namelen */
   0,				/* match priority.  */
   TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */
+  TARGET_MERGE_SECTIONS,
   bfd_getb64, bfd_getb_signed_64, bfd_putb64,
      bfd_getb32, bfd_getb_signed_32, bfd_putb32,
      bfd_getb16, bfd_getb_signed_16, bfd_putb16,
@@ -1555,6 +1567,7 @@ const bfd_target mips_ecoff_bele_vec =
   15,				/* ar_max_namelen */
   0,				/* match priority.  */
   TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */
+  TARGET_MERGE_SECTIONS,
   bfd_getl64, bfd_getl_signed_64, bfd_putl64,
      bfd_getl32, bfd_getl_signed_32, bfd_putl32,
      bfd_getl16, bfd_getl_signed_16, bfd_putl16, /* data */

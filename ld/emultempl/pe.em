@@ -18,7 +18,7 @@ esac
 rm -f e${EMULATION_NAME}.c
 (echo;echo;echo;echo;echo)>e${EMULATION_NAME}.c # there, now line numbers match ;-)
 fragment <<EOF
-/* Copyright (C) 1995-2025 Free Software Foundation, Inc.
+/* Copyright (C) 1995-2026 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -228,6 +228,8 @@ fragment <<EOF
   link_info.pei386_auto_import = ${default_auto_import};
   /* Use by default version.  */
   link_info.pei386_runtime_pseudo_reloc = DEFAULT_PSEUDO_RELOC_VERSION;
+#else
+  pe_dll_enable_reloc_section = 0;
 #endif
 }
 
@@ -1147,7 +1149,7 @@ pe_fixup_stdcalls (void)
     if (undef->type == bfd_link_hash_undefined)
       {
 	const char * name = undef->root.string;
-	char * at;
+	const char * at;
 	int lead_at = (*name == '@');
 
 	if (lead_at)
@@ -1571,6 +1573,16 @@ gld${EMULATION_NAME}_after_open (void)
 
   pe_output_file_set_long_section_names (link_info.output_bfd);
 
+  /* The RVAs of these symbols will be written into the PE header, so they
+     must not be collected.  */
+  char *sym = xstrdup ("__tls_used");
+  sym[0] = bfd_get_symbol_leading_char (link_info.output_bfd);
+  lang_add_gc_name (sym + !sym[0]);
+
+  sym = xstrdup ("__load_config_used");
+  sym[0] = bfd_get_symbol_leading_char (link_info.output_bfd);
+  lang_add_gc_name (sym + !sym[0]);
+
 #ifdef DLL_SUPPORT
   pe_process_import_defs (link_info.output_bfd, &link_info);
 
@@ -1594,6 +1606,9 @@ gld${EMULATION_NAME}_after_open (void)
   else
     pe_exe_build_sections (link_info.output_bfd, &link_info);
 #endif
+#else /* !DLL_SUPPORT */
+  if (!bfd_link_relocatable (&link_info))
+    pe_exe_build_sections (link_info.output_bfd, &link_info);
 #endif /* DLL_SUPPORT */
 
 #if defined(TARGET_IS_armpe) || defined(TARGET_IS_arm_wince_pe)
@@ -1745,7 +1760,7 @@ gld${EMULATION_NAME}_after_open (void)
       {
 	if (is->the_bfd->my_archive)
 	  {
-	    char *pnt;
+	    const char *pnt;
 
 	    /* Microsoft import libraries may contain archive members for
 	       one or more DLLs, together with static object files.
@@ -2104,6 +2119,9 @@ gld${EMULATION_NAME}_finish (void)
 
   if (pe_out_def_filename)
     pe_dll_generate_def_file (pe_out_def_filename);
+#else /* !DLL_SUPPORT */
+  if (!bfd_link_relocatable (&link_info))
+    pe_exe_fill_sections (link_info.output_bfd, &link_info);
 #endif /* DLL_SUPPORT */
 
   /* I don't know where .idata gets set as code, but it shouldn't be.  */
@@ -2138,7 +2156,7 @@ gld${EMULATION_NAME}_place_orphan (asection *s,
 				   int constraint)
 {
   const char *orig_secname = secname;
-  char *dollar = NULL;
+  const char *dollar = NULL;
   lang_output_section_statement_type *os;
   lang_statement_list_type add_child;
   lang_output_section_statement_type *match_by_name = NULL;

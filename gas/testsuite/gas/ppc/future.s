@@ -78,4 +78,78 @@ _start:
 	vupkint8tobf16 15, 25, 1
 	vupkint4tofp32 16, 24, 7
 	vupkint8tofp32 17, 23, 3
+	lxvpb32x 34, 18, 19
+	stxvpb32x 34, 20, 21
+	ccmclean
+	ccmrl
+	mtlpl 4, 2
+	mtummcrae 1
+	mtummcr2e 2
+	mtmmcr2e 3
+	mtmmcrae 4
+	mtmmcr1e 5
+	mtmmcr3e 6
+	mtupmc7 7
+	mtupmc8 8
+	mtpmc7 9
+	mtpmc8 10
+	mfummcrae 11
+	mfmmcrae 12
+	mfummcr1e 13
+	mfmmcr1e 14
+	mfummcr2e 15
+	mfmmcr2e 16
+	mfummcr3e 17
+	mfmmcr3e 18
+	mfupmc7 19
+	mfpmc7 20
+	mfupmc8 21
+	mfpmc8 22
+	tlbiep 2, 4, 3, 1, 1
+	tlbiep 2, 3
+	tlbieio 7, 6, 2
+	tlbsyncio 9
+	ptesyncio 5
+	xxmulmul 34, 36, 38, 6
+	xxmulmulhiadd 37, 39, 9, 1, 0, 1
+	xxmulmulloadd 42, 44, 45, 0, 1
+	xxssumudm 4, 5, 6, 1
+	xxssumudmc 3, 4, 7, 0
+	xsaddadduqm 51, 52, 53
+	xsaddaddsuqm 0, 1, 2
+	xsaddsubuqm 61, 62, 63
+	xsaddsubsuqm 3, 4, 5
+	xsmerge2t1uqm 6, 8, 10
+	xsmerge2t2uqm 12, 14, 16
+	xsmerge2t3uqm 18, 19, 20
+	xsmerge3t1uqm 21, 23, 25
+	xsrebase2t1uqm 27, 29, 30
+	xsrebase2t2uqm 31, 32, 33
+	xsrebase2t3uqm 34, 35, 36
+	xsrebase2t4uqm 35, 36, 37
+	xsrebase3t1uqm 38, 39, 40
+	xsrebase3t2uqm 41, 42, 43
+	xsrebase3t3uqm 44, 45, 46
+	xxssumudmcext 35, 9, 11, 13, 1
+	dmsha256hash 5, 6
+	dmsha512hash 5, 7
+	dmsha2hash 2, 3, 0
+	dmsha2hash 4, 6, 1
+	dmsha3dw 1
+	dmcryshash 3
+	dmsha3hash 3, 0
+	dmsha3hash 2, 8
+	dmsha3hash 2, 12
+	dmxxsha3512pad 3, 4, 1
+	dmxxsha3384pad 3, 2, 1
+	dmxxsha3256pad 1, 3, 1
+	dmxxsha3224pad 2, 37, 0
+	dmxxshake256pad 3, 38, 0
+	dmxxshake128pad 4, 39, 0
+	dmxxsha384512pad 5, 8
+	dmxxsha224256pad 6, 41
+	dmxxshapad 7, 3, 0, 0, 0
+	dmxxshapad 6, 40, 3, 1, 2
+	dmxxshapad 7, 41, 1, 1, 2
+	dmxxshapad 6, 42, 1, 0, 3
 

@@ -1,6 +1,6 @@
 /* Python frame filters
 
-   Copyright (C) 2013-2025 Free Software Foundation, Inc.
+   Copyright (C) 2013-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -102,7 +102,7 @@ extract_sym (PyObject *obj, gdb::unique_xmalloc_ptr<char> *name,
 
       /* Duplicate the symbol name, so the caller has consistency
 	 in garbage collection.  */
-      name->reset (xstrdup ((*sym)->print_name ()));
+      *name = make_unique_xstrdup ((*sym)->print_name ());
 
       /* If a symbol is specified attempt to determine the language
 	 from the symbol.  If mode is not "auto", then the language
@@ -279,7 +279,7 @@ get_py_iter_from_func (PyObject *filter, const char *func)
 	}
     }
   else
-    Py_RETURN_NONE;
+    return py_none ().release ();
 
   return NULL;
 }
@@ -1088,15 +1088,15 @@ static PyObject *
 bootstrap_python_frame_filters (const frame_info_ptr &frame,
 				int frame_low, int frame_high)
 {
-  gdbpy_ref<> frame_obj (frame_info_to_frame_object (frame));
+  gdbpy_ref<> frame_obj = frame_info_to_frame_object (frame);
   if (frame_obj == NULL)
     return NULL;
 
-  gdbpy_ref<> module (PyImport_ImportModule ("gdb.frames"));
-  if (module == NULL)
+  gdbpy_ref<> mod (PyImport_ImportModule ("gdb.frames"));
+  if (mod == NULL)
     return NULL;
 
-  gdbpy_ref<> sort_func (PyObject_GetAttrString (module.get (),
+  gdbpy_ref<> sort_func (PyObject_GetAttrString (mod.get (),
 						 "execute_frame_filters"));
   if (sort_func == NULL)
     return NULL;

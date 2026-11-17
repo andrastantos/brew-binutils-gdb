@@ -1,4 +1,4 @@
-# Copyright 2019-2025 Free Software Foundation, Inc.
+# Copyright 2019-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,6 +14,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # An ANSI terminal emulator for expect.
+
+# tclint-disable redefined-builtin
 
 namespace eval Term {
     # Size of the terminal.
@@ -101,9 +103,10 @@ proc Term::_ctl_0x07 {} {
 
 # Return 1 if tuiterm has the bw/auto_left_margin enabled.
 proc Term::_have_bw {} {
+    variable _TERM
     return [expr \
-		[string equal $Term::_TERM "ansiw"] \
-		|| [string equal $Term::_TERM "ansis"]]
+		{ [string equal $_TERM "ansiw"] \
+		      || [string equal $_TERM "ansis"] }]
 }
 
 # Backspace.
@@ -162,6 +165,7 @@ proc Term::_ctl_0x0a {} {
 	    }
 
 	    incr _cur_row -1
+	    _clear_lines $_cur_row $_rows
 	}
     }
 }
@@ -1046,7 +1050,7 @@ proc Term::accept_gdb_output { {warn 1} } {
 	    scan $expect_out(1,string) %c val
 	    set hexval [format "%02x" $val]
 	    set cmd $expect_out(2,string)
-	    eval _esc_0x${hexval}_$cmd
+	    _esc_0x${hexval}_$cmd
 	}
 	-re "^(\[=>\])" {
 	    scan $expect_out(1,string) %c val
@@ -1081,13 +1085,13 @@ proc Term::accept_gdb_output { {warn 1} } {
 	-re "^($re_csi_cmd)" {
 	    set cmd $expect_out(1,string)
 	    _log "wait_for: _csi_$cmd"
-	    eval _csi_$cmd
+	    _csi_$cmd
 	}
 	-re "^($re_csi_args*)($re_csi_cmd)" {
 	    set params [split $expect_out(1,string) ";"]
 	    set cmd $expect_out(2,string)
 	    _log "wait_for: _csi_$cmd <<<$params>>>"
-	    eval _csi_$cmd $params
+	    _csi_$cmd {*}$params
 	}
 	-re "^($re_csi_prefix?)($re_csi_args*)($re_csi_cmd)" {
 	    set prefix $expect_out(1,string)
@@ -1096,7 +1100,7 @@ proc Term::accept_gdb_output { {warn 1} } {
 	    scan $prefix %c val
 	    set hexval [format "%02x" $val]
 	    _log "wait_for: _csi_0x${hexval}_$cmd <<<$expect_out(1,string)>>>"
-	    eval _csi_0x${hexval}_$cmd $params
+	    _csi_0x${hexval}_$cmd {*}$params
 	}
 
 	timeout {
@@ -1190,7 +1194,7 @@ proc Term::wait_for {wait_for} {
 }
 
 # Accept some output from gdb and update the screen.  Wait for the screen
-# region X/Y/WIDTH/HEIGTH to matches REGEXP.  Return 0 on timeout, 1 on
+# region X/Y/WIDTH/HEIGHT to matches REGEXP.  Return 0 on timeout, 1 on
 # success.
 proc Term::wait_for_region_contents {x y width height regexp} {
     while 1 {
@@ -1234,8 +1238,9 @@ proc Term::wait_for_line { regexp {pos ""} } {
 # In BODY, when using Term::with_tuiterm, use TERM instead of the default.
 
 proc Term::with_term { term body } {
-    save_vars { Term::_TERM } {
-	set Term::_TERM $term
+    variable _TERM
+    save_vars { _TERM } {
+	set _TERM $term
 	uplevel $body
     }
 }
@@ -1245,16 +1250,16 @@ proc Term::with_term { term body } {
 proc Term::with_tuiterm {rows cols body} {
     global env stty_init
     variable _TERM
-    save_vars {env(TERM) env(NO_COLOR) stty_init} {
-	if { $Term::_TERM != "" } {
-	    setenv TERM $Term::_TERM
+    save_vars {env(TERM) _TERM env(NO_COLOR) stty_init} {
+	if { $_TERM != "" } {
+	    setenv TERM $_TERM
 	} elseif { [ishost *-*-*bsd*] } {
 	    setenv TERM ansiw
 	} else {
 	    setenv TERM ansi
 	}
 	# Save active TERM variable.
-	set Term::_TERM $env(TERM)
+	set _TERM $env(TERM)
 
 	setenv NO_COLOR ""
 	_setup $rows $cols
@@ -1487,7 +1492,7 @@ proc Term::_check_box {x y width height} {
 	return "lr corner is $c, not +"
     }
 
-    # Note we do not check the full horizonal borders of the box.
+    # Note we do not check the full horizontal borders of the box.
     # The top will contain a title, and the bottom may as well, if
     # it is overlapped by some other border.  However, at most a
     # title should appear as '+-VERY LONG TITLE-+', so we can
@@ -1573,13 +1578,13 @@ proc Term::get_region { x y width height sep { attrs false } } {
     # Grab the contents of the box, join each line together
     # using $sep.
     set result ""
-    for {set yy $y} {$yy < [expr {$y + $height}]} {incr yy} {
+    for {set yy $y} {$yy < $y + $height} {incr yy} {
 	if {$yy > $y} {
 	    # Add the end of line sequence only if this isn't the
 	    # first line.
 	    append result $sep
 	}
-	for {set xx $x} {$xx < [expr {$x + $width}]} {incr xx} {
+	for {set xx $x} {$xx < $x + $width} {incr xx} {
 	    if { $attrs } {
 		set char_attrs [lindex $_chars($xx,$yy) 1]
 		append result [apply_attrs region_attrs $char_attrs]

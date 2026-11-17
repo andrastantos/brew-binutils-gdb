@@ -1,5 +1,5 @@
 /* tc-alpha.c - Processor-specific code for the DEC Alpha AXP CPU.
-   Copyright (C) 1989-2025 Free Software Foundation, Inc.
+   Copyright (C) 1989-2026 Free Software Foundation, Inc.
    Contributed by Carnegie Mellon University, 1993.
    Written by Alessandro Forin, based on earlier gas-1.38 target CPU files.
    Modified by Ken Raeburn for gas-2.x and ECOFF support.
@@ -3355,7 +3355,6 @@ add_to_link_pool (symbolS *sym, offsetT addend)
   segment_info_type *seginfo = seg_info (alpha_link_section);
   fixS *fixp;
   symbolS *linksym, *expsym;
-  expressionS e;
 
   basesym = alpha_evax_proc->symbol;
 
@@ -3385,10 +3384,11 @@ add_to_link_pool (symbolS *sym, offsetT addend)
   memset (p, 0, 8);
 
   /* Create a symbol for 'basesym - linksym' (offset of the added entry).  */
-  e.X_op = O_subtract;
-  e.X_add_symbol = linksym;
-  e.X_op_symbol = basesym;
-  e.X_add_number = 0;
+  expressionS e = {
+    .X_op = O_subtract,
+    .X_add_symbol = linksym,
+    .X_op_symbol = basesym
+  };
   expsym = make_expr_symbol (&e);
 
   /* Create a fixup for the entry.  */
@@ -4785,6 +4785,7 @@ static void
 s_alpha_file (int ignore ATTRIBUTE_UNUSED)
 {
   symbolS *s;
+  char *name;
   int length;
   static char case_hack[32];
 
@@ -4795,7 +4796,13 @@ s_alpha_file (int ignore ATTRIBUTE_UNUSED)
   symbol_get_bfdsym (s)->flags |= BSF_FILE;
 
   get_absolute_expression ();
-  s = symbol_find_or_make (demand_copy_string (&length));
+  name = demand_copy_string (&length);
+  if (name == NULL)
+    {
+      ignore_rest_of_line ();
+      return;
+    }
+  s = symbol_find_or_make (name);
   symbol_get_bfdsym (s)->flags |= BSF_FILE;
   demand_empty_rest_of_line ();
 }

@@ -1,6 +1,6 @@
 /* Definitions for BFD wrappers used by GDB.
 
-   Copyright (C) 2011-2025 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -33,18 +33,15 @@
 #include "gdbsupport/fileio.h"
 #include "inferior.h"
 #include "cli/cli-style.h"
+#include "gdbsupport/cxx-thread.h"
 #include "gdbsupport/unordered_map.h"
 #include "gdbsupport/unordered_set.h"
-
-#if CXX_STD_THREAD
-
-#include <mutex>
 
 /* Lock held when doing BFD operations.  A recursive mutex is used
    because we use this mutex internally and also for BFD, just to make
    life a bit simpler, and we may sometimes hold it while calling into
    BFD.  */
-static std::recursive_mutex gdb_bfd_mutex;
+static gdb::recursive_mutex gdb_bfd_mutex;
 
 /* BFD locking function.  */
 
@@ -63,8 +60,6 @@ gdb_bfd_unlock (void *ignore)
   gdb_bfd_mutex.unlock ();
   return true;
 }
-
-#endif /* CXX_STD_THREAD */
 
 /* An object of this type is stored in the section's user data when
    mapping a section.  */
@@ -152,19 +147,6 @@ struct gdb_bfd_data
 
   /* The registry.  */
   registry<bfd> registry_fields;
-
-#if CXX_STD_THREAD
-  /* Most of the locking needed for multi-threaded operation is
-     handled by BFD itself.  However, the current BFD model is that
-     locking is only needed for global operations -- but it turned out
-     that the background DWARF reader could race with the auto-load
-     code reading the .debug_gdb_scripts section from the same BFD.
-
-     This lock is the fix: wrappers for important BFD functions will
-     acquire this lock before performing operations that might modify
-     the state of this BFD.  */
-  std::mutex per_bfd_mutex;
-#endif
 };
 
 registry<bfd> *
@@ -248,7 +230,7 @@ struct bfd_cache_eq
 	    && gdata->size == s.size
 	    && gdata->inode == s.inode
 	    && gdata->device_id == s.device_id
-	    && strcmp (bfd_get_filename (abfd), s.filename) == 0);
+	    && streq (bfd_get_filename (abfd), s.filename));
   }
 };
 
@@ -372,7 +354,7 @@ gdb_bfd_open_from_target_memory (CORE_ADDR addr, ULONGEST size,
 
 struct target_fileio_stream : public gdb_bfd_iovec_base
 {
-  target_fileio_stream (bfd *nbfd, int fd)
+  target_fileio_stream (bfd *nbfd, target_fd fd)
     : m_bfd (nbfd),
       m_fd (fd)
   {
@@ -391,7 +373,7 @@ private:
   bfd *m_bfd;
 
   /* The file descriptor.  */
-  int m_fd;
+  target_fd m_fd;
 };
 
 /* Wrapper for target_fileio_open suitable for use as a helper
@@ -401,7 +383,7 @@ static target_fileio_stream *
 gdb_bfd_iovec_fileio_open (struct bfd *abfd, inferior *inf, bool warn_if_slow)
 {
   const char *filename = bfd_get_filename (abfd);
-  int fd;
+  target_fd fd;
   fileio_error target_errno;
 
   gdb_assert (is_target_filename (filename));
@@ -410,7 +392,7 @@ gdb_bfd_iovec_fileio_open (struct bfd *abfd, inferior *inf, bool warn_if_slow)
 			   filename + strlen (TARGET_SYSROOT_PREFIX),
 			   FILEIO_O_RDONLY, 0, warn_if_slow,
 			   &target_errno);
-  if (fd == -1)
+  if (fd == target_fd::INVALID)
     {
       errno = fileio_error_to_host (target_errno);
       bfd_set_error (bfd_error_system_call);
@@ -548,9 +530,7 @@ gdb_bfd_open (const char *name, const char *target, int fd,
       name += strlen (TARGET_SYSROOT_PREFIX);
     }
 
-#if CXX_STD_THREAD
-  std::lock_guard<std::recursive_mutex> guard (gdb_bfd_mutex);
-#endif
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
 
   if (fd == -1)
     {
@@ -677,9 +657,7 @@ gdb_bfd_ref (struct bfd *abfd)
   if (abfd == NULL)
     return;
 
-#if CXX_STD_THREAD
-  std::lock_guard<std::recursive_mutex> guard (gdb_bfd_mutex);
-#endif
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
 
   gdata = (struct gdb_bfd_data *) bfd_usrdata (abfd);
 
@@ -709,9 +687,7 @@ gdb_bfd_unref (struct bfd *abfd)
   if (abfd == NULL)
     return;
 
-#if CXX_STD_THREAD
-  std::lock_guard<std::recursive_mutex> guard (gdb_bfd_mutex);
-#endif
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
 
   gdata = (struct gdb_bfd_data *) bfd_usrdata (abfd);
   gdb_assert (gdata->refc >= 1);
@@ -779,10 +755,7 @@ gdb_bfd_map_section (asection *sectp, bfd_size_type *size)
 
   abfd = sectp->owner;
 
-#if CXX_STD_THREAD
-  gdb_bfd_data *gdata = (gdb_bfd_data *) bfd_usrdata (abfd);
-  std::lock_guard<std::mutex> guard (gdata->per_bfd_mutex);
-#endif
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
 
   descriptor = get_section_descriptor (sectp);
 
@@ -861,8 +834,10 @@ get_file_crc (bfd *abfd, unsigned long *file_crc_return)
 
   if (bfd_seek (abfd, 0, SEEK_SET) != 0)
     {
-      warning (_("Problem reading \"%s\" for CRC: %s"),
-	       bfd_get_filename (abfd), bfd_errmsg (bfd_get_error ()));
+      warning (_("Problem reading \"%ps\" for CRC: %s"),
+	       styled_string (file_name_style.style (),
+			      bfd_get_filename (abfd)),
+	       bfd_errmsg (bfd_get_error ()));
       return 0;
     }
 
@@ -874,8 +849,10 @@ get_file_crc (bfd *abfd, unsigned long *file_crc_return)
       count = bfd_read (buffer, sizeof (buffer), abfd);
       if (count == (bfd_size_type) -1)
 	{
-	  warning (_("Problem reading \"%s\" for CRC: %s"),
-		   bfd_get_filename (abfd), bfd_errmsg (bfd_get_error ()));
+	  warning (_("Problem reading \"%ps\" for CRC: %s"),
+		   styled_string (file_name_style.style (),
+				  bfd_get_filename (abfd)),
+		   bfd_errmsg (bfd_get_error ()));
 	  return 0;
 	}
       if (count == 0)
@@ -1049,9 +1026,9 @@ gdb_bfd_openr_next_archived_file (bfd *archive, bfd *previous)
 void
 gdb_bfd_record_inclusion (bfd *includer, bfd *includee)
 {
-  struct gdb_bfd_data *gdata;
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
 
-  gdata = (struct gdb_bfd_data *) bfd_usrdata (includer);
+  struct gdb_bfd_data *gdata = (struct gdb_bfd_data *) bfd_usrdata (includer);
   gdata->included_bfds.push_back (gdb_bfd_ref_ptr::new_reference (includee));
 }
 
@@ -1115,17 +1092,14 @@ bool
 gdb_bfd_get_full_section_contents (bfd *abfd, asection *section,
 				   gdb::byte_vector *contents)
 {
-#if CXX_STD_THREAD
-  gdb_bfd_data *gdata = (gdb_bfd_data *) bfd_usrdata (abfd);
-  std::lock_guard<std::mutex> guard (gdata->per_bfd_mutex);
-#endif
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
 
-  bfd_size_type section_size = bfd_section_size (section);
+  bfd_size_type section_size = bfd_get_section_alloc_size (abfd, section);
 
   contents->resize (section_size);
 
-  return bfd_get_section_contents (abfd, section, contents->data (), 0,
-				   section_size);
+  auto data = contents->data ();
+  return bfd_get_full_section_contents (abfd, section, &data);
 }
 
 /* See gdb_bfd.h.  */
@@ -1133,10 +1107,7 @@ gdb_bfd_get_full_section_contents (bfd *abfd, asection *section,
 int
 gdb_bfd_stat (bfd *abfd, struct stat *sbuf)
 {
-#if CXX_STD_THREAD
-  gdb_bfd_data *gdata = (gdb_bfd_data *) bfd_usrdata (abfd);
-  std::lock_guard<std::mutex> guard (gdata->per_bfd_mutex);
-#endif
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
 
   return bfd_stat (abfd, sbuf);
 }
@@ -1146,10 +1117,7 @@ gdb_bfd_stat (bfd *abfd, struct stat *sbuf)
 long
 gdb_bfd_get_mtime (bfd *abfd)
 {
-#if CXX_STD_THREAD
-  gdb_bfd_data *gdata = (gdb_bfd_data *) bfd_usrdata (abfd);
-  std::lock_guard<std::mutex> guard (gdata->per_bfd_mutex);
-#endif
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
 
   return bfd_get_mtime (abfd);
 }
@@ -1232,6 +1200,26 @@ gdb_bfd_canonicalize_symtab (bfd *abfd, bool should_throw)
 			       symbol_table.size () - 1);
 }
 
+/* See gdb_bfd.h.  */
+
+bool
+gdb_bfd_check_format (bfd *abfd, bfd_format format)
+{
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
+
+  return bfd_check_format (abfd, format);
+}
+
+/* See gdb_bfd.h.  */
+
+bool
+gdb_bfd_check_format_matches (bfd *abfd, bfd_format format, char ***matching)
+{
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
+
+  return bfd_check_format_matches (abfd, format, matching);
+}
+
 /* Implement the 'maint info bfd' command.  */
 
 static void
@@ -1249,7 +1237,7 @@ maintenance_info_bfds (const char *arg, int from_tty)
   for (auto abfd : all_bfds)
     {
       auto gdata = static_cast<gdb_bfd_data *> (bfd_usrdata (abfd));
-      ui_out_emit_tuple tuple_emitter (uiout, nullptr);
+      ui_out_emit_tuple tuple_emitter (uiout);
       uiout->field_signed ("refcount", gdata->refc);
       uiout->field_string ("addr", host_address_to_string (abfd));
       uiout->field_string ("filename", bfd_get_filename (abfd),
@@ -1262,7 +1250,7 @@ maintenance_info_bfds (const char *arg, int from_tty)
 
 struct bfd_inferior_data
 {
-  gdb::unordered_map<std::string, unsigned long> bfd_error_string_counts;
+  gdb::unordered_string_map<unsigned long> bfd_error_string_counts;
 };
 
 /* Per-inferior data key.  */
@@ -1275,13 +1263,7 @@ static const registry<inferior>::key<bfd_inferior_data> bfd_inferior_data_key;
 static struct bfd_inferior_data *
 get_bfd_inferior_data (struct inferior *inf)
 {
-  struct bfd_inferior_data *data;
-
-  data = bfd_inferior_data_key.get (inf);
-  if (data == nullptr)
-    data = bfd_inferior_data_key.emplace (inf);
-
-  return data;
+  return &bfd_inferior_data_key.try_emplace (inf);
 }
 
 /* Increment the BFD error count for STR and return the updated
@@ -1290,9 +1272,7 @@ get_bfd_inferior_data (struct inferior *inf)
 static unsigned long
 increment_bfd_error_count (const std::string &str)
 {
-#if CXX_STD_THREAD
-  std::lock_guard<std::recursive_mutex> guard (gdb_bfd_mutex);
-#endif
+  gdb::lock_guard<gdb::recursive_mutex> guard (gdb_bfd_mutex);
   struct bfd_inferior_data *bid = get_bfd_inferior_data (current_inferior ());
 
   auto &map = bid->bfd_error_string_counts;
@@ -1337,9 +1317,7 @@ gdb_bfd_init ()
 {
   if (bfd_init () == BFD_INIT_MAGIC)
     {
-#if CXX_STD_THREAD
       if (bfd_thread_init (gdb_bfd_lock, gdb_bfd_unlock, nullptr))
-#endif
 	return;
     }
 

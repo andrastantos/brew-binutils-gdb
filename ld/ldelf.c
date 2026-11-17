@@ -1,5 +1,5 @@
 /* ELF emulation code for targets using elf.em.
-   Copyright (C) 1991-2025 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -534,9 +534,9 @@ ldelf_search_needed (const char *path, struct dt_needed *n, int force,
 				  replacement, rep_len + 1);
 			}
 
-		      replacement = freeme;
-		      if ((slash = strrchr (replacement, '/')) != NULL)
+		      if ((slash = strrchr (freeme, '/')) != NULL)
 			* slash = 0;
+		      replacement = freeme;
 		    }
 		}
 	      break;
@@ -794,7 +794,7 @@ ldelf_parse_ld_so_conf_include (struct ldelf_ld_so_conf *info,
 
   if (pattern[0] != '/')
     {
-      char *p = strrchr (filename, '/');
+      const char *p = strrchr (filename, '/');
       size_t patlen = strlen (pattern) + 1;
 
       newp = xmalloc (p - filename + 1 + patlen);
@@ -1037,7 +1037,7 @@ ldelf_handle_dt_needed (struct elf_link_hash_table *htab,
      needed list can actually grow while we are stepping through this
      loop.  */
   save_input_bfd_tail = link_info.input_bfds_tail;
-  needed = bfd_elf_get_needed_list (link_info.output_bfd, &link_info);
+  needed = bfd_elf_get_needed_list (&link_info);
   for (l = needed; l != NULL; l = l->next)
     {
       struct bfd_link_needed_list *ll;
@@ -1148,7 +1148,7 @@ ldelf_handle_dt_needed (struct elf_link_hash_table *htab,
 	  if (use_libpath)
 	    {
 	      found = 0;
-	      rp = bfd_elf_get_runpath_list (link_info.output_bfd, &link_info);
+	      rp = bfd_elf_get_runpath_list (&link_info);
 	      for (; !found && rp != NULL; rp = rp->next)
 		{
 		  path = ldelf_add_sysroot (rp->name);
@@ -1291,6 +1291,7 @@ ldelf_after_open (int use_libpath, int native, int is_linux, int is_freebsd,
 	}
     }
 
+  get_elf_backend_data (link_info.output_bfd)->setup_object_attributes (&link_info);
   get_elf_backend_data (link_info.output_bfd)->setup_gnu_properties (&link_info);
 
   /* Do not allow executable files to be used as inputs to the link.  */
@@ -1327,8 +1328,10 @@ ldelf_after_open (int use_libpath, int native, int is_linux, int is_freebsd,
 	     effect.  Instead we create a .note.GNU-stack section in much the
 	     same way as the assembler does with its --[no]execstack option.  */
 	  flagword flags = SEC_READONLY | (link_info.execstack ? SEC_CODE : 0);
-	  (void) bfd_make_section_with_flags (link_info.input_bfds,
-					      ".note.GNU-stack", flags);
+	  s = bfd_make_section_with_flags (link_info.input_bfds,
+					   ".note.GNU-stack", flags);
+	  if (s && bfd_get_flavour (s->owner) == bfd_target_elf_flavour)
+	    elf_section_type (s) = SHT_NOTE;
 	}
       return;
     }
@@ -1388,9 +1391,7 @@ ldelf_after_open (int use_libpath, int native, int is_linux, int is_freebsd,
 	}
       if (elfbfd)
 	{
-	  const struct elf_backend_data *bed;
-
-	  bed = get_elf_backend_data (elfbfd);
+	  elf_backend_data *bed = get_elf_backend_data (elfbfd);
 	  s = bfd_make_section_with_flags (elfbfd, ".eh_frame_hdr",
 					   bed->dynamic_sec_flags
 					   | SEC_READONLY);
@@ -1407,7 +1408,7 @@ ldelf_after_open (int use_libpath, int native, int is_linux, int is_freebsd,
     }
 
   if (link_info.eh_frame_hdr_type == COMPACT_EH_HDR)
-    if (!bfd_elf_parse_eh_frame_entries (NULL, &link_info))
+    if (!bfd_elf_parse_eh_frame_entries (&link_info))
       fatal (_("%P: failed to parse EH frame entries\n"));
 
   ldelf_handle_dt_needed (htab, use_libpath, native, is_linux,
@@ -1436,7 +1437,7 @@ id_note_section_size (bfd *abfd ATTRIBUTE_UNUSED)
 static bool
 write_build_id (bfd *abfd)
 {
-  const struct elf_backend_data *bed = get_elf_backend_data (abfd);
+  elf_backend_data *bed = get_elf_backend_data (abfd);
   struct elf_obj_tdata *t = elf_tdata (abfd);
   const char *style;
   asection *asec;
@@ -1663,8 +1664,7 @@ ldelf_find_exp_assignment (etree_type *exp)
 	 will do no harm.  */
       if (strcmp (exp->assign.dst, ".") != 0)
 	{
-	  if (!bfd_elf_record_link_assignment (link_info.output_bfd,
-					       &link_info,
+	  if (!bfd_elf_record_link_assignment (&link_info,
 					       exp->assign.dst, provide,
 					       exp->assign.hidden))
 	    fatal (_("%P: failed to record assignment to %s: %E\n"),
@@ -1763,7 +1763,7 @@ ldelf_before_allocation (char **audit, char **depaudit,
 
   if (is_elf_hash_table (link_info.hash))
     {
-      _bfd_elf_tls_setup (link_info.output_bfd, &link_info);
+      bfd_elf_tls_setup (&link_info);
 
       /* Make __ehdr_start hidden if it has been referenced, to
 	 prevent the symbol from being dynamic.  */
@@ -1838,10 +1838,10 @@ ldelf_before_allocation (char **audit, char **depaudit,
       }
 
   if (! (bfd_elf_size_dynamic_sections
-	 (link_info.output_bfd, command_line.soname, rpath,
+	 (&link_info, command_line.soname, rpath,
 	  command_line.filter_shlib, *audit, *depaudit,
 	  (const char * const *) command_line.auxiliary_filters,
-	  &link_info, &sinterp)))
+	  &sinterp)))
     fatal (_("%P: failed to set dynamic section sizes: %E\n"));
 
   if (sinterp != NULL)
@@ -1907,7 +1907,7 @@ ldelf_before_allocation (char **audit, char **depaudit,
 
   before_allocation_default ();
 
-  if (!bfd_elf_size_dynsym_hash_dynstr (link_info.output_bfd, &link_info))
+  if (!bfd_elf_size_dynsym_hash_dynstr (&link_info))
     fatal (_("%P: failed to set dynamic section sizes: %E\n"));
 
   if (ehdr_start != NULL)
@@ -2094,8 +2094,8 @@ elf_orphan_compatible (asection *in, asection *out)
 	  || ((elf_section_flags (out) ^ elf_section_flags (in))
 	      & (SHF_MASKPROC | SHF_MASKOS)) != 0))
     return false;
-  return _bfd_elf_match_sections_by_type (link_info.output_bfd, out,
-					  in->owner, in);
+  return bfd_elf_match_sections_by_type (link_info.output_bfd, out,
+					 in->owner, in);
 }
 
 /* Place an orphan section.  We use this to put random SHF_ALLOC
@@ -2241,14 +2241,17 @@ ldelf_place_orphan (asection *s, const char *secname, int constraint)
 	   lang_insert_orphan to create a new output section.  */
 	constraint = SPECIAL;
 
-	/* Check to see if we already have an output section statement
-	   with this name, and its bfd section has compatible flags.
-	   If the section already exists but does not have any flags
-	   set, then it has been created by the linker, possibly as a
-	   result of a --section-start command line switch.  */
+	/* Check to see if we already have an output section statement with
+	   this name, and it was either present in the script with a special
+	   type (knowing that lang_insert_orphan only creates normal_section
+	   output sections) or its BFD section has compatible flags.  If the
+	   section already exists but does not have any flags set, then it has
+	   been created by the linker, possibly as a result of --section-start
+	   command line switch.  */
 	if (os->bfd_section != NULL
 	    && !bfd_is_abs_section (os->bfd_section)
-	    && (os->bfd_section->flags == 0
+	    && (os->sectype >= noload_section
+		|| os->bfd_section->flags == 0
 		|| (((s->flags ^ os->bfd_section->flags)
 		     & (SEC_LOAD | SEC_ALLOC)) == 0
 		    && (!elfinput
@@ -2314,8 +2317,8 @@ ldelf_place_orphan (asection *s, const char *secname, int constraint)
 	    && ((nexts->flags ^ flags) & (SEC_LOAD | SEC_ALLOC)) == 0
 	    && (nexts->owner->flags & DYNAMIC) == 0
 	    && !bfd_input_just_syms (nexts->owner)
-	    && _bfd_elf_match_sections_by_type (nexts->owner, nexts,
-						s->owner, s))
+	    && bfd_elf_match_sections_by_type (nexts->owner, nexts,
+					       s->owner, s))
 	  flags = (((flags ^ SEC_READONLY)
 		    | (nexts->flags ^ SEC_READONLY))
 		   ^ SEC_READONLY);
@@ -2383,7 +2386,7 @@ ldelf_place_orphan (asection *s, const char *secname, int constraint)
       if (after == NULL)
 	after
 	  = lang_output_section_find_by_flags (s, flags, &place->os,
-					       _bfd_elf_match_sections_by_type);
+					       bfd_elf_match_sections_by_type);
       if (after == NULL)
 	/* *ABS* is always the first output section statement.  */
 	after = (void *) lang_os_list.head;

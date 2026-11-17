@@ -1,6 +1,6 @@
 /* findfre-1.c -- Test for sframe_find_fre in libsframe.
 
-   Copyright (C) 2023-2025 Free Software Foundation, Inc.
+   Copyright (C) 2023-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,21 +15,11 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "config.h"
-
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-
-#include "sframe-api.h"
-
-/* DejaGnu should not use gnulib's vsnprintf replacement here.  */
-#undef vsnprintf
-#include <dejagnu.h>
+#include "sframe-test.h"
 
 static int
-add_fde1 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
-	  uint32_t sframe_vaddr, int idx, uint32_t *func_size)
+add_fde1 (sframe_encoder_ctx *encode, int64_t start_pc_vaddr,
+	  int64_t sframe_vaddr, int idx, uint32_t *func_size)
 {
   /* A contiguous block containing 4 FREs.  */
 #define FDE1_NUM_FRES    4
@@ -45,12 +35,12 @@ add_fde1 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
 
   uint32_t offsetof_fde_in_sec
     = sframe_encoder_get_offsetof_fde_start_addr (encode, idx, NULL);
-  int32_t func1_start_addr = (start_pc_vaddr
+  int64_t func1_start_addr = (start_pc_vaddr
 			      - (sframe_vaddr + offsetof_fde_in_sec));
   unsigned char finfo = sframe_fde_create_func_info (SFRAME_FRE_TYPE_ADDR1,
-						     SFRAME_FDE_TYPE_PCINC);
-  int err = sframe_encoder_add_funcdesc_v2 (encode, func1_start_addr,
-					    *func_size, finfo, 0,
+						     SFRAME_V3_FDE_PCTYPE_INC);
+  int err = sframe_encoder_add_funcdesc_v3 (encode, func1_start_addr,
+					    *func_size, finfo, 0, 0,
 					    FDE1_NUM_FRES);
   if (err == -1)
     return err;
@@ -63,8 +53,8 @@ add_fde1 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
 }
 
 static int
-add_fde2 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
-	  uint32_t sframe_vaddr, int idx, uint32_t *func_size)
+add_fde2 (sframe_encoder_ctx *encode, int64_t start_pc_vaddr,
+	  int64_t sframe_vaddr, int idx, uint32_t *func_size)
 {
   /* A contiguous block containing 4 FREs.  */
 #define FDE2_NUM_FRES    4
@@ -80,12 +70,12 @@ add_fde2 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
 
   uint32_t offsetof_fde_in_sec
     = sframe_encoder_get_offsetof_fde_start_addr (encode, idx, NULL);
-  int32_t func2_start_addr = (start_pc_vaddr
+  int64_t func2_start_addr = (start_pc_vaddr
 			      - (sframe_vaddr + offsetof_fde_in_sec));
   unsigned char finfo = sframe_fde_create_func_info (SFRAME_FRE_TYPE_ADDR1,
-						     SFRAME_FDE_TYPE_PCINC);
-  int err = sframe_encoder_add_funcdesc_v2 (encode, func2_start_addr,
-					    *func_size, finfo, 0,
+						     SFRAME_V3_FDE_PCTYPE_INC);
+  int err = sframe_encoder_add_funcdesc_v3 (encode, func2_start_addr,
+					    *func_size, finfo, 0, 0,
 					    FDE2_NUM_FRES);
   if (err == -1)
     return err;
@@ -98,30 +88,22 @@ add_fde2 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
 }
 
 static
-void test_text_findfre (uint32_t text_vaddr, uint32_t sframe_vaddr)
+void test_text_findfre (const char suffix, int64_t text_vaddr,
+			int64_t sframe_vaddr)
 {
   sframe_encoder_ctx *encode;
   sframe_decoder_ctx *dctx;
   sframe_frame_row_entry frep;
-  uint32_t func1_start_vaddr;
-  uint32_t func2_start_vaddr;
+  int64_t func1_start_vaddr;
+  int64_t func2_start_vaddr;
   uint32_t func1_size = 0;
   uint32_t func2_size = 0;
   uint32_t fde_cnt = 0;
-  int32_t lookup_pc;
+  int64_t lookup_pc;
   char *sframe_buf;
   size_t sf_size;
   int err = 0;
-
-#define TEST(name, cond)                                                      \
-  do                                                                          \
-    {                                                                         \
-      if (cond)                                                               \
-	pass (name);                                                          \
-      else                                                                    \
-	fail (name);                                                          \
-    }                                                                         \
-    while (0)
+  uint32_t dfde = SFRAME_FDE_TYPE_DEFAULT;
 
   encode = sframe_encode (SFRAME_VERSION,
 			  SFRAME_F_FDE_FUNC_START_PCREL,
@@ -132,56 +114,57 @@ void test_text_findfre (uint32_t text_vaddr, uint32_t sframe_vaddr)
 
   func1_start_vaddr = text_vaddr;
   err = add_fde1 (encode, func1_start_vaddr, sframe_vaddr, 0, &func1_size);
-  TEST ("findfre-1: Adding FDE1", err == 0);
+  TEST (err == 0, "findfre-1%c: Adding FDE1", suffix);
 
   /* Function 2 is placed after 0x10 bytes from the end of Function 1.  */
   func2_start_vaddr = func1_start_vaddr + func1_size + 0x10;
   err = add_fde2 (encode, func2_start_vaddr, sframe_vaddr, 1, &func2_size);
-  TEST ("findfre-1: Adding FDE2", err == 0);
+  TEST (err == 0, "findfre-1%c: Adding FDE2", suffix);
 
   fde_cnt = sframe_encoder_get_num_fidx (encode);
-  TEST ("findfre-1: Test FDE count", fde_cnt == 2);
+  TEST (fde_cnt == 2, "findfre-1%c: Test FDE count", suffix);
 
-  sframe_buf = sframe_encoder_write (encode, &sf_size, &err);
-  TEST ("findfre-1: Encoder write", err == 0);
+  sframe_buf = sframe_encoder_write (encode, &sf_size, true, &err);
+  TEST (err == 0, "findfre-1%c: Encoder write", suffix);
 
   dctx = sframe_decode (sframe_buf, sf_size, &err);
-  TEST ("findfre-1: Decoder setup", dctx != NULL);
+  TEST (dctx != NULL, "findfre-1%c: Decoder setup", suffix);
 
   /* Find the third FRE in first FDE.  */
   lookup_pc = func1_start_vaddr + 0x15 - sframe_vaddr;
   err = sframe_find_fre (dctx, lookup_pc, &frep);
-  TEST ("findfre-1: Find third FRE",
-	(err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, &err) == 0x3));
+  TEST ((err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, dfde, &err) == 0x3),
+	"findfre-1%c: Find third FRE", suffix);
 
   /* Find an FRE for PC at the end of range covered by FRE.  */
   lookup_pc = func1_start_vaddr + 0x9 - sframe_vaddr;
   err = sframe_find_fre (dctx, lookup_pc, &frep);
-  TEST ("findfre-1: Find FRE for last PC covered by FRE",
-	(err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, &err) == 0x2));
+  TEST ((err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, dfde, &err) == 0x2),
+	"findfre-1%c: Find FRE for last PC covered by FRE", suffix);
 
   /* Find the last FRE in first FDE.  */
   lookup_pc = func1_start_vaddr + 0x39 - sframe_vaddr;
   err = sframe_find_fre (dctx, lookup_pc, &frep);
-  TEST ("findfre-1: Find last FRE",
-	(err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, &err) == 0x8));
+  TEST ((err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, dfde, &err) == 0x8),
+	"findfre-1%c: Find last FRE", suffix);
 
   /* Find the second FRE in second FDE.  */
   lookup_pc = func2_start_vaddr + 0x11 - sframe_vaddr;
   err = sframe_find_fre (dctx, lookup_pc, &frep);
-  TEST ("findfre-1: Find second FRE",
-	(err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, &err) == 0x12));
+  TEST ((err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, dfde, &err) == 0x12),
+	"findfre-1%c: Find second FRE", suffix);
 
   /* Find the first FRE in second FDE.  */
   lookup_pc = func2_start_vaddr + 0x0 - sframe_vaddr;
   err = sframe_find_fre (dctx, lookup_pc, &frep);
-  TEST ("findfre-1: Find first FRE",
-	(err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, &err) == 0x10));
+  TEST ((err == 0 && sframe_fre_get_cfa_offset (dctx, &frep, dfde, &err) == 0x10),
+	"findfre-1%c: Find first FRE", suffix);
 
   /* Find FRE for PC out of range.  Expect error code.  */
   lookup_pc = func1_start_vaddr + func1_size - sframe_vaddr;
   err = sframe_find_fre (dctx, lookup_pc, &frep);
-  TEST ("findfre-1: Find FRE for out of range PC", err == SFRAME_ERR);
+  TEST (err == SFRAME_ERR,
+	"findfre-1%c: Find FRE for out of range PC", suffix);
 
   sframe_encoder_free (&encode);
   sframe_decoder_free (&dctx);
@@ -189,15 +172,15 @@ void test_text_findfre (uint32_t text_vaddr, uint32_t sframe_vaddr)
 
 int main (void)
 {
-  uint32_t sframe_vaddr = 0x402220;
-  uint32_t text_vaddr = 0x401020;
-  printf ("Testing with text_vaddr = %#x; sframe_vaddr = %#x\n", text_vaddr,
-	  sframe_vaddr);
-  test_text_findfre (text_vaddr, sframe_vaddr);
+  int64_t sframe_vaddr = 0x402220;
+  int64_t text_vaddr = 0x401020;
+  printf ("Testing with text_vaddr = %#" PRIx64 "; sframe_vaddr = %#" PRIx64
+	  " \n", text_vaddr, sframe_vaddr);
+  test_text_findfre ('a', text_vaddr, sframe_vaddr);
 
   sframe_vaddr = 0x401020;
   text_vaddr = 0x402220;
-  printf ("Testing with text_vaddr = %#x; sframe_vaddr = %#x\n", text_vaddr,
-	  sframe_vaddr);
-  test_text_findfre (text_vaddr, sframe_vaddr);
+  printf ("Testing with text_vaddr = %#" PRIx64 "; sframe_vaddr = %#" PRIx64
+	  "\n", text_vaddr, sframe_vaddr);
+  test_text_findfre ('b', text_vaddr, sframe_vaddr);
 }

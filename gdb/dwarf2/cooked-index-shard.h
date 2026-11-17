@@ -1,6 +1,6 @@
 /* Shards for the cooked index
 
-   Copyright (C) 2022-2025 Free Software Foundation, Inc.
+   Copyright (C) 2022-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -48,6 +48,13 @@ public:
 			   cooked_index_entry_ref parent_entry,
 			   dwarf2_per_cu *per_cu);
 
+  /* Add a copy of NAME to the index.  Return a pointer to the
+     copy.  */
+  const char *add (std::string_view name)
+  {
+    return m_names.insert (name);
+  }
+
   /* Install a new fixed addrmap from the given mutable addrmap.  */
   void install_addrmap (addrmap_mutable *map)
   {
@@ -58,8 +65,8 @@ public:
   friend class cooked_index;
 
   /* A simple range over part of m_entries.  */
-  typedef iterator_range<std::vector<cooked_index_entry *>::const_iterator>
-       range;
+  using range
+    = iterator_range<std::vector<cooked_index_entry *>::const_iterator>;
 
   /* Return a range of all the entries.  */
   range all_entries () const

@@ -1,6 +1,6 @@
 /* tc-kvx.c -- Assemble for the KVX ISA
 
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
    Contributed by Kalray SA.
 
    This file is part of GAS.
@@ -1622,12 +1622,12 @@ md_begin ()
    This is from tc-aarch64.c
 */
 
-static bfd_boolean
+static bool
 signed_overflow (offsetT value, unsigned bits)
 {
   offsetT lim;
   if (bits >= sizeof (offsetT) * 8)
-    return FALSE;
+    return false;
   lim = (offsetT) 1 << (bits - 1);
   return (value < -lim || value >= lim);
 }

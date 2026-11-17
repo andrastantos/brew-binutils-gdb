@@ -1,5 +1,26 @@
 -*- text -*-
 
+Changes in 2.47:
+
+* Add a linker optimization level of zero.  Using "-O 0" on the linker command
+  line will stop it from combining the contents of mergeable sections.  This
+  can significantly speed up the link process at the cost of producing larger
+  binaries.
+
+* Add linker support for --start-lib/--end-lib options and LIB linker script
+  statement for treating a list of object files as members of an artificial
+  archive.
+
+* Add linker support for archives with no symbol index in their all formats,
+  not only XCOFF.  On by default and controlled with --no-link-mapless and
+  --link-mapless options, also for XCOFF.
+
+* Change the default architecture for H8 family from H8/300 to H8/300H.
+  Support for H8/300 was removed from gcc in 2020, making H8/300H the
+  default architecture.
+
+Changes in 2.46:
+
 * Add --gnu-tls-tag/--no-gnu-tls-tag options to i386 ELF linker to add
   the GLIBC_ABI_GNU_TLS version dependency in output if input object
   files call ___tls_get_addr.  Also added --enable-gnu-tls-tag configure
@@ -12,6 +33,18 @@
   enable --gnu2-tls-tag by default.
 
 * NaCl target support is removed.
+
+* New command line option --discard-sframe which disables the
+  emission of .sframe output section in the linked output.  This option also
+  prohibits the creation of SFrame stack trace info for linker-generated
+  sections like PLT.  The existing linker option
+  --no-ld-generated-unwind-info no longer controls creation of .sframe data
+  for PLT.
+
+* The linker now supports processing and merging SFrame Version 3 sections.
+  The linker does not combine SFrame sections of older versions with SFrame
+  Version 3 sections.  SFrame Version 2 sections should not be enabled in the
+  wild.
 
 Changes in 2.45:
 
@@ -1105,7 +1138,7 @@ Changes in version 2.1:
   other utilities should work on Risc/Ultrix and Irix.
 
 
-Copyright (C) 2012-2025 Free Software Foundation, Inc.
+Copyright (C) 2012-2026 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

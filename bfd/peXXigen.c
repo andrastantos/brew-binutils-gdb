@@ -1,5 +1,5 @@
 /* Support for the generic parts of PE/PEI; the common executable parts.
-   Copyright (C) 1995-2025 Free Software Foundation, Inc.
+   Copyright (C) 1995-2026 Free Software Foundation, Inc.
    Written by Cygnus Solutions.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -109,6 +109,48 @@
 #define SetHighBit(val)      ((val) | 0x80000000)
 #define WithoutHighBit(val)  ((val) & 0x7fffffff)
 
+static int
+pe_decode_sym_section_number (bfd *abfd, const char *raw_scnum)
+{
+  unsigned int scnum = H_GET_16 (abfd, raw_scnum);
+
+  switch (scnum)
+    {
+    case IMAGE_SYM_UNDEFINED:
+      return N_UNDEF;
+    case IMAGE_SYM_ABSOLUTE:
+      return N_ABS;
+    case IMAGE_SYM_DEBUG:
+      return N_DEBUG;
+    default:
+      return scnum;
+    }
+}
+
+static void
+pe_encode_sym_section_number (bfd *abfd, int scnum, char *raw_scnum)
+{
+  unsigned int encoded_scnum;
+
+  switch (scnum)
+    {
+    case N_UNDEF:
+      encoded_scnum = IMAGE_SYM_UNDEFINED;
+      break;
+    case N_ABS:
+      encoded_scnum = IMAGE_SYM_ABSOLUTE;
+      break;
+    case N_DEBUG:
+      encoded_scnum = IMAGE_SYM_DEBUG;
+      break;
+    default:
+      encoded_scnum = scnum;
+      break;
+    }
+
+  H_PUT_16 (abfd, encoded_scnum, raw_scnum);
+}
+
 void
 _bfd_XXi_swap_sym_in (bfd * abfd, void * ext1, void * in1)
 {
@@ -124,7 +166,7 @@ _bfd_XXi_swap_sym_in (bfd * abfd, void * ext1, void * in1)
     memcpy (in->_n._n_name, ext->e.e_name, SYMNMLEN);
 
   in->n_value = H_GET_32 (abfd, ext->e_value);
-  in->n_scnum = (short) H_GET_16 (abfd, ext->e_scnum);
+  in->n_scnum = pe_decode_sym_section_number (abfd, ext->e_scnum);
 
   if (sizeof (ext->e_type) == 2)
     in->n_type = H_GET_16 (abfd, ext->e_type);
@@ -262,7 +304,7 @@ _bfd_XXi_swap_sym_out (bfd * abfd, void * inp, void * extp)
     }
 
   H_PUT_32 (abfd, in->n_value, ext->e_value);
-  H_PUT_16 (abfd, in->n_scnum, ext->e_scnum);
+  pe_encode_sym_section_number (abfd, in->n_scnum, ext->e_scnum);
 
   if (sizeof (ext->e_type) == 2)
     H_PUT_16 (abfd, in->n_type, ext->e_type);
@@ -919,7 +961,8 @@ _bfd_XX_only_swap_filehdr_out (bfd * abfd, void * in, void * out)
 }
 
 unsigned int
-_bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
+_bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out,
+			  const asection *section)
 {
   struct internal_scnhdr *scnhdr_int = (struct internal_scnhdr *) in;
   SCNHDR *scnhdr_ext = (SCNHDR *) out;
@@ -988,9 +1031,8 @@ _bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
        sections (.idata, .data, .bss, .CRT) must have IMAGE_SCN_MEM_WRITE set
        (this is especially important when dealing with the .idata section since
        the addresses for routines from .dlls must be overwritten).  If .reloc
-       section data is ever generated, we must add IMAGE_SCN_MEM_DISCARDABLE
-       (0x02000000).  Also, the resource data should also be read and
-       writable.  */
+       section data is ever generated, we generally need to add
+       IMAGE_SCN_MEM_DISCARDABLE (0x02000000).  */
 
     /* FIXME: Alignment is also encoded in this field, at least on
        ARM-WINCE.  Although - how do we get the original alignment field
@@ -1003,7 +1045,7 @@ _bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
     }
     pe_required_section_flags;
 
-    pe_required_section_flags known_sections [] =
+    static const pe_required_section_flags known_sections [] =
       {
 	{ ".CRT",   IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_INITIALIZED_DATA },
 	{ ".arch",  IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_DISCARDABLE | IMAGE_SCN_ALIGN_8BYTES },
@@ -1021,7 +1063,7 @@ _bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
 	{ ".xdata", IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_INITIALIZED_DATA },
       };
 
-    pe_required_section_flags * p;
+    const pe_required_section_flags * p;
 
     /* We have defaulted to adding the IMAGE_SCN_MEM_WRITE flag, but now
        we know exactly what this specific section wants so we remove it
@@ -1036,10 +1078,16 @@ _bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
 	 p++)
       if (memcmp (scnhdr_int->s_name, p->section_name, SCNNMLEN) == 0)
 	{
+	  unsigned long must_have = p->must_have;
+
 	  if (memcmp (scnhdr_int->s_name, ".text", sizeof ".text")
 	      || (bfd_get_file_flags (abfd) & WP_TEXT))
 	    scnhdr_int->s_flags &= ~IMAGE_SCN_MEM_WRITE;
-	  scnhdr_int->s_flags |= p->must_have;
+	  /* Avoid forcing in the discardable flag if the section itself is
+	     allocated.  */
+	  if (section->flags & SEC_ALLOC)
+	    must_have &= ~IMAGE_SCN_MEM_DISCARDABLE;
+	  scnhdr_int->s_flags |= must_have;
 	  break;
 	}
 
@@ -1456,7 +1504,9 @@ pe_print_idata (bfd * abfd, void * vfile)
 	    }
 
 	  /* Print HintName vector entries.  */
-#ifdef COFF_WITH_pex64
+#if defined COFF_WITH_pep || defined COFF_WITH_pex64 \
+    || defined COFF_WITH_peAArch64 || defined COFF_WITH_peLoongArch64 \
+    || defined COFF_WITH_peRiscV64
 	  for (j = 0; idx + j + 8 <= datasize; j += 8)
 	    {
 	      bfd_size_type amt;
@@ -2998,8 +3048,7 @@ _bfd_XX_bfd_copy_private_bfd_data_common (bfd * ibfd, bfd * obfd)
   bfd_size_type size;
 
   /* One day we may try to grok other private data.  */
-  if (ibfd->xvec->flavour != bfd_target_coff_flavour
-      || obfd->xvec->flavour != bfd_target_coff_flavour)
+  if (ibfd->xvec->flavour != bfd_target_coff_flavour)
     return true;
 
   ipe = pe_data (ibfd);
@@ -3125,8 +3174,7 @@ _bfd_XX_bfd_copy_private_section_data (bfd *ibfd,
 				       struct bfd_link_info *link_info)
 {
   if (link_info != NULL
-      || bfd_get_flavour (ibfd) != bfd_target_coff_flavour
-      || bfd_get_flavour (obfd) != bfd_target_coff_flavour)
+      || bfd_get_flavour (ibfd) != bfd_target_coff_flavour)
     return true;
 
   if (coff_section_data (ibfd, isec) != NULL
@@ -3165,7 +3213,7 @@ _bfd_XX_get_symbol_info (bfd * abfd, asymbol *symbol, symbol_info *ret)
 
 #if !defined(COFF_WITH_pep) && (defined(COFF_WITH_pex64) || defined(COFF_WITH_peAArch64) || defined(COFF_WITH_peLoongArch64) || defined (COFF_WITH_peRiscV64))
 static int
-sort_x64_pdata (const void *l, const void *r)
+sort_pdata (const void *l, const void *r)
 {
   const char *lp = (const char *) l;
   const char *rp = (const char *) r;
@@ -4720,9 +4768,21 @@ _bfd_XXi_final_link_postscript (bfd * abfd, struct coff_final_link_info *pfinfo)
 
 	if (bfd_malloc_and_get_section (abfd, sec, &tmp_data))
 	  {
+	    /* The size of a .pdata entry that describes a function that is used
+	       for exception handling.  */
+	    unsigned function_table_entry_size;
+#if defined (COFF_WITH_peAArch64)
+	    /* https://learn.microsoft.com/en-us/cpp/build/arm64-exception-handling#pdata-records.  */
+	    function_table_entry_size = 8;
+#else
+	    /* https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#the-pdata-section.  */
+	    function_table_entry_size = 12;
+#endif
+	    /* .pdata entries should be sorted by the function start
+	       address.  */
 	    qsort (tmp_data,
-		   (size_t) (x / 12),
-		   12, sort_x64_pdata);
+		   (size_t) (x / function_table_entry_size),
+		   function_table_entry_size, sort_pdata);
 	    bfd_set_section_contents (pfinfo->output_bfd, sec,
 				      tmp_data, 0, x);
 	    free (tmp_data);

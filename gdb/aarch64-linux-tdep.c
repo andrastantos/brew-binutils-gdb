@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux AArch64.
 
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GDB.
@@ -47,14 +47,15 @@
 #include "parser-defs.h"
 #include "user-regs.h"
 #include "xml-syscall.h"
-#include <ctype.h>
 
 #include "record-full.h"
 #include "linux-record.h"
 
+#include "arch/aarch64-fpmr-linux.h"
 #include "arch/aarch64-gcs-linux.h"
 #include "arch/aarch64-mte.h"
 #include "arch/aarch64-mte-linux.h"
+#include "arch/aarch64-pauth-linux.h"
 #include "arch/aarch64-scalable-linux.h"
 
 #include "arch-utils.h"
@@ -168,6 +169,7 @@
 #define AARCH64_TPIDR2_MAGIC			0x54504902
 #define AARCH64_ZT_MAGIC			0x5a544e01
 #define AARCH64_GCS_MAGIC			0x47435300
+#define AARCH64_FPMR_MAGIC			0x46504d52
 
 /* Defines for the extra_context that follows an AARCH64_EXTRA_MAGIC.  */
 #define AARCH64_EXTRA_DATAP_OFFSET		8
@@ -214,6 +216,9 @@
 /* features_enabled value offset in the GCS signal frame context.  */
 #define AARCH64_GCS_CONTEXT_FEATURES_ENABLED_OFFSET	16
 
+/* FPMR constants.  */
+#define AARCH64_FPMR_OFFSET			8
+
 /* Holds information about the signal frame.  */
 struct aarch64_linux_sigframe
 {
@@ -256,11 +261,17 @@ struct aarch64_linux_sigframe
   bool zt_available = false;
 
   /* True if we have a GCS entry in the signal context, false otherwise.  */
-  bool gcs_availabe = false;
+  bool gcs_available = false;
   /* The Guarded Control Stack Pointer Register.  */
   uint64_t gcspr;
   /* Flags indicating which GCS features are enabled for the thread.  */
   uint64_t gcs_features_enabled;
+
+  /* True if we have an FPMR entry in the signal context, false otherwise.  */
+  bool fpmr_available = false;
+  /* FPMR value.  */
+  CORE_ADDR fpmr = 0;
+
 };
 
 /* Read an aarch64_ctx, returning the magic value, and setting *SIZE to the
@@ -573,7 +584,23 @@ aarch64_linux_read_signal_frame_info (const frame_info_ptr &this_frame,
 
 	    signal_frame.gcs_features_enabled
 	      = extract_unsigned_integer (buf, byte_order);
-	    signal_frame.gcs_availabe = true;
+	    signal_frame.gcs_available = true;
+	    section += size;
+	    break;
+	  }
+	case AARCH64_FPMR_MAGIC:
+	  {
+	    gdb_byte buf[8];
+	    if (target_read_memory (section + AARCH64_FPMR_OFFSET,
+				    buf, 8) != 0)
+	      {
+		warning (_("Failed to read the FPMR section address from the"
+			   " signal frame context."));
+		section += size;
+		break;
+	      }
+	    signal_frame.fpmr = extract_unsigned_integer (buf, 8, byte_order);
+	    signal_frame.fpmr_available = true;
 	    section += size;
 	    break;
 	  }
@@ -740,6 +767,13 @@ aarch64_linux_sigframe_init (const struct tramp_frame *self,
 	}
     }
 
+  /* Handle FPMR.  */
+  if (tdep->has_fpmr () && signal_frame.fpmr_available != 0)
+  {
+    trad_frame_set_reg_value (this_cache, tdep->fpmr_regnum,
+			      signal_frame.fpmr);
+  }
+
   /* Restore the tpidr2 register, if the target supports it and if there is
      an entry for it.  */
   if (signal_frame.tpidr2_section != 0 && tdep->has_tls ()
@@ -753,7 +787,7 @@ aarch64_linux_sigframe_init (const struct tramp_frame *self,
 
   /* Restore the GCS registers, if the target supports it and if there is
      an entry for them.  */
-  if (signal_frame.gcs_availabe && tdep->has_gcs_linux ())
+  if (signal_frame.gcs_available && tdep->has_gcs_linux ())
     {
       /* Restore GCSPR.  */
       trad_frame_set_reg_value (this_cache, tdep->gcs_reg_base,
@@ -792,6 +826,7 @@ aarch64_linux_sigframe_prev_arch (const frame_info_ptr &this_frame,
   aarch64_features features = aarch64_features_from_target_desc (tdesc);
   features.vq = sve_vq_from_vl (signal_frame.vl);
   features.svq = (uint8_t) sve_vq_from_vl (signal_frame.svl);
+  features.fpmr = signal_frame.fpmr_available;
 
   struct gdbarch_info info;
   info.bfd_arch_info = bfd_lookup_arch (bfd_arch_aarch64, bfd_mach_aarch64);
@@ -1602,6 +1637,23 @@ aarch64_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 	}
     }
 
+  if (tdep->has_fpmr ())
+    {
+      const struct regcache_map_entry fpmr_regmap[] =
+	{
+	  { 1, tdep->fpmr_regnum, sizeof (uint64_t) },
+	  { 0 }
+	};
+
+      const struct regset aarch64_linux_fpmr_regset =
+	{
+	  fpmr_regmap, regcache_supply_regset, regcache_collect_regset
+	};
+
+      cb (".reg-aarch-fpmr", sizeof (uint64_t), sizeof (uint64_t),
+	  &aarch64_linux_fpmr_regset, "FPMR", cb_data);
+    }
+
   if (tdep->has_pauth ())
     {
       /* Create this on the fly in order to handle the variable location.  */
@@ -1684,8 +1736,9 @@ aarch64_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 	  gcs_regmap, regcache_supply_regset, regcache_collect_regset
 	};
 
-      cb (".reg-aarch-gcs", sizeof (user_gcs), sizeof (user_gcs),
-	  &aarch64_linux_gcs_regset, "GCS registers", cb_data);
+      cb (".reg-aarch-gcs", AARCH64_LINUX_SIZEOF_GCS_REGSET,
+	  AARCH64_LINUX_SIZEOF_GCS_REGSET, &aarch64_linux_gcs_regset,
+	  "GCS registers", cb_data);
     }
 }
 
@@ -1711,8 +1764,9 @@ aarch64_linux_core_read_description (struct gdbarch *gdbarch,
      length.  */
   features.vq = aarch64_linux_core_read_vq_from_sections (gdbarch, abfd);
   features.pauth = hwcap & AARCH64_HWCAP_PACA;
-  features.gcs = features.gcs_linux = hwcap & HWCAP_GCS;
-  features.mte = hwcap2 & HWCAP2_MTE;
+  features.gcs = features.gcs_linux = hwcap & AARCH64_HWCAP_GCS;
+  features.mte = hwcap2 & AARCH64_HWCAP2_MTE;
+  features.fpmr = hwcap2 & AARCH64_HWCAP2_FPMR;
 
   /* Handle the TLS section.  */
   asection *tls = bfd_get_section_by_name (abfd, ".reg-aarch-tls");
@@ -1746,12 +1800,12 @@ aarch64_linux_core_read_description (struct gdbarch *gdbarch,
 /* Implementation of `gdbarch_stap_is_single_operand', as defined in
    gdbarch.h.  */
 
-static int
+static bool
 aarch64_stap_is_single_operand (struct gdbarch *gdbarch, const char *s)
 {
-  return (*s == '#' || isdigit (*s) /* Literal number.  */
+  return (*s == '#' || c_isdigit (*s) /* Literal number.  */
 	  || *s == '[' /* Register indirection.  */
-	  || isalpha (*s)); /* Register value.  */
+	  || c_isalpha (*s)); /* Register value.  */
 }
 
 /* This routine is used to parse a special token in AArch64's assembly.
@@ -1782,7 +1836,7 @@ aarch64_stap_parse_special_token (struct gdbarch *gdbarch,
       start = tmp;
 
       /* Register name.  */
-      while (isalnum (*tmp))
+      while (c_isalnum (*tmp))
 	++tmp;
 
       if (*tmp != ',')
@@ -1791,7 +1845,7 @@ aarch64_stap_parse_special_token (struct gdbarch *gdbarch,
       len = tmp - start;
       std::string regname (start, len);
 
-      if (user_reg_map_name_to_regnum (gdbarch, regname.c_str (), len) == -1)
+      if (user_reg_map_name_to_regnum (gdbarch, regname) == -1)
 	error (_("Invalid register name `%s' on expression `%s'."),
 	       regname.c_str (), p->saved_arg);
 
@@ -1810,7 +1864,7 @@ aarch64_stap_parse_special_token (struct gdbarch *gdbarch,
       else if (*tmp == '+')
 	++tmp;
 
-      if (!isdigit (*tmp))
+      if (!c_isdigit (*tmp))
 	return {};
 
       displacement = strtol (tmp, &endp, 10);
@@ -2559,7 +2613,7 @@ aarch64_linux_get_shadow_stack_pointer (gdbarch *gdbarch, regcache *regcache,
   if (status != REG_VALID)
     error (_("Can't read $gcspr."));
 
-  shadow_stack_enabled = features_enabled & PR_SHADOW_STACK_ENABLE;
+  shadow_stack_enabled = features_enabled & AARCH64_PR_SHADOW_STACK_ENABLE;
   return gcspr;
 }
 
@@ -2645,9 +2699,9 @@ aarch64_linux_report_signal_info (struct gdbarch *gdbarch,
 
   const char *meaning;
 
-  if (si_code == SEGV_MTEAERR || si_code == SEGV_MTESERR)
+  if (si_code == AARCH64_SEGV_MTEAERR || si_code == AARCH64_SEGV_MTESERR)
     meaning = _("Memory tag violation");
-  else if (si_code == SEGV_CPERR && si_errno == 0)
+  else if (si_code == AARCH64_SEGV_CPERR && si_errno == 0)
     meaning = _("Guarded Control Stack error");
   else
     return;
@@ -2657,7 +2711,7 @@ aarch64_linux_report_signal_info (struct gdbarch *gdbarch,
   uiout->field_string ("sigcode-meaning", meaning);
 
   /* For synchronous faults, show additional information.  */
-  if (si_code == SEGV_MTESERR)
+  if (si_code == AARCH64_SEGV_MTESERR)
     {
       uiout->text (_(" while accessing address "));
       uiout->field_core_addr ("fault-addr", gdbarch, fault_addr);
@@ -2680,7 +2734,7 @@ aarch64_linux_report_signal_info (struct gdbarch *gdbarch,
 	  uiout->field_string ("logical-tag", hex_string (ltag));
 	}
     }
-  else if (si_code != SEGV_CPERR)
+  else if (si_code != AARCH64_SEGV_CPERR)
     {
       uiout->text ("\n");
       uiout->text (_("Fault address unavailable"));

@@ -1,6 +1,6 @@
 /* DWARF indexer
 
-   Copyright (C) 2022-2025 Free Software Foundation, Inc.
+   Copyright (C) 2022-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,13 +20,15 @@
 #include "dwarf2/cooked-indexer.h"
 #include "dwarf2/cooked-index-worker.h"
 #include "dwarf2/error.h"
+#include "dwarf2/read.h"
+#include "cp-support.h"
+#include "demangle.h"
 
 /* See cooked-indexer.h.  */
 
 cooked_indexer::cooked_indexer (cooked_index_worker_result *storage,
-				dwarf2_per_cu *per_cu, enum language language)
+				enum language language)
   : m_index_storage (storage),
-    m_per_cu (per_cu),
     m_language (language),
     m_die_range_map (storage->get_parent_map ())
 {
@@ -99,6 +101,17 @@ cooked_indexer::ensure_cu_exists (cutu_reader *reader,
      Doing this check here avoids self-imports as well.  */
   if (for_scanning)
     {
+      /* Record the inclusion precisely here.  Inclusions are done to
+	 ensure that imported units cause the correct expansions when
+	 searched; and in particular that all including units are
+	 expanded when finding an inline function.  So, this must be
+	 done for all units that are importing "for scanning".
+	 However, doing this any later than this spot would be too
+	 late -- because we want to do this for all importing units,
+	 not just the one that happens to win the race to do the
+	 scanning.  */
+      m_index_storage->record_inclusion (reader->cu ()->per_cu, per_cu);
+
       bool nope = false;
       if (!per_cu->scanned.compare_exchange_strong (nope, true))
 	return nullptr;
@@ -107,12 +120,11 @@ cooked_indexer::ensure_cu_exists (cutu_reader *reader,
   cutu_reader *result = m_index_storage->get_reader (per_cu);
   if (result == nullptr)
     {
-      const abbrev_table_cache &abbrev_table_cache
+      abbrev_table_cache &abbrev_table_cache
 	= m_index_storage->get_abbrev_table_cache ();
       auto new_reader
-	= std::make_unique<cutu_reader> (*per_cu, *per_objfile, nullptr,
-					 nullptr, false, language_minimal,
-					 &abbrev_table_cache);
+	= std::make_unique<cutu_reader> (*per_cu, *per_objfile, nullptr, false,
+					 m_language, abbrev_table_cache);
 
       if (new_reader->is_dummy ())
 	return nullptr;
@@ -144,6 +156,7 @@ cooked_indexer::scan_attributes (dwarf2_per_cu *scanning_per_cu,
 				 const cooked_index_entry **parent_entry,
 				 parent_map::addr_type *maybe_defer,
 				 bool *is_enum_class,
+				 bool *is_inlined,
 				 bool for_specification)
 {
   bool is_declaration = false;
@@ -273,10 +286,20 @@ cooked_indexer::scan_attributes (dwarf2_per_cu *scanning_per_cu,
 		 want to add this value.  */
 	      ranges_offset += reader->cu ()->gnu_ranges_base;
 
-	      unrelocated_addr lowpc, highpc;
-	      dwarf2_ranges_read (ranges_offset, &lowpc, &highpc, reader->cu (),
+	      dwarf2_ranges_read (ranges_offset, nullptr, nullptr,
+				  reader->cu (),
 				  m_index_storage->get_addrmap (),
 				  scanning_per_cu, abbrev->tag);
+	    }
+	  break;
+
+	case DW_AT_inline:
+	  if (abbrev->tag == DW_TAG_subprogram)
+	    {
+	      std::optional<ULONGEST> val = attr.unsigned_constant ();
+	      if (val.has_value () && (*val == DW_INL_inlined
+				       || *val == DW_INL_declared_inlined))
+		*is_inlined = true;
 	    }
 	  break;
 	}
@@ -287,7 +310,8 @@ cooked_indexer::scan_attributes (dwarf2_per_cu *scanning_per_cu,
      that is ok.  Similarly, we allow an external variable without a
      location; those are resolved via minimal symbols.  */
   if (is_declaration && !for_specification
-      && !(abbrev->tag == DW_TAG_variable && (*flags & IS_STATIC) == 0))
+      && !((abbrev->tag == DW_TAG_variable || abbrev->tag == DW_TAG_member)
+	   && (*flags & IS_STATIC) == 0))
     {
       /* We always want to recurse into some types, but we may not
 	 want to treat them as definitions.  */
@@ -297,7 +321,7 @@ cooked_indexer::scan_attributes (dwarf2_per_cu *scanning_per_cu,
 	   || abbrev->tag == DW_TAG_namespace)
 	  && abbrev->has_children)
 	*flags |= IS_TYPE_DECLARATION;
-      else
+      else if (!is_ada_import_or_export (reader->cu (), *name, *linkage_name))
 	{
 	  *linkage_name = nullptr;
 	  *name = nullptr;
@@ -356,7 +380,7 @@ cooked_indexer::scan_attributes (dwarf2_per_cu *scanning_per_cu,
 	scan_attributes (scanning_per_cu, new_reader, new_info_ptr,
 			 new_info_ptr, new_abbrev, name, linkage_name,
 			 flags, nullptr, parent_entry, maybe_defer,
-			 is_enum_class, true);
+			 is_enum_class, is_inlined, true);
     }
 
   if (!for_specification)
@@ -424,14 +448,9 @@ cooked_indexer::index_imported_unit (cutu_reader *reader,
   if (!target.has_value ())
     return info_ptr;
 
-  cutu_reader *new_reader
-    = ensure_cu_exists (reader, *target, true);
+  cutu_reader *new_reader = ensure_cu_exists (reader, *target, true);
   if (new_reader != nullptr)
-    {
-      index_dies (new_reader, new_reader->info_ptr (), nullptr, false);
-
-      reader->cu ()->add_dependence (new_reader->cu ()->per_cu);
-    }
+    index_dies (new_reader, new_reader->info_ptr (), nullptr, false);
 
   return info_ptr;
 }
@@ -506,7 +525,8 @@ cooked_indexer::index_dies (cutu_reader *reader,
       /* If a DIE parent is a DW_TAG_subprogram, then the DIE is only
 	 interesting if it's a DW_TAG_subprogram or a DW_TAG_entry_point.  */
       bool die_interesting
-	= (abbrev->interesting
+	= ((abbrev->interesting
+	    || (m_language == language_ada && abbrev->maybe_ada_import))
 	   && (parent_entry == nullptr
 	       || parent_entry->tag != DW_TAG_subprogram
 	       || abbrev->tag == DW_TAG_subprogram
@@ -526,6 +546,7 @@ cooked_indexer::index_dies (cutu_reader *reader,
       sect_offset sibling {};
       const cooked_index_entry *this_parent_entry = parent_entry;
       bool is_enum_class = false;
+      bool is_inlined = false;
 
       /* The scope of a DW_TAG_entry_point cooked_index_entry is the one of
 	 its surrounding subroutine.  */
@@ -534,7 +555,8 @@ cooked_indexer::index_dies (cutu_reader *reader,
       info_ptr
 	= scan_attributes (reader->cu ()->per_cu, reader, info_ptr, info_ptr,
 			   abbrev, &name, &linkage_name, &flags, &sibling,
-			   &this_parent_entry, &defer, &is_enum_class, false);
+			   &this_parent_entry, &defer, &is_enum_class,
+			   &is_inlined, false);
       /* A DW_TAG_entry_point inherits its static/extern property from
 	 the enclosing subroutine.  */
       if (abbrev->tag == DW_TAG_entry_point)
@@ -542,10 +564,15 @@ cooked_indexer::index_dies (cutu_reader *reader,
 	  flags &= ~IS_STATIC;
 	  flags |= parent_entry->flags & IS_STATIC;
 	}
+      else if (abbrev->tag == DW_TAG_imported_declaration)
+	{
+	  /* Match the full reader.  */
+	  flags &= ~IS_STATIC;
+	}
 
       if (abbrev->tag == DW_TAG_namespace
 	  && m_language == language_cplus
-	  && strcmp (name, "::") == 0)
+	  && streq (name, "::"))
 	{
 	  /* GCC 4.0 and 4.1 had a bug (PR c++/28460) where they
 	     generated bogus DW_TAG_namespace DIEs with a name of "::"
@@ -554,18 +581,49 @@ cooked_indexer::index_dies (cutu_reader *reader,
 	  name = nullptr;
 	}
 
+      /* An otherwise anonymous type might be given a name (via
+	 typedef) for linkage purposes, and gdb tries to handle this
+	 case.  See anon-struct.exp.  In this case, GCC will emit a
+	 funny thing: a linkage name for the type, but in "type" form.
+	 That is, it will not start with _Z.  */
+      if ((abbrev->tag == DW_TAG_class_type
+	   || abbrev->tag == DW_TAG_structure_type
+	   || abbrev->tag == DW_TAG_union_type)
+	  && m_language == language_cplus
+	  && name == nullptr
+	  && linkage_name != nullptr)
+	{
+	  gdb::unique_xmalloc_ptr<char> dem
+	    = gdb_demangle (linkage_name, DMGL_GNU_V3 | DMGL_TYPES);
+	  if (dem != nullptr)
+	    {
+	      /* We're only interested in the last component.  */
+	      std::vector<std::string_view> split
+		= split_name (dem.get (), split_style::CXX);
+	      name = m_index_storage->add (split.back ());
+	      linkage_name = nullptr;
+	    }
+	}
+
+      if (is_inlined)
+	flags |= IS_INLINED;
+
       cooked_index_entry *this_entry = nullptr;
+      /* Always use the reader's CU for the entry CU.  */
+      dwarf2_per_cu *cu_for_entry = reader->cu ()->per_cu;
       if (name != nullptr)
 	{
 	  if (defer != 0)
 	    this_entry
 	      = m_index_storage->add (this_die, abbrev->tag,
-				      flags | IS_PARENT_DEFERRED, name,
-				      defer, m_per_cu);
+				      flags | IS_PARENT_DEFERRED,
+				      m_language, name,
+				      defer, cu_for_entry);
 	  else
 	    this_entry
-	      = m_index_storage->add (this_die, abbrev->tag, flags, name,
-				      this_parent_entry, m_per_cu);
+	      = m_index_storage->add (this_die, abbrev->tag, flags,
+				      m_language, name,
+				      this_parent_entry, cu_for_entry);
 	}
 
       if (linkage_name != nullptr)
@@ -578,11 +636,10 @@ cooked_indexer::index_dies (cutu_reader *reader,
 	     have linkage name present but name is absent.  */
 	  if (name != nullptr
 	      || (abbrev->tag != DW_TAG_subprogram
-		  && abbrev->tag != DW_TAG_inlined_subroutine
 		  && abbrev->tag != DW_TAG_entry_point))
 	    flags = flags | IS_LINKAGE;
-	  m_index_storage->add (this_die, abbrev->tag, flags,
-				linkage_name, nullptr, m_per_cu);
+	  m_index_storage->add (this_die, abbrev->tag, flags, m_language,
+				linkage_name, nullptr, cu_for_entry);
 	}
 
       if (abbrev->has_children)

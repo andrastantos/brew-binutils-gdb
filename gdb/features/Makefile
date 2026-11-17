@@ -1,4 +1,4 @@
-# Copyright (C) 2007-2025 Free Software Foundation, Inc.
+# Copyright (C) 2007-2026 Free Software Foundation, Inc.
 
 # This file is part of GDB.
 
@@ -101,8 +101,9 @@ OUTPUTS = $(patsubst %,$(outdir)/%.dat,$(WHICH))
 # to make on the command line.
 XMLTOC = \
 	alpha.xml \
-	microblaze-with-stack-protect.xml \
 	microblaze.xml \
+	microblaze-linux.xml \
+	microblaze-with-stack-protect.xml \
 	mips-dsp-linux.xml \
 	mips-linux.xml \
 	mips64-dsp-linux.xml \
@@ -201,6 +202,7 @@ $(outdir)/%.dat: %.xml number-regs.xsl sort-regs.xsl gdbserver-regs.xsl
 # For targets with feature based target descriptions,
 # the set of xml files we'll generate .c files for GDB from.
 FEATURE_XMLFILES = aarch64-core.xml \
+	aarch64-fpmr.xml \
 	aarch64-fpu.xml \
 	aarch64-pauth.xml \
 	aarch64-mte.xml \

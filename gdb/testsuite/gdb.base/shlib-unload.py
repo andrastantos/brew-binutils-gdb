@@ -1,4 +1,4 @@
-# Copyright (C) 2024-2025 Free Software Foundation, Inc.
+# Copyright (C) 2024-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import gdb
+
 # Breakpoint modification events will be recorded in this dictionary.
 # The keys are the b/p numbers, and the values are the number of
 # modification events seen.
@@ -22,7 +24,6 @@ bp_modified_counts = {}
 # Record breakpoint modification events into the global
 # bp_modified_counts dictionary.
 def bp_modified(bp):
-    global bp_modified_counts
     if bp.number not in bp_modified_counts:
         bp_modified_counts[bp.number] = 1
     else:

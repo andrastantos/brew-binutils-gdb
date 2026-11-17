@@ -1,4 +1,4 @@
-# Copyright 2020-2025 Free Software Foundation, Inc.
+# Copyright 2020-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -38,7 +38,7 @@ proc test_run {} {
 	    set bp_addr $expect_out(1,string)
 
 	    # Convert to decimal.
-	    set bp_addr [expr $bp_addr]
+	    set bp_addr [expr {$bp_addr}]
 
 	    pass $gdb_test_name
 	}

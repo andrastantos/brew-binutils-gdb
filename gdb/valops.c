@@ -1,6 +1,6 @@
 /* Perform non-arithmetic operations on values, for GDB.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,7 +26,6 @@
 #include "inferior.h"
 #include "gdbcore.h"
 #include "target.h"
-#include "demangle.h"
 #include "language.h"
 #include "cli/cli-cmds.h"
 #include "regcache.h"
@@ -36,16 +35,16 @@
 #include "dictionary.h"
 #include "cp-support.h"
 #include "target-float.h"
-#include "tracepoint.h"
 #include "observable.h"
 #include "objfiles.h"
 #include "extension.h"
 #include "gdbsupport/byte-vector.h"
 #include "typeprint.h"
+#include "cli/cli-style.h"
 
 /* Local functions.  */
 
-static struct value *search_struct_field (const char *, struct value *, 
+static struct value *search_struct_field (const char *, struct value *,
 					  struct type *, int);
 
 static struct value *search_struct_method (const char *, struct value **,
@@ -98,7 +97,7 @@ static struct value *cast_into_complex (struct type *, struct value *);
 bool overload_resolution = false;
 static void
 show_overload_resolution (struct ui_file *file, int from_tty,
-			  struct cmd_list_element *c, 
+			  struct cmd_list_element *c,
 			  const char *value)
 {
   gdb_printf (file, _("Overload resolution in evaluating "
@@ -214,10 +213,10 @@ value_cast_structs (struct type *type, struct value *v2)
 	       || t2->code () == TYPE_CODE_UNION)
 	      && !!"Precondition is that value is of STRUCT or UNION kind");
 
-  if (t1->name () != NULL
-      && t2->name () != NULL
-      && !strcmp (t1->name (), t2->name ()))
-    return NULL;
+  if (t1->name () != nullptr
+      && t2->name () != nullptr
+      && streq (t1->name (), t2->name ()))
+    return nullptr;
 
   /* Upcasting: look in the type of the source to see if it contains the
      type of the target as a superclass.  If so, we'll need to
@@ -250,7 +249,7 @@ value_cast_structs (struct type *type, struct value *v2)
 	  /* We might be trying to cast to the outermost enclosing
 	     type, in which case search_struct_field won't work.  */
 	  if (real_type->name () != NULL
-	      && !strcmp (real_type->name (), t1->name ()))
+	      && streq (real_type->name (), t1->name ()))
 	    return v;
 
 	  v = search_struct_field (t2->name (), v, real_type, 1);
@@ -428,7 +427,7 @@ value_cast (struct type *type, struct value *arg2)
   if (TYPE_IS_REFERENCE (check_typedef (type)))
     {
       /* We dereference type; then we recurse and finally
-	 we generate value of the given reference.  Nothing wrong with 
+	 we generate value of the given reference.  Nothing wrong with
 	 that.  */
       struct type *t1 = check_typedef (type);
       struct type *dereftype = check_typedef (t1->target_type ());
@@ -439,7 +438,7 @@ value_cast (struct type *type, struct value *arg2)
 
   if (TYPE_IS_REFERENCE (check_typedef (arg2->type ())))
     /* We deref the value and then do the cast.  */
-    return value_cast (type, coerce_ref (arg2)); 
+    return value_cast (type, coerce_ref (arg2));
 
   /* Strip typedefs / resolve stubs in order to get at the type's
      code/length, but remember the original type, to use as the
@@ -455,7 +454,7 @@ value_cast (struct type *type, struct value *arg2)
      instead.  */
   gdb_assert (!TYPE_IS_REFERENCE (type));
 
-  /* A cast to an undetermined-length array_type, such as 
+  /* A cast to an undetermined-length array_type, such as
      (TYPE [])OBJECT, is treated like a cast to (TYPE [N])OBJECT,
      where N is sizeof(OBJECT)/sizeof(TYPE).  */
   if (code1 == TYPE_CODE_ARRAY)
@@ -483,7 +482,7 @@ value_cast (struct type *type, struct value *arg2)
 						 low_bound,
 						 new_length + low_bound - 1);
 	  arg2->deprecated_set_type (create_array_type (alloc,
-							element_type, 
+							element_type,
 							range_type));
 	  return arg2;
 	}
@@ -580,8 +579,8 @@ value_cast (struct type *type, struct value *arg2)
 
       return value_from_mpz (to_type, longest);
     }
-  else if (code1 == TYPE_CODE_PTR && (code2 == TYPE_CODE_INT  
-				      || code2 == TYPE_CODE_ENUM 
+  else if (code1 == TYPE_CODE_PTR && (code2 == TYPE_CODE_INT
+				      || code2 == TYPE_CODE_ENUM
 				      || code2 == TYPE_CODE_RANGE))
     {
       /* type->length () is the length of a pointer, but we really
@@ -636,8 +635,11 @@ value_cast (struct type *type, struct value *arg2)
 	return value_cast_pointers (to_type, arg2, 0);
 
       arg2 = arg2->copy ();
-      arg2->deprecated_set_type (to_type);
-      arg2->set_enclosing_type (to_type);
+
+      struct type *resolved_type
+	= resolve_dynamic_type (to_type, arg2->contents (), arg2->address ());
+      arg2->deprecated_set_type (resolved_type);
+      arg2->set_enclosing_type (resolved_type);
       arg2->set_pointed_to_offset (0);	/* pai: chk_val */
       return arg2;
     }
@@ -1206,7 +1208,7 @@ value_assign (struct value *toval, struct value *fromval)
 	    LONGEST offset = parent->offset () + toval->offset ();
 	    size_t changed_len;
 	    gdb_byte buffer[sizeof (LONGEST)];
-	    int optim, unavail;
+	    bool optim, unavail;
 
 	    changed_len = (toval->bitpos ()
 			   + toval->bitsize ()
@@ -1223,11 +1225,9 @@ value_assign (struct value *toval, struct value *fromval)
 					   &unavail))
 	      {
 		if (optim)
-		  throw_error (OPTIMIZED_OUT_ERROR,
-			       _("value has been optimized out"));
+		  error_value_optimized_out ();
 		if (unavail)
-		  throw_error (NOT_AVAILABLE_ERROR,
-			       _("value is not available"));
+		  error_value_not_available ();
 	      }
 
 	    modify_field (type, buffer, value_as_long (fromval),
@@ -1309,7 +1309,7 @@ value_assign (struct value *toval, struct value *fromval)
     default:
       break;
     }
-  
+
   /* If the field does not entirely fill a LONGEST, then zero the sign
      bits.  If the field is signed, and is negative, then sign
      extend.  */
@@ -1320,7 +1320,7 @@ value_assign (struct value *toval, struct value *fromval)
       LONGEST valmask = (((ULONGEST) 1) << toval->bitsize ()) - 1;
 
       fieldval &= valmask;
-      if (!type->is_unsigned () 
+      if (!type->is_unsigned ()
 	  && (fieldval & (valmask ^ (valmask >> 1))))
 	fieldval |= ~valmask;
 
@@ -1545,8 +1545,7 @@ value_addr (struct value *arg1)
 
   if (TYPE_IS_REFERENCE (type))
     {
-      if (arg1->bits_synthetic_pointer (arg1->embedded_offset (),
-					TARGET_CHAR_BIT * type->length ()))
+      if (arg1->bits_synthetic_pointer (0, TARGET_CHAR_BIT * type->length ()))
 	arg1 = coerce_ref (arg1);
       else
 	{
@@ -1935,7 +1934,7 @@ struct_field_searcher::update_result (struct value *v, LONGEST boffset)
 		 found occupy the same space.  */
 	      && m_last_boffset != boffset)
 	    error (_("base class '%s' is ambiguous in type '%s'"),
-		   m_name, TYPE_SAFE_NAME (m_outermost_type));
+		   m_name, m_outermost_type->safe_name ());
 
 	  m_baseclass = v;
 	  m_last_boffset = boffset;
@@ -2084,7 +2083,7 @@ struct_field_searcher::search (struct value *arg1, LONGEST offset,
 
 	      base_addr = arg1->address () + boffset;
 	      v2 = value_at_lazy (basetype, base_addr);
-	      if (target_read_memory (base_addr, 
+	      if (target_read_memory (base_addr,
 				      v2->contents_raw ().data (),
 				      v2->type ()->length ()) != 0)
 		error (_("virtual baseclass botch"));
@@ -2159,15 +2158,15 @@ search_struct_field (const char *name, struct value *arg1,
 		}
 
 	      candidates += string_printf ("\n  '%s %s::%s' (%s)",
-					   TYPE_SAFE_NAME (field_type),
-					   TYPE_SAFE_NAME (struct_type),
+					   field_type->safe_name (),
+					   struct_type->safe_name (),
 					   name,
 					   path.c_str ());
 	    }
 
 	  error (_("Request for member '%s' is ambiguous in type '%s'."
 		   " Candidates are:%s"),
-		 name, TYPE_SAFE_NAME (type),
+		 name, type->safe_name (),
 		 candidates.c_str ());
 	}
     }
@@ -2208,7 +2207,6 @@ search_struct_method (const char *name, struct value **arg1p,
 	  struct fn_field *f = TYPE_FN_FIELDLIST1 (type, i);
 
 	  name_matched = 1;
-	  check_stub_method_group (type, i);
 	  if (j > 0 && !args.has_value ())
 	    error (_("cannot resolve overloaded method "
 		     "`%s': no arguments supplied"), name);
@@ -2227,14 +2225,14 @@ search_struct_method (const char *name, struct value **arg1p,
 			      TYPE_FN_FIELD_ARGS (f, j), *args))
 		  {
 		    if (TYPE_FN_FIELD_VIRTUAL_P (f, j))
-		      return value_virtual_fn_field (arg1p, f, j, 
+		      return value_virtual_fn_field (arg1p, f, j,
 						     type, offset);
-		    if (TYPE_FN_FIELD_STATIC_P (f, j) 
+		    if (TYPE_FN_FIELD_STATIC_P (f, j)
 			&& static_memfuncp)
 		      *static_memfuncp = 1;
 		    v = value_fn_field (arg1p, f, j, type, offset);
 		    if (v != NULL)
-		      return v;       
+		      return v;
 		  }
 		j--;
 	      }
@@ -2509,9 +2507,6 @@ find_method_list (struct value **argp, const char *method,
 	      *basetype = type;
 	      *boffset = offset;
 
-	      /* Resolve any stub methods.  */
-	      check_stub_method_group (type, i);
-
 	      break;
 	    }
 	}
@@ -2673,7 +2668,7 @@ incomplete_type_hint (gdb::array_view<value *> args)
    non-standard coercions, 100 -> incompatible.
 
    If a method is being searched for, VALP will hold the value.
-   If a non-method is being searched for, SYMP will hold the symbol 
+   If a non-method is being searched for, SYMP will hold the symbol
    for it.
 
    If a method is being searched for, and it is a static method,
@@ -2697,7 +2692,7 @@ int
 find_overload_match (gdb::array_view<value *> args,
 		     const char *name, enum oload_search_type method,
 		     struct value **objp, struct symbol *fsym,
-		     struct value **valp, struct symbol **symp, 
+		     struct value **valp, struct symbol **symp,
 		     int *staticp, const int no_adl,
 		     const enum noside noside)
 {
@@ -2880,7 +2875,7 @@ find_overload_match (gdb::array_view<value *> args,
 		 probably a C-style function.  */
 	      if (temp_func != nullptr)
 		{
-		  if (strcmp (temp_func.get (), qualified_name) == 0)
+		  if (streq (temp_func.get (), qualified_name))
 		    func_name = NULL;
 		  else
 		    func_name = temp_func.get ();
@@ -2965,26 +2960,29 @@ find_overload_match (gdb::array_view<value *> args,
     {
       std::string hint = incomplete_type_hint (args);
       if (method == METHOD)
-	error (_("Cannot resolve method %s%s%s to any overloaded instance%s"),
+	error (_("Cannot resolve method %p[%s%s%s%p] to any overloaded instance%s"),
+	       function_name_style.style ().ptr (),
 	       obj_type_name,
 	       (obj_type_name && *obj_type_name) ? "::" : "",
-	       name, hint.c_str ());
+	       name, nullptr, hint.c_str ());
       else
-	error (_("Cannot resolve function %s to any overloaded instance%s"),
-	       func_name, hint.c_str ());
+	error (_("Cannot resolve function %ps to any overloaded instance%s"),
+	       styled_string (function_name_style.style (), func_name),
+	       hint.c_str ());
     }
   else if (match_quality == NON_STANDARD)
     {
       if (method == METHOD)
 	warning (_("Using non-standard conversion to match "
-		   "method %s%s%s to supplied arguments"),
+		   "method %p[%s%s%s%p] to supplied arguments"),
+		 function_name_style.style ().ptr (),
 		 obj_type_name,
 		 (obj_type_name && *obj_type_name) ? "::" : "",
-		 name);
+		 name, nullptr);
       else
 	warning (_("Using non-standard conversion to match "
-		   "function %s to supplied arguments"),
-		 func_name);
+		   "function %ps to supplied arguments"),
+		 styled_string (function_name_style.style (), func_name));
     }
 
   if (staticp != NULL)
@@ -3251,26 +3249,26 @@ find_oload_champ (gdb::array_view<value *> args,
       if (overload_debug)
 	{
 	  if (methods != NULL)
-	    gdb_printf (gdb_stderr,
+	    gdb_printf (gdb_stdlog,
 			"Overloaded method instance %s, # of parms %d\n",
 			methods[ix].physname, (int) parm_types.size ());
 	  else if (xmethods != NULL)
-	    gdb_printf (gdb_stderr,
+	    gdb_printf (gdb_stdlog,
 			"Xmethod worker, # of parms %d\n",
 			(int) parm_types.size ());
 	  else
-	    gdb_printf (gdb_stderr,
+	    gdb_printf (gdb_stdlog,
 			"Overloaded function instance "
 			"%s # of parms %d\n",
 			functions[ix]->demangled_name (),
 			(int) parm_types.size ());
 
-	  gdb_printf (gdb_stderr,
+	  gdb_printf (gdb_stdlog,
 		      "...Badness of length : {%d, %d}\n",
 		      bv[0].rank, bv[0].subrank);
 
 	  for (jj = 1; jj < bv.size (); jj++)
-	    gdb_printf (gdb_stderr,
+	    gdb_printf (gdb_stdlog,
 			"...Badness of arg %d : {%d, %d}\n",
 			jj, bv[jj].rank, bv[jj].subrank);
 	}
@@ -3300,7 +3298,7 @@ find_oload_champ (gdb::array_view<value *> args,
 	    break;
 	  }
       if (overload_debug)
-	gdb_printf (gdb_stderr, "Overload resolution "
+	gdb_printf (gdb_stdlog, "Overload resolution "
 		    "champion is %d, ambiguous? %d\n",
 		    oload_champ, oload_ambiguous);
     }
@@ -3405,7 +3403,7 @@ enum_constant_from_type (struct type *type, const char *name)
       if (len + 2 >= name_len
 	  && fname[len - name_len - 2] == ':'
 	  && fname[len - name_len - 1] == ':'
-	  && strcmp (&fname[len - name_len], name) == 0)
+	  && streq (&fname[len - name_len], name))
 	return value_from_longest (type, type->field (i).loc_enumval ());
     }
 
@@ -3428,11 +3426,11 @@ value_aggregate_elt (struct type *curtype, const char *name,
     {
     case TYPE_CODE_STRUCT:
     case TYPE_CODE_UNION:
-      return value_struct_elt_for_reference (curtype, 0, curtype, 
+      return value_struct_elt_for_reference (curtype, 0, curtype,
 					     name, expect_type,
 					     want_address, noside);
     case TYPE_CODE_NAMESPACE:
-      return value_namespace_elt (curtype, name, 
+      return value_namespace_elt (curtype, name,
 				  want_address, noside);
 
     case TYPE_CODE_ENUM:
@@ -3443,7 +3441,7 @@ value_aggregate_elt (struct type *curtype, const char *name,
     }
 }
 
-/* Compares the two method/function types T1 and T2 for "equality" 
+/* Compares the two method/function types T1 and T2 for "equality"
    with respect to the methods' parameters.  If the types of the
    two parameter lists are the same, returns 1; 0 otherwise.  This
    comparison may ignore any artificial parameters in T1 if
@@ -3548,7 +3546,7 @@ get_baseclass_offset (struct type *vt, struct type *cls,
 static struct value *
 value_struct_elt_for_reference (struct type *domain, int offset,
 				struct type *curtype, const char *name,
-				struct type *intype, 
+				struct type *intype,
 				int want_address,
 				enum noside noside)
 {
@@ -3565,7 +3563,7 @@ value_struct_elt_for_reference (struct type *domain, int offset,
     {
       const char *t_field_name = t->field (i).name ();
 
-      if (t_field_name && strcmp (t_field_name, name) == 0)
+      if (t_field_name && streq (t_field_name, name))
 	{
 	  if (t->field (i).is_static ())
 	    {
@@ -3642,21 +3640,19 @@ value_struct_elt_for_reference (struct type *domain, int offset,
     {
       const char *t_field_name = TYPE_FN_FIELDLIST_NAME (t, i);
 
-      if (t_field_name && strcmp (t_field_name, name) == 0)
+      if (t_field_name && streq (t_field_name, name))
 	{
 	  int j;
 	  int len = TYPE_FN_FIELDLIST_LENGTH (t, i);
 	  struct fn_field *f = TYPE_FN_FIELDLIST1 (t, i);
 
-	  check_stub_method_group (t, i);
-
 	  if (intype)
 	    {
 	      for (j = 0; j < len; ++j)
 		{
-		  if (TYPE_CONST (intype) != TYPE_FN_FIELD_CONST (f, j))
+		  if (intype->is_const () != TYPE_FN_FIELD_CONST (f, j))
 		    continue;
-		  if (TYPE_VOLATILE (intype) != TYPE_FN_FIELD_VOLATILE (f, j))
+		  if (intype->is_volatile () != TYPE_FN_FIELD_VOLATILE (f, j))
 		    continue;
 
 		  if (compare_parameters (TYPE_FN_FIELD_TYPE (f, j), intype, 0)
@@ -3704,7 +3700,7 @@ value_struct_elt_for_reference (struct type *domain, int offset,
 
 	  if (TYPE_FN_FIELD_STATIC_P (f, j))
 	    {
-	      struct symbol *s = 
+	      struct symbol *s =
 		lookup_symbol (TYPE_FN_FIELD_PHYSNAME (f, j),
 			       0, SEARCH_FUNCTION_DOMAIN, 0).symbol;
 
@@ -3730,12 +3726,12 @@ value_struct_elt_for_reference (struct type *domain, int offset,
 	      else if (noside == EVAL_AVOID_SIDE_EFFECTS)
 		return value::allocate (TYPE_FN_FIELD_TYPE (f, j));
 	      else
-		error (_("Cannot reference virtual member function \"%s\""),
-		       name);
+		error (_("Cannot reference virtual member function \"%ps\""),
+		       styled_string (function_name_style.style (), name));
 	    }
 	  else
 	    {
-	      struct symbol *s = 
+	      struct symbol *s =
 		lookup_symbol (TYPE_FN_FIELD_PHYSNAME (f, j),
 			       0, SEARCH_FUNCTION_DOMAIN, 0).symbol;
 
@@ -3768,7 +3764,7 @@ value_struct_elt_for_reference (struct type *domain, int offset,
       v = value_struct_elt_for_reference (domain,
 					  offset + base_offset,
 					  TYPE_BASECLASS (t, i),
-					  name, intype, 
+					  name, intype,
 					  want_address, noside);
       if (v)
 	return v;
@@ -3778,7 +3774,7 @@ value_struct_elt_for_reference (struct type *domain, int offset,
      it up that way; this (frequently) works for types nested inside
      classes.  */
 
-  return value_maybe_namespace_elt (curtype, name, 
+  return value_maybe_namespace_elt (curtype, name,
 				    want_address, noside);
 }
 
@@ -3791,11 +3787,11 @@ value_namespace_elt (const struct type *curtype,
 		     enum noside noside)
 {
   struct value *retval = value_maybe_namespace_elt (curtype, name,
-						    want_address, 
+						    want_address,
 						    noside);
 
   if (retval == NULL)
-    error (_("No symbol \"%s\" in namespace \"%s\"."), 
+    error (_("No symbol \"%s\" in namespace \"%s\"."),
 	   name, curtype->name ());
 
   return retval;
@@ -3817,7 +3813,7 @@ value_maybe_namespace_elt (const struct type *curtype,
   struct value *result;
 
   sym = cp_lookup_symbol_namespace (namespace_name, name,
-				    get_selected_block (0), SEARCH_VFT);
+				    get_selected_block (), SEARCH_VFT);
 
   if (sym.symbol == NULL)
     return NULL;
@@ -3839,7 +3835,7 @@ value_maybe_namespace_elt (const struct type *curtype,
    and refer to the values computed for the object pointed to.  */
 
 struct type *
-value_rtti_indirect_type (struct value *v, int *full, 
+value_rtti_indirect_type (struct value *v, int *full,
 			  LONGEST *top, int *using_enc)
 {
   struct value *target = NULL;
@@ -3877,8 +3873,8 @@ value_rtti_indirect_type (struct value *v, int *full,
     {
       /* Copy qualifiers to the referenced object.  */
       target_type = target->type ();
-      real_type = make_cv_type (TYPE_CONST (target_type),
-				TYPE_VOLATILE (target_type), real_type, NULL);
+      real_type = make_cv_type (target_type->is_const (),
+				target_type->is_volatile (), real_type);
       if (TYPE_IS_REFERENCE (type))
 	real_type = lookup_reference_type (real_type, type->code ());
       else if (type->code () == TYPE_CODE_PTR)
@@ -3887,8 +3883,8 @@ value_rtti_indirect_type (struct value *v, int *full,
 	internal_error (_("Unexpected value type."));
 
       /* Copy qualifiers to the pointer/reference.  */
-      real_type = make_cv_type (TYPE_CONST (type), TYPE_VOLATILE (type),
-				real_type, NULL);
+      real_type = make_cv_type (type->is_const (), type->is_volatile (),
+				real_type);
     }
 
   return real_type;
@@ -3905,8 +3901,8 @@ value_rtti_indirect_type (struct value *v, int *full,
    NULL if they're not available.  */
 
 struct value *
-value_full_object (struct value *argp, 
-		   struct type *rtype, 
+value_full_object (struct value *argp,
+		   struct type *rtype,
 		   int xfull, int xtop,
 		   int xusing_enc)
 {
@@ -3951,7 +3947,7 @@ value_full_object (struct value *argp,
   if (argp->lval () != lval_memory)
     {
       warning (_("Couldn't retrieve complete object of RTTI "
-		 "type %s; object may be in register(s)."), 
+		 "type %s; object may be in register(s)."),
 	       real_type->name ());
 
       return argp;
@@ -3990,8 +3986,9 @@ value_of_this (const struct language_defn *lang)
 
   sym = lookup_language_this (lang, b);
   if (sym.symbol == NULL)
-    error (_("current stack frame does not contain a variable named `%s'"),
-	   lang->name_of_this ());
+    error (_("current stack frame does not contain a variable named `%ps'"),
+	   styled_string (variable_name_style.style (),
+			  lang->name_of_this ()));
 
   return read_var_value (sym.symbol, sym.block, frame);
 }
@@ -4020,7 +4017,7 @@ value_of_this_silent (const struct language_defn *lang)
    bound as the original ARRAY.  */
 
 struct value *
-value_slice (struct value *array, int lowbound, int length)
+value_slice (struct value *array, LONGEST lowbound, LONGEST length)
 {
   struct type *slice_range_type, *slice_type, *range_type;
   LONGEST lowerbound, upperbound;
@@ -4151,8 +4148,8 @@ cast_into_complex (struct type *type, struct value *val)
     }
   else if (val->type ()->code () == TYPE_CODE_FLT
 	   || val->type ()->code () == TYPE_CODE_INT)
-    return value_literal_complex (val, 
-				  value::zero (real_type, not_lval), 
+    return value_literal_complex (val,
+				  value::zero (real_type, not_lval),
 				  type);
   else
     error (_("cannot cast non-number to complex"));
@@ -4163,7 +4160,7 @@ INIT_GDB_FILE (valops)
   add_setshow_boolean_cmd ("overload-resolution", class_support,
 			   &overload_resolution, _("\
 Set overload resolution in evaluating C++ functions."), _("\
-Show overload resolution in evaluating C++ functions."), 
+Show overload resolution in evaluating C++ functions."),
 			   NULL, NULL,
 			   show_overload_resolution,
 			   &setlist, &showlist);

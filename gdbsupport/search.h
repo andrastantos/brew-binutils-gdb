@@ -1,4 +1,4 @@
-/* Copyright (C) 2020-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,7 +28,7 @@
    wants to be able to examine trace data when searching, and
    target_read_memory does not do this.  */
 
-typedef bool target_read_memory_ftype (CORE_ADDR, gdb_byte *, size_t);
+using target_read_memory_ftype = bool (CORE_ADDR, gdb_byte *, size_t);
 
 /* Utility implementation of searching memory.  */
 extern int simple_search_memory

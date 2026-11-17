@@ -1,6 +1,6 @@
 /* Evaluate expressions for GDB.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,10 +38,10 @@
 #include "gdbsupport/gdb_obstack.h"
 #include "objfiles.h"
 #include "typeprint.h"
-#include <ctype.h>
 #include "expop.h"
 #include "c-exp.h"
 #include "inferior.h"
+#include "cli/cli-style.h"
 
 
 /* Parse the string EXP as a C expression, evaluate it,
@@ -456,10 +456,10 @@ fake_method::fake_method (type_instance_flags flags,
 {
   struct type *type = &m_type;
 
-  TYPE_MAIN_TYPE (type) = &m_main_type;
+  type->main_type = &m_main_type;
   type->set_length (1);
   type->set_code (TYPE_CODE_METHOD);
-  TYPE_CHAIN (type) = type;
+  type->chain = type;
   type->set_instance_flags (flags);
   if (num_types > 0)
     {
@@ -753,7 +753,7 @@ scope_operation::evaluate_funcall (struct type *expect_type,
     {
       function = cp_lookup_symbol_namespace (type->name (),
 					     name.c_str (),
-					     get_selected_block (0),
+					     get_selected_block (),
 					     SEARCH_FUNCTION_DOMAIN).symbol;
       if (function == NULL)
 	error (_("No symbol \"%s\" in namespace \"%s\"."),
@@ -784,9 +784,10 @@ scope_operation::evaluate_funcall (struct type *expect_type,
       if (!static_memfuncp)
 	{
 	  /* For the time being, we don't handle this.  */
-	  error (_("Call to overloaded function %s requires "
+	  error (_("Call to overloaded function %ps requires "
 		   "`this' pointer"),
-		 function_name);
+		 styled_string (function_name_style.style (),
+				function_name));
 	}
 
       arg_view = arg_view.slice (1);
@@ -798,7 +799,7 @@ scope_operation::evaluate_funcall (struct type *expect_type,
       find_overload_match (arg_view, nullptr,
 			   NON_METHOD, nullptr, function,
 			   nullptr, &symp, nullptr, 1, noside);
-      callee = value_of_variable (symp, get_selected_block (0));
+      callee = value_of_variable (symp, get_selected_block ());
     }
 
   return evaluate_subexp_do_call (exp, noside, callee, arg_view,
@@ -1016,7 +1017,7 @@ add_struct_fields (struct type *type, completion_list &output,
 	      computed_type_name = 1;
 	    }
 	  /* Omit constructors from the completion list.  */
-	  if (!type_name || strcmp (type_name, name))
+	  if (!type_name || !streq (type_name, name))
 	    output.emplace_back (concat (prefix, name, nullptr));
 	}
     }
@@ -1087,7 +1088,7 @@ eval_op_var_entry_value (struct type *expect_type, struct expression *exp,
     error (_("Symbol \"%s\" does not have any specific entry value"),
 	   sym->print_name ());
 
-  frame_info_ptr frame = get_selected_frame (NULL);
+  frame_info_ptr frame = get_selected_frame ();
   return computed_ops->read_variable_at_entry (sym, frame);
 }
 
@@ -1120,7 +1121,8 @@ eval_op_func_static_var (struct type *expect_type, struct expression *exp,
   struct block_symbol sym = lookup_symbol (var, blk, SEARCH_VAR_DOMAIN,
 					   nullptr);
   if (sym.symbol == NULL)
-    error (_("No symbol \"%s\" in specified context."), var);
+    error (_("No symbol \"%ps\" in specified context."),
+	   styled_string (variable_name_style.style (), var));
   return evaluate_var_value (noside, sym.block, sym.symbol);
 }
 
@@ -1133,8 +1135,7 @@ eval_op_register (struct type *expect_type, struct expression *exp,
   int regno;
   struct value *val;
 
-  regno = user_reg_map_name_to_regnum (exp->gdbarch,
-				       name, strlen (name));
+  regno = user_reg_map_name_to_regnum (exp->gdbarch, name);
   if (regno == -1)
     error (_("Register $%s not available."), name);
 
@@ -1181,24 +1182,23 @@ ternop_slice_operation::evaluate (struct type *expect_type,
   struct value *upper
     = std::get<2> (m_storage)->evaluate (nullptr, exp, noside);
 
-  int lowbound = value_as_long (low);
-  int upperbound = value_as_long (upper);
+  LONGEST lowbound = value_as_long (low);
+  LONGEST upperbound = value_as_long (upper);
   return value_slice (array, lowbound, upperbound - lowbound + 1);
 }
 
-} /* namespace expr */
-
-/* Helper function that implements the body of OP_OBJC_SELECTOR.  */
-
 struct value *
-eval_op_objc_selector (struct type *expect_type, struct expression *exp,
-		       enum noside noside,
-		       const char *sel)
+objc_selector_operation::evaluate (struct type *expect_type,
+				   struct expression *exp,
+				   enum noside noside)
 {
+  const char *sel = std::get<0> (m_storage).c_str ();
   struct type *selector_type = builtin_type (exp->gdbarch)->builtin_data_ptr;
   return value_from_longest (selector_type,
 			     lookup_child_selector (exp->gdbarch, sel));
 }
+
+} /* namespace expr */
 
 /* A helper function for STRUCTOP_STRUCT.  */
 
@@ -1910,13 +1910,76 @@ eval_binop_assign_modify (struct type *expect_type, struct expression *exp,
   return value_assign (arg1, arg2);
 }
 
-/* Note that ARGS needs 2 empty slots up front and must end with a
-   null pointer.  */
+/* Helper function for MULTI_SUBSCRIPT.  */
+
 static struct value *
-eval_op_objc_msgcall (struct type *expect_type, struct expression *exp,
-		      enum noside noside, CORE_ADDR selector,
-		      value *target, gdb::array_view<value *> args)
+eval_multi_subscript (struct type *expect_type, struct expression *exp,
+		      enum noside noside, value *arg1,
+		      gdb::array_view<value *> args)
 {
+  for (value *arg2 : args)
+    {
+      if (binop_user_defined_p (MULTI_SUBSCRIPT, arg1, arg2))
+	{
+	  arg1 = value_x_binop (arg1, arg2, MULTI_SUBSCRIPT, OP_NULL, noside);
+	}
+      else
+	{
+	  arg1 = coerce_ref (arg1);
+	  struct type *type = check_typedef (arg1->type ());
+
+	  switch (type->code ())
+	    {
+	    case TYPE_CODE_PTR:
+	    case TYPE_CODE_ARRAY:
+	    case TYPE_CODE_STRING:
+	      arg1 = value_subscript (arg1, value_as_long (arg2));
+	      break;
+
+	    default:
+	      if (type->name ())
+		error (_("cannot subscript something of type `%s'"),
+		       type->name ());
+	      else
+		error (_("cannot subscript requested type"));
+	    }
+	}
+    }
+  return (arg1);
+}
+
+namespace expr
+{
+
+value *
+objc_msgcall_operation::evaluate (struct type *expect_type,
+				  struct expression *exp,
+				  enum noside noside)
+{
+  enum noside sub_no_side = EVAL_NORMAL;
+  struct type *selector_type = builtin_type (exp->gdbarch)->builtin_data_ptr;
+
+  if (noside == EVAL_AVOID_SIDE_EFFECTS)
+    sub_no_side = EVAL_NORMAL;
+  else
+    sub_no_side = noside;
+  value *target
+    = std::get<1> (m_storage)->evaluate (selector_type, exp, sub_no_side);
+
+  if (value_as_long (target) == 0)
+    sub_no_side = EVAL_AVOID_SIDE_EFFECTS;
+  else
+    sub_no_side = noside;
+
+  std::vector<operation_up> &ops = std::get<2> (m_storage);
+  std::vector<value *> args;
+  args.push_back (nullptr);
+  args.push_back (nullptr);
+  for (const operation_up &iter : ops)
+    args.push_back (iter->evaluate_with_coercion (exp, sub_no_side));
+
+  CORE_ADDR selector = std::get<0> (m_storage);
+
   CORE_ADDR responds_selector = 0;
   CORE_ADDR method_selector = 0;
 
@@ -1929,8 +1992,6 @@ eval_op_objc_msgcall (struct type *expect_type, struct expression *exp,
   struct value *method = NULL;
   struct value *called_method = NULL;
 
-  struct type *selector_type = NULL;
-  struct type *long_type;
   struct type *type;
 
   struct value *ret = NULL;
@@ -1938,8 +1999,7 @@ eval_op_objc_msgcall (struct type *expect_type, struct expression *exp,
 
   value *argvec[5];
 
-  long_type = builtin_type (exp->gdbarch)->builtin_long;
-  selector_type = builtin_type (exp->gdbarch)->builtin_data_ptr;
+  struct type *long_type = builtin_type (exp->gdbarch)->builtin_long;
 
   if (value_as_long (target) == 0)
     return value_from_longest (long_type, 0);
@@ -2055,7 +2115,7 @@ eval_op_objc_msgcall (struct type *expect_type, struct expression *exp,
 	(exp->gdbarch, addr, current_inferior ()->top_target ());
 
       /* Is it a high_level symbol?  */
-      sym = find_pc_function (addr);
+      sym = find_symbol_for_pc (addr);
       if (sym != NULL)
 	method = value_of_variable (sym, 0);
     }
@@ -2180,80 +2240,6 @@ eval_op_objc_msgcall (struct type *expect_type, struct expression *exp,
   return call_function_by_hand (called_method, NULL, args);
 }
 
-/* Helper function for MULTI_SUBSCRIPT.  */
-
-static struct value *
-eval_multi_subscript (struct type *expect_type, struct expression *exp,
-		      enum noside noside, value *arg1,
-		      gdb::array_view<value *> args)
-{
-  for (value *arg2 : args)
-    {
-      if (binop_user_defined_p (MULTI_SUBSCRIPT, arg1, arg2))
-	{
-	  arg1 = value_x_binop (arg1, arg2, MULTI_SUBSCRIPT, OP_NULL, noside);
-	}
-      else
-	{
-	  arg1 = coerce_ref (arg1);
-	  struct type *type = check_typedef (arg1->type ());
-
-	  switch (type->code ())
-	    {
-	    case TYPE_CODE_PTR:
-	    case TYPE_CODE_ARRAY:
-	    case TYPE_CODE_STRING:
-	      arg1 = value_subscript (arg1, value_as_long (arg2));
-	      break;
-
-	    default:
-	      if (type->name ())
-		error (_("cannot subscript something of type `%s'"),
-		       type->name ());
-	      else
-		error (_("cannot subscript requested type"));
-	    }
-	}
-    }
-  return (arg1);
-}
-
-namespace expr
-{
-
-value *
-objc_msgcall_operation::evaluate (struct type *expect_type,
-				  struct expression *exp,
-				  enum noside noside)
-{
-  enum noside sub_no_side = EVAL_NORMAL;
-  struct type *selector_type = builtin_type (exp->gdbarch)->builtin_data_ptr;
-
-  if (noside == EVAL_AVOID_SIDE_EFFECTS)
-    sub_no_side = EVAL_NORMAL;
-  else
-    sub_no_side = noside;
-  value *target
-    = std::get<1> (m_storage)->evaluate (selector_type, exp, sub_no_side);
-
-  if (value_as_long (target) == 0)
-    sub_no_side = EVAL_AVOID_SIDE_EFFECTS;
-  else
-    sub_no_side = noside;
-  std::vector<operation_up> &args = std::get<2> (m_storage);
-  value **argvec = XALLOCAVEC (struct value *, args.size () + 3);
-  argvec[0] = nullptr;
-  argvec[1] = nullptr;
-  for (int i = 0; i < args.size (); ++i)
-    argvec[i + 2] = args[i]->evaluate_with_coercion (exp, sub_no_side);
-  argvec[args.size () + 2] = nullptr;
-
-  return eval_op_objc_msgcall (expect_type, exp, noside, std::
-			       get<0> (m_storage), target,
-			       gdb::make_array_view (argvec,
-						     args.size () + 3));
-}
-
 value *
 multi_subscript_operation::evaluate (struct type *expect_type,
 				     struct expression *exp,
@@ -2285,14 +2271,18 @@ logical_and_operation::evaluate (struct type *expect_type,
     }
   else
     {
+      type *type = language_bool_type (exp->language_defn,
+				       exp->gdbarch);
+      if (noside == EVAL_AVOID_SIDE_EFFECTS)
+	return value::zero (type, not_lval);
+
       bool tem = value_logical_not (arg1);
       if (!tem)
 	{
 	  arg2 = std::get<1> (m_storage)->evaluate (nullptr, exp, noside);
 	  tem = value_logical_not (arg2);
 	}
-      struct type *type = language_bool_type (exp->language_defn,
-					      exp->gdbarch);
+
       return value_from_longest (type, !tem);
     }
 }
@@ -2314,6 +2304,11 @@ logical_or_operation::evaluate (struct type *expect_type,
     }
   else
     {
+      type *type = language_bool_type (exp->language_defn,
+				       exp->gdbarch);
+      if (noside == EVAL_AVOID_SIDE_EFFECTS)
+	return value::zero (type, not_lval);
+
       bool tem = value_logical_not (arg1);
       if (tem)
 	{
@@ -2321,8 +2316,6 @@ logical_or_operation::evaluate (struct type *expect_type,
 	  tem = value_logical_not (arg2);
 	}
 
-      struct type *type = language_bool_type (exp->language_defn,
-					      exp->gdbarch);
       return value_from_longest (type, !tem);
     }
 }

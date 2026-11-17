@@ -1,6 +1,6 @@
 /* be-flipping.c -- Test for handling different endianness in libsframe.
 
-   Copyright (C) 2022-2025 Free Software Foundation, Inc.
+   Copyright (C) 2022-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,17 +15,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "config.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-
-#include "sframe-api.h"
-
-/* DejaGnu should not use gnulib's vsnprintf replacement here.  */
-#undef vsnprintf
-#include <dejagnu.h>
+#include "sframe-test.h"
 
 /* SFrame info from the following source (1 fde 5 fres):
    static int cnt;
@@ -57,16 +47,6 @@ main (void)
   size_t sf_size;
   uint8_t rep_block_size;
 
-#define TEST(name, cond)                                                      \
-  do                                                                          \
-    {                                                                         \
-      if (cond)                                                               \
-	pass (name);                                                          \
-      else                                                                    \
-	fail (name);                                                          \
-    }                                                                         \
-    while (0)
-
   /* Test setup.  */
   fp = fopen (DATA, "r");
   if (fp == NULL)
@@ -97,15 +77,15 @@ main (void)
      the host running the test is a little-endian system.  This endian-flipped
      copy of the buffer is kept internally in dctx.  */
   dctx = sframe_decode (sf_buf, sf_size, &err);
-  TEST ("be-flipping: Decoder setup", dctx != NULL);
+  TEST (dctx != NULL, "be-flipping-1: Decoder setup");
 
   unsigned int fde_cnt = sframe_decoder_get_num_fidx (dctx);
-  TEST ("be-flipping: Decoder FDE count", fde_cnt == 1);
+  TEST (fde_cnt == 1, "be-flipping-1: Decoder FDE count");
 
   err = sframe_decoder_get_funcdesc_v2 (dctx, 0, &nfres, &fsize, &fstart,
 					&finfo, &rep_block_size);
-  TEST ("be-flipping: Decoder get FDE", err == 0);
-  TEST ("be-flipping: Decoder FRE count", nfres == 5);
+  TEST (err == 0, "be-flipping-1: Decoder get FDE");
+  TEST (nfres == 5, "be-flipping-1: Decoder FRE count");
 
   free (sf_buf);
   sf_buf = NULL;
@@ -115,6 +95,6 @@ main (void)
 
 setup_fail:
   sframe_decoder_free (&dctx);
-  fail ("be-flipping: Test setup");
+  fail ("be-flipping-1: Test setup");
   return 1;
 }

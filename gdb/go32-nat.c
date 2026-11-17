@@ -1,5 +1,5 @@
 /* Native debugging support for Intel x86 running DJGPP.
-   Copyright (C) 1997-2025 Free Software Foundation, Inc.
+   Copyright (C) 1997-2026 Free Software Foundation, Inc.
    Written by Robert Hoehne.
 
    This file is part of GDB.
@@ -93,7 +93,6 @@
 #include "command.h"
 #include "cli/cli-cmds.h"
 #include "floatformat.h"
-#include "buildsym-legacy.h"
 #include "i387-tdep.h"
 #include "i386-tdep.h"
 #include "nat/x86-cpuid.h"
@@ -102,8 +101,8 @@
 #include "top.h"
 #include "cli/cli-utils.h"
 #include "inf-child.h"
+#include "filesystem.h"
 
-#include <ctype.h>
 #include <unistd.h>
 #include <sys/utsname.h>
 #include <io.h>
@@ -122,7 +121,7 @@
 #if __DJGPP_MINOR__ < 3
 /* This code will be provided from DJGPP 2.03 on.  Until then I code it
    here.  */
-typedef struct
+struct NPXREG
   {
     unsigned short sig0;
     unsigned short sig1;
@@ -130,10 +129,9 @@ typedef struct
     unsigned short sig3;
     unsigned short exponent:15;
     unsigned short sign:1;
-  }
-NPXREG;
+  };
 
-typedef struct
+struct NPX
   {
     unsigned int control;
     unsigned int status;
@@ -143,8 +141,7 @@ typedef struct
     unsigned int dataptr;
     unsigned int datasel;
     NPXREG reg[8];
-  }
-NPX;
+  };
 
 static NPX npx;
 
@@ -185,10 +182,10 @@ load_npx (void)
 }
 /* ------------------------------------------------------------------------- */
 /* Stubs for the missing redirection functions.  */
-typedef struct {
+struct cmdline_t {
   char *command;
   int redirected;
-} cmdline_t;
+};
 
 void
 redir_cmdline_delete (cmdline_t *ptr)
@@ -221,7 +218,7 @@ redir_debug_init (cmdline_t *ptr)
 }
 #endif /* __DJGPP_MINOR < 3 */
 
-typedef enum { wp_insert, wp_remove, wp_count } wp_op;
+enum wp_op { wp_insert, wp_remove, wp_count };
 
 /* This holds the current reference counts for each debug register.  */
 static int dr_ref_count[4];
@@ -480,7 +477,7 @@ go32_nat_target::wait (ptid_t ptid, struct target_waitstatus *status,
      set with the gdb-command "cd ..."  */
   if (!*child_cwd)
     /* Initialize child's cwd with the current one.  */
-    getcwd (child_cwd, sizeof (child_cwd));
+    gdb_getcwd (child_cwd, sizeof (child_cwd));
 
   chdir (child_cwd);
 
@@ -503,7 +500,7 @@ go32_nat_target::wait (ptid_t ptid, struct target_waitstatus *status,
       a_tss.tss_eflags |= 0x0100;
     }
 
-  getcwd (child_cwd, sizeof (child_cwd)); /* in case it has changed */
+  gdb_getcwd (child_cwd, sizeof (child_cwd)); /* in case it has changed */
   if (current_directory != NULL)
     chdir (current_directory);
 
@@ -1075,7 +1072,7 @@ go32_sysinfo (const char *arg, int from_tty)
   char cpuid_vendor[13];
   unsigned cpuid_max = 0, cpuid_eax, cpuid_ebx, cpuid_ecx, cpuid_edx;
   unsigned true_dos_version = _get_dos_version (1);
-  unsigned advertized_dos_version = ((unsigned int)_osmajor << 8) | _osminor;
+  unsigned advertised_dos_version = ((unsigned int)_osmajor << 8) | _osminor;
   int dpmi_flags;
   char dpmi_vendor_info[129];
   int dpmi_vendor_available;
@@ -1143,9 +1140,9 @@ go32_sysinfo (const char *arg, int from_tty)
       char cpu_string[80];
       char cpu_brand[20];
       unsigned brand_idx;
-      int intel_p = strcmp (cpuid_vendor, "GenuineIntel") == 0;
-      int amd_p = strcmp (cpuid_vendor, "AuthenticAMD") == 0;
-      int hygon_p = strcmp (cpuid_vendor, "HygonGenuine") == 0;
+      int intel_p = streq (cpuid_vendor, "GenuineIntel");
+      int amd_p = streq (cpuid_vendor, "AuthenticAMD");
+      int hygon_p = streq (cpuid_vendor, "HygonGenuine");
       unsigned cpu_family, cpu_model;
 
 #if 0
@@ -1282,7 +1279,7 @@ go32_sysinfo (const char *arg, int from_tty)
   gdb_puts ("\n");
   gdb_printf ("DOS Version....................%s %s.%s",
 	      _os_flavor, u.release, u.version);
-  if (true_dos_version != advertized_dos_version)
+  if (true_dos_version != advertised_dos_version)
     gdb_printf (" (disguised as v%d.%d)", _osmajor, _osminor);
   gdb_puts ("\n");
   if (!windows_major)
@@ -1324,7 +1321,7 @@ go32_sysinfo (const char *arg, int from_tty)
 	}
       gdb_printf ("%s)\n", windows_flavor);
     }
-  else if (true_dos_version == 0x532 && advertized_dos_version == 0x500)
+  else if (true_dos_version == 0x532 && advertised_dos_version == 0x500)
     gdb_printf ("Windows Version................"
 		"Windows NT family (W2K/XP/W2K3/Vista/W2K8)\n");
   gdb_puts ("\n");

@@ -1,5 +1,5 @@
 /* tc-i386.h -- Header file for tc-i386.c
-   Copyright (C) 1989-2025 Free Software Foundation, Inc.
+   Copyright (C) 1989-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -141,7 +141,6 @@ int i386_validate_fix (struct fix *);
 #define tc_fix_adjustable(X)  tc_i386_fix_adjustable(X)
 extern int tc_i386_fix_adjustable (struct fix *);
 #else
-#define tc_fix_adjustable(X)  ((void)(X), 1)
 #define md_undefined_symbol(N) ((void)(N), NULL)
 #endif
 
@@ -165,7 +164,7 @@ extern int tc_i386_fix_adjustable (struct fix *);
 #define TC_FORCE_RELOCATION_LOCAL(FIX)				\
   (GENERIC_FORCE_RELOCATION_LOCAL (FIX)				\
    || (FIX)->fx_r_type == BFD_RELOC_386_PLT32			\
-   || (FIX)->fx_r_type == BFD_RELOC_386_GOTPC			\
+   || (FIX)->fx_r_type == BFD_RELOC_32_GOT_PCREL		\
    || (FIX)->fx_r_type == BFD_RELOC_X86_64_GOTPCREL		\
    || (FIX)->fx_r_type == BFD_RELOC_X86_64_GOTPCRELX		\
    || (FIX)->fx_r_type == BFD_RELOC_X86_64_REX_GOTPCRELX	\
@@ -277,19 +276,14 @@ enum processor_type
   PROCESSOR_NONE
 };
 
-extern i386_cpu_flags cpu_arch_flags;
-extern enum processor_type cpu_arch_tune;
-extern enum processor_type cpu_arch_isa;
-extern i386_cpu_flags cpu_arch_isa_flags;
-
 /* We support four different modes.  I386_FLAG_CODE variable is used to
    distinguish three of these.  */
 
-extern enum i386_flag_code {
+enum i386_flag_code {
 	CODE_32BIT,
 	CODE_16BIT,
 	CODE_64BIT
-} i386_flag_code;
+};
 
 struct i386_segment_info {
   /* Type of previous "instruction", e.g. .byte or stand-alone prefix.  */
@@ -334,6 +328,7 @@ struct i386_tc_frag_data
   unsigned int cpunop : 1;
   unsigned int isanop : 1;
   unsigned int last_insn_normal : 1;
+  bool no_cond_jump_promotion : 1;
 };
 
 /* We need to emit the right NOP pattern in .align frags.  This is
@@ -341,31 +336,8 @@ struct i386_tc_frag_data
    the isa/tune settings at the time the .align was assembled.  */
 #define TC_FRAG_TYPE struct i386_tc_frag_data
 
-#define TC_FRAG_INIT(FRAGP, MAX_BYTES)				\
- do								\
-   {								\
-     (FRAGP)->tc_frag_data.u.padding_fragP = NULL;		\
-     (FRAGP)->tc_frag_data.padding_address = 0;			\
-     (FRAGP)->tc_frag_data.isa = cpu_arch_isa;			\
-     (FRAGP)->tc_frag_data.tune = cpu_arch_tune;		\
-     (FRAGP)->tc_frag_data.cpunop = cpu_arch_flags.bitfield.cpunop; \
-     (FRAGP)->tc_frag_data.isanop = cpu_arch_isa_flags.bitfield.cpunop; \
-     (FRAGP)->tc_frag_data.code = i386_flag_code;		\
-     (FRAGP)->tc_frag_data.max_bytes = (MAX_BYTES);		\
-     (FRAGP)->tc_frag_data.length = 0;				\
-     (FRAGP)->tc_frag_data.last_length = 0;			\
-     (FRAGP)->tc_frag_data.max_prefix_length = 0;		\
-     (FRAGP)->tc_frag_data.prefix_length = 0;			\
-     (FRAGP)->tc_frag_data.default_prefix = 0;			\
-     (FRAGP)->tc_frag_data.cmp_size = 0;			\
-     (FRAGP)->tc_frag_data.classified = 0;			\
-     (FRAGP)->tc_frag_data.branch_type = 0;			\
-     (FRAGP)->tc_frag_data.mf_type = 0;				\
-     (FRAGP)->tc_frag_data.last_insn_normal			\
-	= (seg_info(now_seg)->tc_segment_info_data.last_insn.kind \
-	   == last_insn_other);					\
-   }								\
- while (0)
+void i386_frag_init (fragS *, size_t);
+#define TC_FRAG_INIT(fragP, max_bytes) i386_frag_init (fragP, max_bytes)
 
 #define WORKING_DOT_WORD 1
 
@@ -492,9 +464,11 @@ extern const unsigned int x86_sframe_cfa_fp_reg;
 extern const unsigned int x86_sframe_cfa_ra_reg;
 #define SFRAME_CFA_RA_REG x86_sframe_cfa_ra_reg
 
-/* Whether SFrame return address tracking is needed.  */
-extern bool x86_sframe_ra_tracking_p (void);
-#define sframe_ra_tracking_p x86_sframe_ra_tracking_p
+/* Whether SFrame return address tracking is needed.
+   In AMD64, return address is always stored on the stack at a fixed offset
+   from the CFA (provided via x86_sframe_cfa_ra_offset ()).  Do not track
+   explicitly via the data words in the SFrame Frame Row Entry.  */
+#define sframe_ra_tracking_p() false
 
 /* The fixed offset from CFA for SFrame to recover the return address.
    (useful only when SFrame RA tracking is not needed).  */
@@ -504,6 +478,9 @@ extern offsetT x86_sframe_cfa_ra_offset (void);
 /* The abi/arch identifier for SFrame.  */
 extern unsigned char x86_sframe_get_abi_arch (void);
 #define sframe_get_abi_arch x86_sframe_get_abi_arch
+
+/* Whether SFrame FDE of type SFRAME_FDE_TYPE_FLEX be generated.  */
+#define sframe_support_flex_fde_p() true
 
 #endif
 
@@ -521,15 +498,13 @@ void tc_pe_dwarf2_emit_offset (symbolS *, unsigned int);
 
 #ifdef OBJ_MACH_O
 
-#define TC_FORCE_RELOCATION(FIX) (obj_mach_o_force_reloc (FIX))
+#define TC_FORCE_RELOCATION(FIX) (obj_mach_o_force_reloc (this_segment, FIX))
 
 #define TC_FORCE_RELOCATION_SUB_SAME(FIX,SEG) \
-	  (obj_mach_o_force_reloc_sub_same (FIX, SEG))
+	  (obj_mach_o_force_reloc_sub_same (this_segment, FIX, SEG))
 
 #define TC_FORCE_RELOCATION_SUB_LOCAL(FIX,SEG) \
-	(obj_mach_o_force_reloc_sub_local (FIX, SEG))
-
-#define TC_VALIDATE_FIX_SUB(FIX, SEG) 1
+	(obj_mach_o_force_reloc_sub_local (this_segment, FIX, SEG))
 
 #endif /* OBJ_MACH_O */
 

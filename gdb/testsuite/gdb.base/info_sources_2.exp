@@ -1,4 +1,4 @@
-# Copyright 2021-2025 Free Software Foundation, Inc.
+# Copyright 2021-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,26 +23,21 @@ set is_remote_target [is_remote target]
 standard_testfile -test.c -lib.c
 set solib_name [standard_output_file ${testfile}-lib.so]
 
-if { [gdb_compile_shlib ${srcdir}/${subdir}/${srcfile2} ${solib_name} \
-      {debug}] != "" } {
-    untested "failed to compile shared library"
-    return -1
+
+if { [build_executable "build shlib" $solib_name $srcfile2 {debug shlib}] != 0 } {
+    return
 }
 
-if {[gdb_compile ${srcdir}/${subdir}/${srcfile} ${binfile} executable \
-     [list debug shlib=${solib_name} ]] != ""} {
-    untested "failed to compile executable"
-    return -1
+if { [prepare_for_testing "prepare" $testfile $srcfile \
+	  [list debug shlib=${solib_name} ]] != 0} {
+    return
 }
-
-clean_restart
-gdb_load $binfile
 
 set solib_name [gdb_load_shlib $solib_name]
 
-if ![runto foo] {
+if {![runto foo]} {
     untested "failed to run to function foo"
-    return -1
+    return
 }
 
 # Invoke 'info sources EXTRA_ARGS' and extract the results.
@@ -148,7 +143,7 @@ proc run_info_sources { extra_args args } {
 	    # Make sure we handle the case where there are no source files
 	    # associated with a particular objfile.
 	    set source_list {}
-	    if [info exists info_sources($objfile)] {
+	    if {[info exists info_sources($objfile)]} {
 		set source_list $info_sources($objfile)
 	    }
 

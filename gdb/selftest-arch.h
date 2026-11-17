@@ -1,5 +1,5 @@
 /* GDB self-test for each gdbarch.
-   Copyright (C) 2017-2025 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,7 +19,7 @@
 #ifndef GDB_SELFTEST_ARCH_H
 #define GDB_SELFTEST_ARCH_H
 
-typedef void self_test_foreach_arch_function (struct gdbarch *);
+using self_test_foreach_arch_function = void (struct gdbarch *);
 
 namespace selftests
 {

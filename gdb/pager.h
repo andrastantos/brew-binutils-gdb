@@ -1,5 +1,5 @@
 /* Output pager for gdb
-   Copyright (C) 2021-2025 Free Software Foundation, Inc.
+   Copyright (C) 2021-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,19 +23,14 @@
 
 /* A ui_file that implements output paging and unfiltered output.  */
 
-class pager_file : public wrapped_file
+class pager_file : public wrapped_file<ui_file_up>
 {
 public:
   /* Create a new pager_file.  The new object takes ownership of
      STREAM.  */
-  explicit pager_file (ui_file *stream)
-    : wrapped_file (stream)
+  explicit pager_file (ui_file_up stream)
+    : wrapped_file (std::move (stream))
   {
-  }
-
-  ~pager_file ()
-  {
-    delete m_stream;
   }
 
   DISABLE_COPY_AND_ASSIGN (pager_file);
@@ -43,11 +38,6 @@ public:
   void write (const char *buf, long length_buf) override;
 
   void puts (const char *str) override;
-
-  void write_async_safe (const char *buf, long length_buf) override
-  {
-    m_stream->write_async_safe (buf, length_buf);
-  }
 
   void emit_style_escape (const ui_file_style &style) override;
 
@@ -61,9 +51,25 @@ public:
     m_stream->puts_unfiltered (str);
   }
 
+  void vprintf (const char *fmt, va_list args) override
+    ATTRIBUTE_PRINTF (2, 0);
+
 private:
 
   void prompt_for_continue ();
+
+  /* Check if enough characters have been printed such that the current
+     output line is full.  If this is the case then reset the characters
+     printed count to zero, and increment the lines printed count.  Call
+     prompt_for_continue if the screen is now full.
+
+     This should only be called at the point where we want to add new
+     printable output to the output stream, this defers triggering
+     pagination until we really need the additional screen space.
+
+     LINES_ALLOWED is the number of lines that can be printed before the
+     pager needs to activate.  */
+  void check_for_overfull_line (const unsigned int lines_allowed);
 
   /* Flush the wrap buffer to STREAM, if necessary.  */
   void flush_wrap_buffer ();
@@ -88,6 +94,9 @@ private:
   /* Column number on the screen where wrap_buffer begins, or 0 if
      wrapping is not in effect.  */
   int m_wrap_column = 0;
+
+  /* The currently applied style.  */
+  ui_file_style m_applied_style;
 
   /* The style applied at the time that wrap_here was called.  */
   ui_file_style m_wrap_style;

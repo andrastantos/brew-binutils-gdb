@@ -1,5 +1,5 @@
 /* This is the Assembler Pre-Processor
-   Copyright (C) 1987-2025 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -258,10 +258,6 @@ do_scrub_begin (int m68k_mri ATTRIBUTE_UNUSED)
 #endif
 #ifdef DOUBLEBAR_PARALLEL
   lex['|'] = LEX_IS_DOUBLEBAR_1ST;
-#endif
-#ifdef TC_D30V
-  /* Must do this is we want VLIW instruction with "->" or "<-".  */
-  lex['-'] = LEX_IS_SYMBOL_COMPONENT;
 #endif
 
 #ifdef H_TICK_HEX
@@ -698,12 +694,12 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen,
 	  ch = GET ();
 	  switch (ch)
 	    {
-	      /* Handle strings broken across lines, by turning '\n' into
-		 '\\' and 'n'.  */
+	      /* Handle strings broken across lines, by turning '\\' followed
+		 by '\n' into '\\' (already emitted when state moved to 6) and
+		 'n'.  */
 	    case '\n':
-	      UNGET ('n');
 	      add_newlines++;
-	      PUT ('\\');
+	      PUT ('n');
 	      continue;
 
 	    case EOF:
@@ -711,35 +707,7 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen,
 	      PUT (quotechar);
 	      continue;
 
-	      /* These two are used inside macros.  */
-	    case '@':
-	    case '+':
-	      break;
-
-	    case '"':
-	    case '\\':
-	    case 'b':
-	    case 'f':
-	    case 'n':
-	    case 'r':
-	    case 't':
-	    case 'v':
-	    case 'x':
-	    case 'X':
-	    case '0':
-	    case '1':
-	    case '2':
-	    case '3':
-	    case '4':
-	    case '5':
-	    case '6':
-	    case '7':
-	      break;
-
 	    default:
-#ifdef ONLY_STANDARD_ESCAPES
-	      as_warn (_("unknown escape '\\%c' in string; ignored"), ch);
-#endif
 	      break;
 	    }
 	  PUT (ch);

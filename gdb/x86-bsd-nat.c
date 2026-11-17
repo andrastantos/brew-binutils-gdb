@@ -1,6 +1,6 @@
 /* Native-dependent code for X86 BSD's.
 
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -86,9 +86,9 @@ x86bsd_dr_set (ptid_t ptid, int regnum, unsigned long value)
 
   DBREG_DRX ((&dbregs), regnum) = value;
 
-  for (thread_info *thread : current_inferior ()->non_exited_threads ())
+  for (thread_info &thread : current_inferior ()->non_exited_threads ())
     {
-      if (gdb_ptrace (PT_SETDBREGS, thread->ptid,
+      if (gdb_ptrace (PT_SETDBREGS, thread.ptid,
 		      (PTRACE_TYPE_ARG3) &dbregs) == -1)
 	perror_with_name (_("Couldn't write debug registers"));
     }

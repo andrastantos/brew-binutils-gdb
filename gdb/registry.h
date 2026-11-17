@@ -1,6 +1,6 @@
 /* Macros for general registry objects.
 
-   Copyright (C) 2011-2025 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -124,7 +124,7 @@ public:
        available.  It emplaces a new instance of the associated data
        type and attaches it to OBJ using this key.  The arguments, if
        any, are forwarded to the constructor.  */
-    template<typename Dummy = DATA *, typename... Args>
+    template<typename Dummy = DATA &, typename... Args>
     typename std::enable_if<std::is_same<Deleter,
 					 std::default_delete<DATA>>::value,
 			    Dummy>::type
@@ -132,7 +132,21 @@ public:
     {
       DATA *result = new DATA (std::forward<Args> (args)...);
       set (obj, result);
-      return result;
+      return *result;
+    }
+
+    /* If this key uses the default deleter, then this method is
+       available.  It returns the data associated with OBJ and this
+       key.  If no such data has been attached, a new instance is
+       constructed using ARGS and attached to OBJ.  */
+    template<typename... Args>
+    DATA &
+    try_emplace (T *obj, Args &&...args) const
+    {
+      DATA *result = get (obj);
+      if (result == nullptr)
+	result = &emplace (obj, std::forward<Args> (args)...);
+      return *result;
     }
 
     /* Clear the data attached to OBJ that is associated with this KEY.
@@ -185,7 +199,7 @@ public:
 private:
 
   /* Registry callbacks have this type.  */
-  typedef void (*registry_data_callback) (void *);
+  using registry_data_callback = void (*) (void *);
 
   /* Get a new key for this particular registry.  FREE is a callback.
      When the container object is destroyed, all FREE functions are

@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright (C) 2004-2025 Free Software Foundation, Inc.
+#   Copyright (C) 2004-2026 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -93,7 +93,7 @@ gld${EMULATION_NAME}_after_allocation (void)
      as we can't reliably tell if they're used until after relaxation.  */
   if (!bfd_link_relocatable (&link_info))
     {
-      need_layout = bfd_elf_discard_info (link_info.output_bfd, &link_info);
+      need_layout = bfd_elf_discard_info (&link_info);
       if (need_layout < 0)
 	{
 	  einfo (_("%X%P: .eh_frame/.stab edit: %E\n"));

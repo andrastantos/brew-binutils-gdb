@@ -1,5 +1,5 @@
 /* ldlex.h -
-   Copyright (C) 1991-2025 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -52,6 +52,8 @@ enum option_values
   OPTION_NOINHIBIT_EXEC,
   OPTION_NON_SHARED,
   OPTION_NO_WHOLE_ARCHIVE,
+  OPTION_NO_LINK_MAPLESS,
+  OPTION_END_LIB,
   OPTION_OFORMAT,
   OPTION_RELAX,
   OPTION_NO_RELAX,
@@ -98,6 +100,8 @@ enum option_values
   OPTION_SPLIT_BY_RELOC,
   OPTION_SPLIT_BY_FILE ,
   OPTION_WHOLE_ARCHIVE,
+  OPTION_LINK_MAPLESS,
+  OPTION_START_LIB,
   OPTION_ADD_DT_NEEDED_FOR_DYNAMIC,
   OPTION_NO_ADD_DT_NEEDED_FOR_DYNAMIC,
   OPTION_ADD_DT_NEEDED_FOR_REGULAR,
@@ -186,8 +190,7 @@ enum option_values
   /* Used by emultempl/elf.em, emultempl/pe.em and emultempl/pep.em.  */
   OPTION_BUILD_ID,
   OPTION_EXCLUDE_LIBS,
-  /* Used by emulparams/elf32mcore.sh, emultempl/beos.em, emultempl/pe.em
-     and emultempl/pep.em.  */
+  /* Used by emulparams/elf32mcore.sh, emultempl/pe.em and emultempl/pep.em.  */
   OPTION_BASE_FILE,
   /* Used by emultempl/ppc32elf.em and emultempl/ppc64elf.em.  */
   OPTION_NO_INLINE_OPT,
@@ -205,8 +208,7 @@ enum option_values
   OPTION_NO_WCHAR_SIZE_WARNING,
   /* Used by emultempl/armelf.em and emultempl/pe.em.  */
   OPTION_THUMB_ENTRY,
-  /* Used by emultempl/beos.em, emultempl/nto.em, emultempl/pe.em and
-     emultempl/pep.em.  */
+  /* Used by emultempl/nto.em, emultempl/pe.em and emultempl/pep.em.  */
   OPTION_STACK,
   /* Used by emultempl/aarch64elf.em, emultempl/armelf.em,
      emultempl/cskyelf.em, emultempl/hppaelf.em, emultempl/metagelf.em
@@ -215,6 +217,8 @@ enum option_values
   /* Used by emulparams/plt_unwind.sh.  */
   OPTION_LD_GENERATED_UNWIND_INFO,
   OPTION_NO_LD_GENERATED_UNWIND_INFO,
+  /* Used by emulparams/sframe-info.sh.  */
+  OPTION_DISCARD_SFRAME,
   /* Used by emultempl/aarch64elf.em.  */
   OPTION_FIX_ERRATUM_835769,
   OPTION_FIX_ERRATUM_843419,
@@ -321,7 +325,7 @@ enum option_values
   OPTION_NO_TLSDESC_TRAMPOLINE,
   /* Used by emultempl/nto.em.  */
   OPTION_LAZY_STACK,
-  /* Used by emultempl/pe.em, emultempl/pep.em and emultempl/beos.em.  */
+  /* Used by emultempl/pe.em and emultempl/pep.em.  */
   OPTION_DLL,
   OPTION_FILE_ALIGNMENT,
   OPTION_MAJOR_IMAGE_VERSION,

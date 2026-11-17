@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Free Software Foundation, Inc.
+# Copyright 2024-2026 Free Software Foundation, Inc.
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 3 of the License, or
@@ -26,14 +26,14 @@ require {is_any_target "*-*-linux*"}
 
 set internal_tls_linux_targets {"x86_64-*-linux*" "aarch64-*-linux*"
 				"riscv*-*-linux*" "powerpc64*-*-linux*"
-				"s390x*-*-linux*"}
+				"s390x*-*-linux*" "loongarch*-*-linux*"}
 
 # The "maint set force-internal-tls-address-lookup" command is only
 # available for certain Linux architectures.  Don't attempt to force
 # use of internal TLS support for architectures which don't support
 # it.
 
-if [is_any_target {*}$internal_tls_linux_targets] {
+if {[is_any_target {*}$internal_tls_linux_targets]} {
     set internal_tls_iters { false true }
 } else {
     set internal_tls_iters { false }
@@ -43,7 +43,7 @@ if [is_any_target {*}$internal_tls_linux_targets] {
 # issue gdb_test with command CMD and regular expression RE.
 
 proc gdb_test_with_kfail {cmd re kfail_cond kfail_msg} {
-    if [uplevel 1 [list expr $kfail_cond]] {
+    if {[uplevel 1 [list expr $kfail_cond]]} {
 	setup_kfail $kfail_msg *-*-*
     }
     gdb_test $cmd $re

@@ -1,5 +1,5 @@
 /* Table mapping between kernel xtregset and GDB register cache.
-   Copyright (C) 2007-2025 Free Software Foundation, Inc.
+   Copyright (C) 2007-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 
-typedef struct
+struct xtensa_regtable_t
 {
   int gdb_regnum;
   int gdb_offset;
@@ -27,13 +27,15 @@ typedef struct
   int coproc;
   int dbnum;
   const char *name;
-} xtensa_regtable_t;
+};
 
 #define XTENSA_ELF_XTREG_SIZE 4
 
 const xtensa_regtable_t xtensa_regmap_table[] =
 {
+  /* codespell:ignore-begin.  */
   /* gnum,gofs,cpofs,ofs,siz,cp, dbnum,  name */
+  /* codespell:ignore-end.  */
   {   44, 176,   0,   0,  4, -1, 0x020c, "scompare1" },
   { 0 }
 };

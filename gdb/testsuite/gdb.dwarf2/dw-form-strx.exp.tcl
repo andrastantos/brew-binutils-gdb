@@ -1,4 +1,4 @@
-# Copyright 2025 Free Software Foundation, Inc.
+# Copyright 2025-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -32,32 +32,38 @@ Dwarf::assemble $asm_file {
 	version 5
     } {
 	DW_TAG_compile_unit {
-	    {DW_AT_str_offsets_base $base_offset_cu1 sec_offset}
+	    DW_AT_str_offsets_base $base_offset_cu1 sec_offset
 	} {
 	    declare_labels int4_type
 
 	    int4_type: DW_TAG_base_type {
-		{DW_AT_byte_size 4 DW_FORM_sdata}
-		{DW_AT_encoding  @DW_ATE_signed}
-		{DW_AT_name      $::int_str_idx DW_FORM_strx_id}
+		DW_AT_byte_size 4 DW_FORM_sdata
+		DW_AT_encoding  @DW_ATE_signed
+		DW_AT_name      $::int_str_idx DW_FORM_strx_id
 	    }
 
 	    DW_TAG_variable {
-		{DW_AT_name global_var}
-		{DW_AT_type :$int4_type}
-		{DW_AT_location {
+		DW_AT_name global_var
+		DW_AT_type :$int4_type
+		DW_AT_location {
 		    DW_OP_const1u 12
 		    DW_OP_stack_value
-		} SPECIAL_expr}
+		} SPECIAL_expr
 	    }
 	}
     }
 }
 
-if { [prepare_for_testing "failed to prepare" ${testfile} \
+if { [build_executable "failed to prepare" ${testfile} \
 	  [list $srcfile $asm_file] {nodebug}] } {
     return
 }
+
+clean_restart
+
+gdb_test_no_output "maint set dwarf synchronous on"
+
+gdb_load $binfile
 
 # Let includers know prepare_for_testing was done, without having to check
 # source return status.

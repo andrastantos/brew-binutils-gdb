@@ -1,4 +1,4 @@
-# Copyright 2020-2025 Free Software Foundation, Inc.
+# Copyright 2020-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -35,14 +35,14 @@ set binfile2 [standard_output_file $testfile2]
 with_test_prefix "exec1" {
     if { [build_executable "failed to prepare" $testfile1 $srcfile1 \
 	      [list pthreads debug]] } {
-	return -1
+	return
     }
 }
 
 with_test_prefix "exec2" {
     if { [build_executable "failed to prepare" $testfile2 $srcfile2 \
 	      [list pthreads debug]] } {
-	return -1
+	return
     }
 }
 
@@ -96,7 +96,7 @@ proc test_re_run {re_run_inf} {
     foreach_with_prefix iter {1 2} {
 	delete_breakpoints
 
-	if ![runto all_started] {
+	if {![runto all_started]} {
 	    return 0
 	}
 

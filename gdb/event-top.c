@@ -1,6 +1,6 @@
 /* Top level stuff for GDB, the GNU debugger.
 
-   Copyright (C) 1999-2025 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
 
    Written by Elena Zannoni <ezannoni@cygnus.com> of Cygnus Solutions.
 
@@ -598,7 +598,6 @@ void
 command_handler (const char *command)
 {
   struct ui *ui = current_ui;
-  const char *c;
 
   if (ui->instream == ui->stdin_stream)
     reinitialize_more_filter ();
@@ -606,8 +605,7 @@ command_handler (const char *command)
   scoped_command_stats stat_reporter (true);
 
   /* Do not execute commented lines.  */
-  for (c = command; *c == ' ' || *c == '\t'; c++)
-    ;
+  const char *c = skip_spaces (command);
   if (c[0] != '#')
     {
       execute_command (command, ui->instream == ui->stdin_stream);
@@ -635,9 +633,8 @@ command_line_append_input_line (std::string &cmd_line_buffer, const char *rl)
     }
   else
     {
-      /* Copy whole line including terminating null, and we're
-	 done.  */
-      cmd_line_buffer.append (rl, len + 1);
+      /* Copy whole line, and we're done.  */
+      cmd_line_buffer.append (rl);
       return true;
     }
 }
@@ -717,9 +714,7 @@ handle_line_of_input (std::string &cmd_line_buffer,
 
   /* If we just got an empty line, and that is supposed to repeat the
      previous command, return the previously saved command.  */
-  const char *p1;
-  for (p1 = cmd_line_buffer.c_str (); *p1 == ' ' || *p1 == '\t'; p1++)
-    ;
+  const char *p1 = skip_spaces (cmd_line_buffer.c_str ());
   if (repeat && *p1 == '\0')
     return get_saved_command_line ();
 
@@ -826,7 +821,7 @@ command_line_handler (gdb::unique_xmalloc_ptr<char> &&rl)
 	 Which we will get with a newer readline, but this really is the
 	 best we can do with older versions of readline.  */
       const char *value = rl_variable_value ("enable-bracketed-paste");
-      if (value != nullptr && strcmp (value, "on") == 0
+      if (value != nullptr && streq (value, "on")
 	  && ((rl_readline_version >> 8) & 0xff) > 0x07)
 	printf_unfiltered ("\n");
       printf_unfiltered ("quit\n");
@@ -1043,7 +1038,7 @@ handle_fatal_signal (int sig)
 #ifdef SIGABRT
   signal (SIGABRT, SIG_DFL);
 #endif
-  abort ();		/* ARI: abort */
+  abort ();
 }
 
 /* The SIGSEGV handler for this thread, or NULL if there is none.  GDB

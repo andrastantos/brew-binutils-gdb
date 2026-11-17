@@ -1,6 +1,6 @@
 /* Self tests for lookup_name_info for GDB, the GNU debugger.
 
-   Copyright (C) 2017-2025 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,7 +38,7 @@ check_make_paramless (const char *file, int line,
 				completion_mode, true /* ignore_parameters */);
   const char *result = lookup_name.language_lookup_name (lang);
 
-  if (strcmp (result, expected) != 0)
+  if (!streq (result, expected))
     {
       error (_("%s:%d: make-paramless self-test failed: (completion=%d, lang=%d) "
 	       "\"%s\" -> \"%s\", expected \"%s\""),

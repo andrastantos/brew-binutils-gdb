@@ -1,6 +1,6 @@
 /* encode-1.c -- Test for encoder in libsframe.
 
-   Copyright (C) 2022-2025 Free Software Foundation, Inc.
+   Copyright (C) 2022-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,21 +15,11 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "config.h"
-
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-
-#include "sframe-api.h"
-
-/* DejaGnu should not use gnulib's vsnprintf replacement here.  */
-#undef vsnprintf
-#include <dejagnu.h>
+#include "sframe-test.h"
 
 static int
-add_fde1 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
-	  uint32_t sframe_vaddr, int idx, uint32_t *func_size)
+add_fde1 (sframe_encoder_ctx *encode, int64_t start_pc_vaddr,
+	  int64_t sframe_vaddr, int idx, uint32_t *func_size)
 {
 #define FDE1_NUM_FRES    4
   /* A contiguous block containing 4 FREs.  */
@@ -45,12 +35,12 @@ add_fde1 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
 
   uint32_t offsetof_fde_in_sec
     = sframe_encoder_get_offsetof_fde_start_addr (encode, idx, NULL);
-  int32_t func1_start_addr = (start_pc_vaddr
+  int64_t func1_start_addr = (start_pc_vaddr
 			      - (sframe_vaddr + offsetof_fde_in_sec));
   unsigned char finfo = sframe_fde_create_func_info (SFRAME_FRE_TYPE_ADDR1,
-						     SFRAME_FDE_TYPE_PCINC);
-  int err = sframe_encoder_add_funcdesc_v2 (encode, func1_start_addr,
-					    *func_size, finfo, 0,
+						     SFRAME_V3_FDE_PCTYPE_INC);
+  int err = sframe_encoder_add_funcdesc_v3 (encode, func1_start_addr,
+					    *func_size, finfo, 0, 0,
 					    FDE1_NUM_FRES);
   if (err == -1)
     return err;
@@ -63,8 +53,8 @@ add_fde1 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
 }
 
 static int
-add_fde2 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
-	  uint32_t sframe_vaddr, int idx, uint32_t *func_size)
+add_fde2 (sframe_encoder_ctx *encode, int64_t start_pc_vaddr,
+	  int64_t sframe_vaddr, int idx, uint32_t *func_size)
 
 {
   /* A contiguous block containing 4 FREs.  */
@@ -81,12 +71,12 @@ add_fde2 (sframe_encoder_ctx *encode, uint32_t start_pc_vaddr,
 
   uint32_t offsetof_fde_in_sec
     = sframe_encoder_get_offsetof_fde_start_addr (encode, idx, NULL);
-  int32_t func1_start_addr = (start_pc_vaddr
+  int64_t func1_start_addr = (start_pc_vaddr
 			      - (sframe_vaddr + offsetof_fde_in_sec));
   unsigned char finfo = sframe_fde_create_func_info (SFRAME_FRE_TYPE_ADDR1,
-						     SFRAME_FDE_TYPE_PCINC);
-  int err = sframe_encoder_add_funcdesc_v2 (encode, func1_start_addr,
-					    *func_size, finfo, 0,
+						     SFRAME_V3_FDE_PCTYPE_INC);
+  int err = sframe_encoder_add_funcdesc_v3 (encode, func1_start_addr,
+					    *func_size, finfo, 0, 0,
 					    FDE1_NUM_FRES);
   if (err == -1)
     return err;
@@ -150,9 +140,9 @@ int main (void)
 {
   sframe_encoder_ctx *encode;
   sframe_frame_row_entry frep;
-  uint32_t sframe_vaddr;
-  uint32_t func1_start_vaddr;
-  uint32_t func2_start_vaddr;
+  int64_t sframe_vaddr;
+  int64_t func1_start_vaddr;
+  int64_t func2_start_vaddr;
   uint32_t func1_size = 0;
   uint32_t func2_size = 0;
   char *sframe_buf;
@@ -160,16 +150,6 @@ int main (void)
   int err = 0;
   unsigned int fde_cnt = 0;
   int match_p = 0;
-
-#define TEST(name, cond)                                                      \
-  do                                                                          \
-    {                                                                         \
-      if (cond)                                                               \
-	pass (name);                                                          \
-      else                                                                    \
-	fail (name);                                                          \
-    }                                                                         \
-    while (0)
 
   sframe_vaddr = 0x4020c8;
   encode = sframe_encode (SFRAME_VERSION,
@@ -180,28 +160,28 @@ int main (void)
 			  &err);
 
   fde_cnt = sframe_encoder_get_num_fidx (encode);
-  TEST ("encode-1: Encoder FDE count", fde_cnt == 0);
+  TEST (fde_cnt == 0, "encode-1: Encoder FDE count at init");
 
   err = sframe_encoder_add_fre (encode, 1, &frep);
-  TEST ("encode-1: Encoder update workflow", err == SFRAME_ERR);
+  TEST (err == SFRAME_ERR, "encode-1: Encoder update workflow");
 
   func1_start_vaddr = 0x401106;
   err = add_fde1 (encode, func1_start_vaddr, sframe_vaddr, 0, &func1_size);
-  TEST ("encode-1: Encoder adding FDE1", err == 0);
+  TEST (err == 0, "encode-1: Encoder adding FDE1");
 
   /* Function 2 is placed after 0x0 bytes from the end of Function 1.  */
   func2_start_vaddr = func1_start_vaddr + func1_size + 0x0;
   err = add_fde2 (encode, func2_start_vaddr, sframe_vaddr, 1, &func2_size);
-  TEST ("encode-1: Encoder adding FDE2", err == 0);
+  TEST (err == 0, "encode-1: Encoder adding FDE2");
 
   fde_cnt = sframe_encoder_get_num_fidx (encode);
-  TEST ("encode-1: Encoder FDE count", fde_cnt == 2);
+  TEST (fde_cnt == 2, "encode-1: Encoder FDE count post addition");
 
-  sframe_buf = sframe_encoder_write (encode, &sf_size, &err);
-  TEST ("encode-1: Encoder write", err == 0);
+  sframe_buf = sframe_encoder_write (encode, &sf_size, true, &err);
+  TEST (err == 0, "encode-1: Encoder write");
 
   match_p = data_match (sframe_buf, sf_size);
-  TEST ("encode-1: Encode buffer match", match_p == 1);
+  TEST (match_p == 1, "encode-1: Encode buffer match");
 
   sframe_encoder_free (&encode);
   return 0;

@@ -1,6 +1,6 @@
 /* Target-dependent code for NetBSD/alpha.
 
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    Contributed by Wasabi Systems, Inc.
 
@@ -82,8 +82,8 @@ alphanbsd_aout_supply_gregset (const struct regset *regset,
      0,   1,   2,   3,
      4,   5,   6,   7,
      8,   9,  10,  11,
-    12,  13,  14,  15, 
-    30,  31,  32,  16, 
+    12,  13,  14,  15,
+    30,  31,  32,  16,
     17,  18,  19,  20,
     21,  22,  23,  24,
     25,  29,  26
@@ -227,7 +227,7 @@ alphanbsd_sigtramp_offset (struct gdbarch *gdbarch, CORE_ADDR pc)
 
 static int
 alphanbsd_pc_in_sigtramp (struct gdbarch *gdbarch,
-		 	  CORE_ADDR pc, const char *func_name)
+			  CORE_ADDR pc, const char *func_name)
 {
   return (nbsd_pc_in_sigtramp (pc, func_name)
 	  || alphanbsd_sigtramp_offset (gdbarch, pc) >= 0);
@@ -253,9 +253,6 @@ alphanbsd_init_abi (struct gdbarch_info info,
 
   /* Hook into the DWARF CFI frame unwinder.  */
   alpha_dwarf2_init_abi (info, gdbarch);
-
-  /* Hook into the MDEBUG frame unwinder.  */
-  alpha_mdebug_init_abi (info, gdbarch);
 
   nbsd_init_abi (info, gdbarch);
 

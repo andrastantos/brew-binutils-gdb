@@ -1,5 +1,5 @@
 /* tc-h8300.c -- Assemble code for the Renesas H8/300
-   Copyright (C) 1991-2025 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -52,7 +52,7 @@ int Smode;
 int Nmode;
 int SXmode;
 
-static int default_mach = bfd_mach_h8300;
+static int default_mach = bfd_mach_h8300h;
 
 #define PSIZE (Hmode && !Nmode ? L_32 : L_16)
 

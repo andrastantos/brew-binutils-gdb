@@ -1,6 +1,6 @@
-/* DIE indexing 
+/* DIE indexing
 
-   Copyright (C) 2022-2025 Free Software Foundation, Inc.
+   Copyright (C) 2022-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,24 +26,12 @@
 #include "run-on-main-thread.h"
 #include "gdbsupport/task-group.h"
 #include "cli/cli-cmds.h"
+#include "cli/cli-style.h"
 
 /* We don't want gdb to exit while it is in the process of writing to
    the index cache.  So, all live cooked index vectors are stored
    here, and then these are all waited for before exit proceeds.  */
 static gdb::unordered_set<cooked_index *> active_vectors;
-
-/* Return true if LANG requires canonicalization.  This is used
-   primarily to work around an issue computing the name of "main".
-   This function must be kept in sync with
-   cooked_index_shard::finalize.  */
-
-static bool
-language_requires_canonicalization (enum language lang)
-{
-  return (lang == language_ada
-	  || lang == language_c
-	  || lang == language_cplus);
-}
 
 cooked_index::cooked_index (cooked_index_worker_up &&worker)
   : m_state (std::move (worker))
@@ -102,7 +90,7 @@ cooked_index::set_contents ()
     {
       auto this_shard = shard.get ();
       const parent_map_map *parent_maps = m_state->get_parent_map_map ();
-      finalizers.add_task ([=] ()
+      finalizers.add_task ([this, this_shard, parent_maps] ()
 	{
 	  scoped_time_it time_it ("DWARF finalize worker",
 				  m_state->m_per_command_time);
@@ -201,7 +189,15 @@ cooked_index::get_main () const
 	{
 	  if ((entry->flags & IS_MAIN) != 0)
 	    {
-	      if (!language_requires_canonicalization (entry->lang))
+	      /* This should be kept in sync with
+		 cooked_index_shard::finalize.  Note that there, C
+		 requires canonicalization -- but that is only for
+		 types, 'main' doesn't count.  Similarly, C++ requires
+		 canonicalization, but again "main" is an
+		 exception.  */
+	      if ((entry->lang != language_ada
+		   && entry->lang != language_cplus)
+		  || streq (entry->name, "main"))
 		{
 		  /* There won't be one better than this.  */
 		  return entry;
@@ -243,14 +239,24 @@ cooked_index::dump (gdbarch *arch)
     {
       QUIT;
 
+      ui_file_style style;
+      if (entry->matches (SEARCH_FUNCTION_DOMAIN))
+	style = function_name_style.style ();
+      else if (entry->matches (SEARCH_VAR_DOMAIN))
+	style = variable_name_style.style ();
+
       gdb_printf ("    [%zu] ((cooked_index_entry *) %p)\n", i++, entry);
-      gdb_printf ("    name:       %s\n", entry->name);
-      gdb_printf ("    canonical:  %s\n", entry->canonical);
-      gdb_printf ("    qualified:  %s\n",
-		  entry->full_name (&temp_storage, 0, "::"));
+      gdb_printf ("    name:       %ps\n", styled_string (style,
+							  entry->name));
+      gdb_printf ("    canonical:  %ps\n", styled_string (style,
+							  entry->canonical));
+      gdb_printf ("    qualified:  %ps\n",
+		  styled_string (style,
+				 entry->full_name (&temp_storage, 0, "::")));
       gdb_printf ("    DWARF tag:  %s\n", dwarf_tag_name (entry->tag));
       gdb_printf ("    flags:      %s\n", to_string (entry->flags).c_str ());
       gdb_printf ("    DIE offset: %s\n", sect_offset_str (entry->die_offset));
+      gdb_printf ("    CU index:   %u\n", entry->per_cu->index);
 
       if ((entry->flags & IS_PARENT_DEFERRED) != 0)
 	gdb_printf ("    parent:     deferred (%" PRIx64 ")\n",

@@ -1,5 +1,5 @@
 /* Plugin support for BFD.
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -99,7 +99,6 @@ dlerror (void)
 #define bfd_plugin_bfd_link_split_section	      _bfd_generic_link_split_section
 #define bfd_plugin_bfd_gc_sections		      bfd_generic_gc_sections
 #define bfd_plugin_bfd_lookup_section_flags	      bfd_generic_lookup_section_flags
-#define bfd_plugin_bfd_merge_sections		      bfd_generic_merge_sections
 #define bfd_plugin_bfd_is_group_section		      bfd_generic_is_group_section
 #define bfd_plugin_bfd_group_name		      bfd_generic_group_name
 #define bfd_plugin_bfd_discard_group		      bfd_generic_discard_group
@@ -378,6 +377,7 @@ bfd_plugin_open_input (bfd *ibfd, struct ld_plugin_input_file *file)
 
   iobfd = ibfd;
   while (iobfd->my_archive
+	 && iobfd->my_archive->iovec == iobfd->iovec
 	 && !bfd_is_thin_archive (iobfd->my_archive))
     iobfd = iobfd->my_archive;
   file->name = bfd_get_filename (iobfd);
@@ -470,6 +470,7 @@ bfd_plugin_close_file_descriptor (bfd *abfd, int fd)
   else
     {
       while (abfd->my_archive
+	     && abfd->my_archive->iovec == abfd->iovec
 	     && !bfd_is_thin_archive (abfd->my_archive))
 	abfd = abfd->my_archive;
 
@@ -795,9 +796,9 @@ bfd_plugin_bfd_copy_private_section_data (bfd *ibfd ATTRIBUTE_UNUSED,
 
 static bool
 bfd_plugin_bfd_copy_private_symbol_data (bfd *ibfd ATTRIBUTE_UNUSED,
-					 asymbol *isymbol ATTRIBUTE_UNUSED,
+					 asymbol **isymbol ATTRIBUTE_UNUSED,
 					 bfd *obfd ATTRIBUTE_UNUSED,
-					 asymbol *osymbol ATTRIBUTE_UNUSED)
+					 asymbol **osymbol ATTRIBUTE_UNUSED)
 {
   BFD_ASSERT (0);
   return true;
@@ -981,6 +982,7 @@ const bfd_target plugin_vec =
   15,				/* ar_max_namelen.  */
   255,				/* match priority.  */
   TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */
+  TARGET_MERGE_SECTIONS,
 
   bfd_getl64, bfd_getl_signed_64, bfd_putl64,
   bfd_getl32, bfd_getl_signed_32, bfd_putl32,

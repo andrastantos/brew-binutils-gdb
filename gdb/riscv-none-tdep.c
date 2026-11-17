@@ -1,4 +1,4 @@
-/* Copyright (C) 2020-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -92,8 +92,7 @@ riscv_update_csrmap (struct gdbarch *gdbarch,
     = new struct regcache_map_entry[feature_csr->registers.size() + 1];
   for (auto &csr : feature_csr->registers)
     {
-      int regnum = user_reg_map_name_to_regnum (gdbarch, csr->name.c_str(),
-						csr->name.length());
+      int regnum = user_reg_map_name_to_regnum (gdbarch, csr->name);
       riscv_csrmap[i++] = {1, regnum, 0};
     }
 

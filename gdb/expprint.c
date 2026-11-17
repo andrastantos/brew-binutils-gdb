@@ -1,6 +1,6 @@
 /* Print in infix form a struct expression.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -33,7 +33,6 @@
 #include "expop.h"
 #include "ada-exp.h"
 
-#include <ctype.h>
 
 /* Meant to be used in debug sessions, so don't export it in a header file.  */
 extern void ATTRIBUTE_USED debug_exp (struct expression *exp);
@@ -149,9 +148,9 @@ dump_for_expression (struct ui_file *stream, int depth,
 		     type_instance_flags flags)
 {
   gdb_printf (stream, _("%*sType flags: "), depth, "");
-  if (flags & TYPE_INSTANCE_FLAG_CONST)
+  if (flags.is_const)
     gdb_puts ("const ", stream);
-  if (flags & TYPE_INSTANCE_FLAG_VOLATILE)
+  if (flags.is_volatile)
     gdb_puts ("volatile", stream);
   gdb_printf (stream, "\n");
 }

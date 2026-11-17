@@ -1,6 +1,6 @@
 /* Target-dependent code for OpenBSD/sparc64.
 
-   Copyright (C) 2004-2025 Free Software Foundation, Inc.
+   Copyright (C) 2004-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -298,7 +298,7 @@ sparc64obsd_trapframe_sniffer (const struct frame_unwind *self,
 
   pc = get_frame_address_in_block (this_frame);
   find_pc_partial_function (pc, &name, NULL, NULL);
-  if (name && strcmp (name, "Lslowtrap_reenter") == 0)
+  if (name && streq (name, "Lslowtrap_reenter"))
     return 1;
 
   return 0;

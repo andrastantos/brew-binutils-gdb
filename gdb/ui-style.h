@@ -1,5 +1,5 @@
 /* Styling for ui_file
-   Copyright (C) 2018-2025 Free Software Foundation, Inc.
+   Copyright (C) 2018-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -50,6 +50,35 @@ extern const char * color_space_name (color_space c);
 
 /* Cast C to RESULT and return true if it's value is valid; false otherwise.  */
 extern bool color_space_safe_cast (color_space *result, long c);
+
+/* Get the number of colors supported by the terminal where GDB is running.  */
+extern int gdb_get_ncolors ();
+
+/* Convenient wrapper for RGB color values.  */
+struct rgb_color
+{
+private:
+  std::array <uint8_t, 3> m_data;
+
+public:
+  constexpr rgb_color ()
+    : m_data {}
+  {}
+  constexpr rgb_color (uint8_t r, uint8_t g, uint8_t b)
+    : m_data {r, g, b}
+  {}
+
+  constexpr uint8_t r () const noexcept { return m_data[0]; }
+  constexpr uint8_t g () const noexcept { return m_data[1]; }
+  constexpr uint8_t b () const noexcept { return m_data[2]; }
+
+  constexpr size_t size () const noexcept { return m_data.size (); }
+
+  constexpr uint8_t &operator[] (std::size_t idx) noexcept
+  { return m_data[idx]; }
+  constexpr const uint8_t &operator[] (std::size_t idx) const noexcept
+  { return m_data[idx]; }
+};
 
 /* Styles that can be applied to a ui_file.  */
 struct ui_file_style
@@ -126,6 +155,14 @@ struct ui_file_style
       if (c < range.first || c > range.second)
 	error (_("Color %d is out of range [%d, %d] of color space %d."),
 	       c, range.first, range.second, static_cast<int> (cs));
+    }
+
+    explicit color (const rgb_color &rgb)
+      : m_color_space (color_space::RGB_24BIT),
+	m_red (rgb.r ()),
+	m_green (rgb.g ()),
+	m_blue (rgb.b ())
+    {
     }
 
     color (uint8_t r, uint8_t g, uint8_t b)
@@ -213,7 +250,7 @@ struct ui_file_style
     /* Fill in RGB with the red/green/blue values for this color.
        This may not be called for basic colors or for the "NONE"
        color.  */
-    void get_rgb (uint8_t *rgb) const;
+    rgb_color get_rgb () const;
 
     /* Append the ANSI terminal escape sequence for this color to STR.
        IS_FG indicates whether this is a foreground or background
@@ -332,6 +369,12 @@ struct ui_file_style
   intensity get_intensity () const
   {
     return m_intensity;
+  }
+
+  /* Set the intensity of this style.  */
+  void set_intensity (intensity i)
+  {
+    m_intensity = i;
   }
 
   /* Return true if this style specified italic display; false

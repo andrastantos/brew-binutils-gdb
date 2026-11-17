@@ -1,6 +1,6 @@
 /* Interface between gdb and its extension languages.
 
-   Copyright (C) 2014-2025 Free Software Foundation, Inc.
+   Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -123,7 +123,7 @@ has_extension (const char *file, const char *extension)
   int extension_len = strlen (extension);
 
   return (file_len > extension_len
-	  && strcmp (&file[file_len - extension_len], extension) == 0);
+	  && streq (&file[file_len - extension_len], extension));
 }
 
 /* Return the extension language of FILE, or NULL if

@@ -1,4 +1,4 @@
-# Copyright (C) 2014-2025 Free Software Foundation, Inc.
+# Copyright (C) 2014-2026 Free Software Foundation, Inc.
 #
 # Copying and distribution of this file, with or without modification,
 # are permitted in any medium without royalty provided the copyright
@@ -81,6 +81,8 @@
 #       SYMBOL_ABI_ALIGNMENT - minimum alignment in bytes which needs to be
 #               applied to every symbol definition
 #       ALL_TEXT_BEFORE_RO - put all code sections before read-only
+#               sections
+#       ALL_TEXT_AFTER_RO - put all code sections after read-only
 #               sections
 #
 # When adding sections, do note that the names of some sections are used
@@ -360,7 +362,11 @@ SHLIB_TEXT_START_ADDR="SEGMENT_START(\"text-segment\", ${SHLIB_TEXT_START_ADDR:-
 if test -z "$TINY_READONLY_SECTION"; then
   case "$LD_FLAG" in
     *ro*textonly*)
-      ALL_TEXT_BEFORE_RO=" "
+      if test -n "${ALL_TEXT_AFTER_RO}"; then
+        TEXT_AFTER_RO=" "
+      else
+        ALL_TEXT_BEFORE_RO=" "
+      fi
       SEPARATE_TEXT=" "
       TEXT_SEGMENT_ALIGN=". = ALIGN(${MAXPAGESIZE});"
       ;;
@@ -417,7 +423,7 @@ EOF
 emit_header()
 {
 cat <<EOF
-/* Copyright (C) 2014-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    Copying and distribution of this script, with or without modification,
    are permitted in any medium without royalty provided the copyright
@@ -719,7 +725,7 @@ cat <<EOF
   ${OTHER_READONLY_SECTIONS}
   .eh_frame_hdr ${RELOCATING-0} : { *(.eh_frame_hdr)${RELOCATING+ *(.eh_frame_entry .eh_frame_entry.*)} }
   .eh_frame     ${RELOCATING-0} : ONLY_IF_RO { KEEP (*(.eh_frame))${RELOCATING+ *(.eh_frame.*)} }
-  .sframe       ${RELOCATING-0} : ONLY_IF_RO { *(.sframe)${RELOCATING+ *(.sframe.*)} }
+  .sframe       ${RELOCATING-0} : ONLY_IF_RO { KEEP (*(.sframe))${RELOCATING+ *(.sframe.*)} }
   .gcc_except_table ${RELOCATING-0} : ONLY_IF_RO { *(.gcc_except_table${RELOCATING+ .gcc_except_table.*}) }
   .gnu_extab ${RELOCATING-0} : ONLY_IF_RO { *(.gnu_extab*) }
 
@@ -727,23 +733,25 @@ cat <<EOF
   .exception_ranges ${RELOCATING-0} : ONLY_IF_RO { *(.exception_ranges${RELOCATING+*}) }
 
   ${TEXT_PLT+${PLT_NEXT_DATA+${PLT} ${OTHER_PLT_SECTIONS}}}
+EOF
 
+test -n "${RELOCATING}" && cat <<EOF
   /* Various note sections.  Placed here so that they are always included
      in the read-only segment and not treated as orphan sections.  The
      current orphan handling algorithm does place note sections after R/O
      data, but this is not guaranteed to always be the case.  */
-  .note.build-id :      { *(.note.build-id) } ${RELOCATING+${REGION}}
-  .note.GNU-stack :     { *(.note.GNU-stack) } ${RELOCATING+${REGION}}
-  .note.gnu.property :  { *(.note.gnu.property) } ${RELOCATING+${REGION}}
-  .note.ABI-tag :       { *(.note.ABI-tag) } ${RELOCATING+${REGION}}
-  .note.package :       { *(.note.package) } ${RELOCATING+${REGION}}
-  .note.dlopen :        { *(.note.dlopen) } ${RELOCATING+${REGION}}
-  .note.netbsd.ident :  { *(.note.netbsd.ident) } ${RELOCATING+${REGION}}
-  .note.openbsd.ident : { *(.note.openbsd.ident) } ${RELOCATING+${REGION}}
+  .note.build-id :      { *(.note.build-id) } ${REGION}
+  .note.GNU-stack :     { *(.note.GNU-stack) } ${REGION}
+  .note.gnu.property :  { *(.note.gnu.property) } ${REGION}
+  .note.ABI-tag :       { *(.note.ABI-tag) } ${REGION}
+  .note.package :       { *(.note.package) } ${REGION}
+  .note.dlopen :        { *(.note.dlopen) } ${REGION}
+  .note.netbsd.ident :  { *(.note.netbsd.ident) } ${REGION}
+  .note.openbsd.ident : { *(.note.openbsd.ident) } ${REGION}
 
-  ${RELOCATING+${ETEXT_LAST_IN_RODATA_SEGMENT+PROVIDE (__${ETEXT_NAME} = .);}}
-  ${RELOCATING+${ETEXT_LAST_IN_RODATA_SEGMENT+PROVIDE (_${ETEXT_NAME} = .);}}
-  ${RELOCATING+${ETEXT_LAST_IN_RODATA_SEGMENT+PROVIDE (${ETEXT_NAME} = .);}}
+  ${ETEXT_LAST_IN_RODATA_SEGMENT+PROVIDE (__${ETEXT_NAME} = .);}
+  ${ETEXT_LAST_IN_RODATA_SEGMENT+PROVIDE (_${ETEXT_NAME} = .);}
+  ${ETEXT_LAST_IN_RODATA_SEGMENT+PROVIDE (${ETEXT_NAME} = .);}
 EOF
 }
 
@@ -792,7 +800,7 @@ emit_data()
 cat <<EOF
   /* Exception handling.  */
   .eh_frame     ${RELOCATING-0} : ONLY_IF_RW { KEEP (*(.eh_frame))${RELOCATING+ *(.eh_frame.*)} }
-  .sframe       ${RELOCATING-0} : ONLY_IF_RW { *(.sframe)${RELOCATING+ *(.sframe.*)} }
+  .sframe       ${RELOCATING-0} : ONLY_IF_RW { KEEP (*(.sframe))${RELOCATING+ *(.sframe.*)} }
   .gnu_extab    ${RELOCATING-0} : ONLY_IF_RW { *(.gnu_extab) }
   .gcc_except_table ${RELOCATING-0} : ONLY_IF_RW { *(.gcc_except_table${RELOCATING+ .gcc_except_table.*}) }
   .exception_ranges ${RELOCATING-0} : ONLY_IF_RW { *(.exception_ranges${RELOCATING+*}) }
@@ -1019,7 +1027,7 @@ EOF
 
   #------Early Read Only Data -----------------------------------------------
 
-  if test -z "${ALL_TEXT_BEFORE_RO}"; then
+  if test -n "${TEXT_AFTER_RO}" || test -z "${ALL_TEXT_BEFORE_RO}"; then
     # We are allowed to put R/O sections before code sections.
     # Doing so either puts read only data into the code segment, if the data
     # and code sections are contiguous, or creates a data segment followed by
@@ -1031,6 +1039,7 @@ EOF
 
     test -n "${SEPARATE_CODE}" || emit_early_ro
     test -n "${NON_ALLOC_DYN}${SEPARATE_CODE}" || emit_dyn
+    test -z "${TEXT_AFTER_RO}" || emit_rodata
 
     # We only need the alignment if we have emitted some sections.
     if test -z "${SEPARATE_CODE}"; then
@@ -1056,24 +1065,26 @@ EOF
 
   align_text
 
-  #------Read Only Data -----------------------------------------------------
+  if test -z "${TEXT_AFTER_RO}"; then
+    #------Read Only Data ------------------------------------------------
 
-  align_rodata
+    align_rodata
 
-  # If we have not already emitted the early read only data sections then do
-  # so now.  Also if the dynamic section has not already been emitted and we
-  # can put it into the data segment, then do that here as well.
+    # If we have not already emitted the early read only data sections then do
+    # so now.  Also if the dynamic section has not already been emitted and we
+    # can put it into the data segment, then do that here as well.
 
-  if test -n "${ALL_TEXT_BEFORE_RO}"; then
-    test -n "${SEPARATE_CODE}" || emit_early_ro
-    test -n "${NON_ALLOC_DYN}${SEPARATE_CODE}" || emit_dyn
+    if test -n "${ALL_TEXT_BEFORE_RO}"; then
+      test -n "${SEPARATE_CODE}" || emit_early_ro
+      test -n "${NON_ALLOC_DYN}${SEPARATE_CODE}" || emit_dyn
+    fi
+    test -z "${SEPARATE_CODE}" || emit_early_ro
+    test -z "${SEPARATE_CODE}" || emit_dyn
+
+    # Now emit the rest of the read only data.
+
+    emit_rodata
   fi
-  test -z "${SEPARATE_CODE}" || emit_early_ro
-  test -z "${SEPARATE_CODE}" || emit_dyn
-
-  # Now emit the rest of the read only data.
-
-  emit_rodata
 
   #------Read Write Data ----------------------------------------------------
 

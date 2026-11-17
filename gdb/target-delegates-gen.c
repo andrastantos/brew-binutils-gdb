@@ -3,7 +3,7 @@
 
 /* Boilerplate target methods for GDB
 
-   Copyright (C) 2013-2025 Free Software Foundation, Inc.
+   Copyright (C) 2013-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -56,7 +56,7 @@ struct dummy_target : public target_ops
   int remove_mask_watchpoint (CORE_ADDR arg0, CORE_ADDR arg1, enum target_hw_bp_type arg2) override;
   bool stopped_by_watchpoint () override;
   bool have_steppable_watchpoint () override;
-  bool stopped_data_address (CORE_ADDR *arg0) override;
+  std::vector<CORE_ADDR> stopped_data_addresses () override;
   bool watchpoint_addr_within_range (CORE_ADDR arg0, CORE_ADDR arg1, int arg2) override;
   int region_ok_for_hw_watchpoint (CORE_ADDR arg0, int arg1) override;
   bool can_accel_watchpoint_condition (CORE_ADDR arg0, int arg1, int arg2, struct expression *arg3) override;
@@ -109,7 +109,7 @@ struct dummy_target : public target_ops
   bool supports_set_thread_options (gdb_thread_options arg0) override;
   bool supports_non_stop () override;
   bool always_non_stop_p () override;
-  int find_memory_regions (find_memory_region_ftype arg0, void *arg1) override;
+  bool find_memory_regions (find_memory_region_ftype arg0) override;
   gdb::unique_xmalloc_ptr<char> make_corefile_notes (bfd *arg0, int *arg1) override;
   gdb_byte *get_bookmark (const char *arg0, int arg1) override;
   void goto_bookmark (const gdb_byte *arg0, int arg1) override;
@@ -172,7 +172,7 @@ struct dummy_target : public target_ops
   enum btrace_error read_btrace (struct btrace_data *arg0, struct btrace_target_info *arg1, enum btrace_read_type arg2) override;
   const struct btrace_config *btrace_conf (const struct btrace_target_info *arg0) override;
   enum record_method record_method (ptid_t arg0) override;
-  void stop_recording () override;
+  bool stop_recording () override;
   void info_record () override;
   void save_record (const char *arg0) override;
   bool supports_delete_record () override;
@@ -237,7 +237,7 @@ struct debug_target : public target_ops
   int remove_mask_watchpoint (CORE_ADDR arg0, CORE_ADDR arg1, enum target_hw_bp_type arg2) override;
   bool stopped_by_watchpoint () override;
   bool have_steppable_watchpoint () override;
-  bool stopped_data_address (CORE_ADDR *arg0) override;
+  std::vector<CORE_ADDR> stopped_data_addresses () override;
   bool watchpoint_addr_within_range (CORE_ADDR arg0, CORE_ADDR arg1, int arg2) override;
   int region_ok_for_hw_watchpoint (CORE_ADDR arg0, int arg1) override;
   bool can_accel_watchpoint_condition (CORE_ADDR arg0, int arg1, int arg2, struct expression *arg3) override;
@@ -290,7 +290,7 @@ struct debug_target : public target_ops
   bool supports_set_thread_options (gdb_thread_options arg0) override;
   bool supports_non_stop () override;
   bool always_non_stop_p () override;
-  int find_memory_regions (find_memory_region_ftype arg0, void *arg1) override;
+  bool find_memory_regions (find_memory_region_ftype arg0) override;
   gdb::unique_xmalloc_ptr<char> make_corefile_notes (bfd *arg0, int *arg1) override;
   gdb_byte *get_bookmark (const char *arg0, int arg1) override;
   void goto_bookmark (const gdb_byte *arg0, int arg1) override;
@@ -353,7 +353,7 @@ struct debug_target : public target_ops
   enum btrace_error read_btrace (struct btrace_data *arg0, struct btrace_target_info *arg1, enum btrace_read_type arg2) override;
   const struct btrace_config *btrace_conf (const struct btrace_target_info *arg0) override;
   enum record_method record_method (ptid_t arg0) override;
-  void stop_recording () override;
+  bool stop_recording () override;
   void info_record () override;
   void save_record (const char *arg0) override;
   bool supports_delete_record () override;
@@ -1020,28 +1020,27 @@ debug_target::have_steppable_watchpoint ()
   return result;
 }
 
-bool
-target_ops::stopped_data_address (CORE_ADDR *arg0)
+std::vector<CORE_ADDR>
+target_ops::stopped_data_addresses ()
 {
-  return this->beneath ()->stopped_data_address (arg0);
+  return this->beneath ()->stopped_data_addresses ();
 }
 
-bool
-dummy_target::stopped_data_address (CORE_ADDR *arg0)
+std::vector<CORE_ADDR>
+dummy_target::stopped_data_addresses ()
 {
-  return false;
+  return std::vector<CORE_ADDR> ();
 }
 
-bool
-debug_target::stopped_data_address (CORE_ADDR *arg0)
+std::vector<CORE_ADDR>
+debug_target::stopped_data_addresses ()
 {
-  target_debug_printf_nofunc ("-> %s->stopped_data_address (...)", this->beneath ()->shortname ());
-  bool result
-    = this->beneath ()->stopped_data_address (arg0);
-  target_debug_printf_nofunc ("<- %s->stopped_data_address (%s) = %s",
+  target_debug_printf_nofunc ("-> %s->stopped_data_addresses (...)", this->beneath ()->shortname ());
+  std::vector<CORE_ADDR> result
+    = this->beneath ()->stopped_data_addresses ();
+  target_debug_printf_nofunc ("<- %s->stopped_data_addresses () = %s",
 	      this->beneath ()->shortname (),
-	      target_debug_print_CORE_ADDR_p (arg0).c_str (),
-	      target_debug_print_bool (result).c_str ());
+	      target_debug_print_std_vector_CORE_ADDR (result).c_str ());
   return result;
 }
 
@@ -2266,29 +2265,28 @@ debug_target::always_non_stop_p ()
   return result;
 }
 
-int
-target_ops::find_memory_regions (find_memory_region_ftype arg0, void *arg1)
+bool
+target_ops::find_memory_regions (find_memory_region_ftype arg0)
 {
-  return this->beneath ()->find_memory_regions (arg0, arg1);
+  return this->beneath ()->find_memory_regions (arg0);
 }
 
-int
-dummy_target::find_memory_regions (find_memory_region_ftype arg0, void *arg1)
+bool
+dummy_target::find_memory_regions (find_memory_region_ftype arg0)
 {
-  return dummy_find_memory_regions (this, arg0, arg1);
+  return dummy_find_memory_regions (this, arg0);
 }
 
-int
-debug_target::find_memory_regions (find_memory_region_ftype arg0, void *arg1)
+bool
+debug_target::find_memory_regions (find_memory_region_ftype arg0)
 {
   target_debug_printf_nofunc ("-> %s->find_memory_regions (...)", this->beneath ()->shortname ());
-  int result
-    = this->beneath ()->find_memory_regions (arg0, arg1);
-  target_debug_printf_nofunc ("<- %s->find_memory_regions (%s, %s) = %s",
+  bool result
+    = this->beneath ()->find_memory_regions (arg0);
+  target_debug_printf_nofunc ("<- %s->find_memory_regions (%s) = %s",
 	      this->beneath ()->shortname (),
 	      target_debug_print_find_memory_region_ftype (arg0).c_str (),
-	      target_debug_print_void_p (arg1).c_str (),
-	      target_debug_print_int (result).c_str ());
+	      target_debug_print_bool (result).c_str ());
   return result;
 }
 
@@ -3794,24 +3792,28 @@ debug_target::record_method (ptid_t arg0)
   return result;
 }
 
-void
+bool
 target_ops::stop_recording ()
 {
-  this->beneath ()->stop_recording ();
+  return this->beneath ()->stop_recording ();
 }
 
-void
+bool
 dummy_target::stop_recording ()
 {
+  return false;
 }
 
-void
+bool
 debug_target::stop_recording ()
 {
   target_debug_printf_nofunc ("-> %s->stop_recording (...)", this->beneath ()->shortname ());
-  this->beneath ()->stop_recording ();
-  target_debug_printf_nofunc ("<- %s->stop_recording ()",
-	      this->beneath ()->shortname ());
+  bool result
+    = this->beneath ()->stop_recording ();
+  target_debug_printf_nofunc ("<- %s->stop_recording () = %s",
+	      this->beneath ()->shortname (),
+	      target_debug_print_bool (result).c_str ());
+  return result;
 }
 
 void

@@ -1,5 +1,5 @@
 /* MI Command Set - symbol commands.
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -50,14 +50,14 @@ mi_cmd_symbol_list_lines (const char *command, const char *const *argv,
      already sorted by increasing values in the symbol table, so no
      need to perform any other sorting.  */
 
-  struct objfile *objfile = s->compunit ()->objfile ();
+  struct objfile *objfile = s->compunit ().objfile ();
   gdbarch = objfile->arch ();
 
   ui_out_emit_list list_emitter (uiout, "lines");
   if (s->linetable () != NULL && s->linetable ()->nitems > 0)
     for (i = 0; i < s->linetable ()->nitems; i++)
       {
-	ui_out_emit_tuple tuple_emitter (uiout, NULL);
+	ui_out_emit_tuple tuple_emitter (uiout);
 	uiout->field_core_addr ("pc", gdbarch,
 				s->linetable ()->item[i].pc (objfile));
 	uiout->field_signed ("line", s->linetable ()->item[i].line);
@@ -74,7 +74,7 @@ static void
 output_debug_symbol (ui_out *uiout, domain_search_flags kind,
 		     struct symbol *sym, int block)
 {
-  ui_out_emit_tuple tuple_emitter (uiout, NULL);
+  ui_out_emit_tuple tuple_emitter (uiout);
 
   if (sym->line () != 0)
     uiout->field_unsigned ("line", sym->line ());
@@ -98,7 +98,7 @@ static void
 output_nondebug_symbol (ui_out *uiout, const bound_minimal_symbol &msymbol)
 {
   struct gdbarch *gdbarch = msymbol.objfile->arch ();
-  ui_out_emit_tuple tuple_emitter (uiout, NULL);
+  ui_out_emit_tuple tuple_emitter (uiout);
 
   uiout->field_core_addr ("address", gdbarch,
 			  msymbol.value_address ());
@@ -134,7 +134,7 @@ mi_symbol_info (domain_search_flags kind, const char *name_regexp,
       while (i < symbols.size () && symbols[i].msymbol.minsym == nullptr)
 	{
 	  symtab *symtab = symbols[i].symbol->symtab ();
-	  ui_out_emit_tuple symtab_tuple_emitter (uiout, nullptr);
+	  ui_out_emit_tuple symtab_tuple_emitter (uiout);
 
 	  uiout->field_string ("filename",
 			       symtab_to_filename_for_display (symtab));
@@ -241,8 +241,8 @@ mi_info_functions_or_variables (domain_search_flags kind,
 }
 
 /* Type for an iterator over a vector of module_symbol_search results.  */
-typedef std::vector<module_symbol_search>::const_iterator
-	module_symbol_search_iterator;
+using module_symbol_search_iterator
+  = std::vector<module_symbol_search>::const_iterator;
 
 /* Helper for mi_info_module_functions_or_variables.  Display the results
    from ITER up to END or until we find a symbol that is in a different
@@ -261,7 +261,7 @@ output_module_symbols_in_single_module_and_file
   symtab *first_symbtab = first_result_symbol->symtab ();
 
   /* Formatted output.  */
-  ui_out_emit_tuple current_file (uiout, nullptr);
+  ui_out_emit_tuple current_file (uiout);
   uiout->field_string ("filename",
 		       symtab_to_filename_for_display (first_symbtab));
   uiout->field_string ("fullname", symtab_to_fullname (first_symbtab));
@@ -295,7 +295,7 @@ output_module_symbols_in_single_module
   const symbol *first_module_symbol = iter->first.symbol;
 
   /* Create output formatting.  */
-  ui_out_emit_tuple module_tuple (uiout, nullptr);
+  ui_out_emit_tuple module_tuple (uiout);
   uiout->field_string ("module", first_module_symbol->print_name ());
   ui_out_emit_list files_list (uiout, "files");
 

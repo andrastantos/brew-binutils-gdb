@@ -1,6 +1,6 @@
 /* MI Command Set.
 
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -52,7 +52,6 @@
 #include <optional>
 #include "gdbsupport/byte-vector.h"
 
-#include <ctype.h>
 #include "gdbsupport/run-time-clock.h"
 #include <chrono>
 #include "progspace-and-thread.h"
@@ -162,7 +161,7 @@ void
 mi_cmd_exec_next (const char *command, const char *const *argv, int argc)
 {
   /* FIXME: Should call a libgdb function, not a cli wrapper.  */
-  if (argc > 0 && strcmp(argv[0], "--reverse") == 0)
+  if (argc > 0 && streq (argv[0], "--reverse"))
     mi_execute_async_cli_command ("reverse-next", argv + 1, argc - 1);
   else
     mi_execute_async_cli_command ("next", argv, argc);
@@ -173,7 +172,7 @@ mi_cmd_exec_next_instruction (const char *command, const char *const *argv,
 			      int argc)
 {
   /* FIXME: Should call a libgdb function, not a cli wrapper.  */
-  if (argc > 0 && strcmp(argv[0], "--reverse") == 0)
+  if (argc > 0 && streq (argv[0], "--reverse"))
     mi_execute_async_cli_command ("reverse-nexti", argv + 1, argc - 1);
   else
     mi_execute_async_cli_command ("nexti", argv, argc);
@@ -183,7 +182,7 @@ void
 mi_cmd_exec_step (const char *command, const char *const *argv, int argc)
 {
   /* FIXME: Should call a libgdb function, not a cli wrapper.  */
-  if (argc > 0 && strcmp(argv[0], "--reverse") == 0)
+  if (argc > 0 && streq (argv[0], "--reverse"))
     mi_execute_async_cli_command ("reverse-step", argv + 1, argc - 1);
   else
     mi_execute_async_cli_command ("step", argv, argc);
@@ -194,7 +193,7 @@ mi_cmd_exec_step_instruction (const char *command, const char *const *argv,
 			      int argc)
 {
   /* FIXME: Should call a libgdb function, not a cli wrapper.  */
-  if (argc > 0 && strcmp(argv[0], "--reverse") == 0)
+  if (argc > 0 && streq (argv[0], "--reverse"))
     mi_execute_async_cli_command ("reverse-stepi", argv + 1, argc - 1);
   else
     mi_execute_async_cli_command ("stepi", argv, argc);
@@ -204,7 +203,7 @@ void
 mi_cmd_exec_finish (const char *command, const char *const *argv, int argc)
 {
   /* FIXME: Should call a libgdb function, not a cli wrapper.  */
-  if (argc > 0 && strcmp(argv[0], "--reverse") == 0)
+  if (argc > 0 && streq (argv[0], "--reverse"))
     mi_execute_async_cli_command ("reverse-finish", argv + 1, argc - 1);
   else
     mi_execute_async_cli_command ("finish", argv, argc);
@@ -226,7 +225,7 @@ mi_cmd_exec_return (const char *command, const char *const *argv, int argc)
 
   /* Because we have called return_command with from_tty = 0, we need
      to print the frame here.  */
-  print_stack_frame (get_selected_frame (NULL), 1, LOC_AND_ADDRESS, 1);
+  print_stack_frame (get_selected_frame (), 1, LOC_AND_ADDRESS, 1);
 }
 
 void
@@ -239,7 +238,7 @@ mi_cmd_exec_jump (const char *args, const char *const *argv, int argc)
 static void
 proceed_thread (struct thread_info *thread, int pid)
 {
-  if (thread->state != THREAD_STOPPED)
+  if (thread->state () != THREAD_STOPPED)
     return;
 
   if (pid != 0 && thread->ptid.pid () != pid)
@@ -279,17 +278,12 @@ exec_continue (const char *const *argv, int argc)
 	      pid = inf->pid;
 	    }
 
-	  iterate_over_threads ([&] (struct thread_info *thread)
-	    {
-	      proceed_thread (thread, pid);
-	      return false;
-	    });
+	  for (auto &thread : all_threads ())
+	    proceed_thread (&thread, pid);
 	  disable_commit_resumed.reset_and_commit ();
 	}
       else
-	{
-	  continue_1 (0);
-	}
+	continue_1 (false);
     }
   else
     {
@@ -298,7 +292,7 @@ exec_continue (const char *const *argv, int argc)
       if (current_context->all)
 	{
 	  sched_multi = 1;
-	  continue_1 (0);
+	  continue_1 (false);
 	}
       else
 	{
@@ -306,7 +300,7 @@ exec_continue (const char *const *argv, int argc)
 	     either all threads, or one thread, depending on the
 	     'scheduler-locking' variable.  Let's continue to do the
 	     same.  */
-	  continue_1 (1);
+	  continue_1 (true);
 	}
     }
 }
@@ -330,7 +324,7 @@ exec_reverse_continue (const char *const *argv, int argc)
 void
 mi_cmd_exec_continue (const char *command, const char *const *argv, int argc)
 {
-  if (argc > 0 && strcmp (argv[0], "--reverse") == 0)
+  if (argc > 0 && streq (argv[0], "--reverse"))
     exec_reverse_continue (argv + 1, argc - 1);
   else
     exec_continue (argv, argc);
@@ -365,17 +359,16 @@ mi_cmd_exec_interrupt (const char *command, const char *const *argv, int argc)
       scoped_disable_commit_resumed disable_commit_resumed
 	("interrupting all threads of thread group");
 
-      iterate_over_threads ([&] (struct thread_info *thread)
+      for (auto &thread : all_threads ())
 	{
-	  if (thread->state != THREAD_RUNNING)
-	    return false;
+	  if (thread.state () != THREAD_RUNNING)
+	    continue;
 
-	  if (thread->ptid.pid () != inf->pid)
-	    return false;
+	  if (thread.ptid.pid () != inf->pid)
+	    continue;
 
-	  target_stop (thread->ptid);
-	  return false;
-	});
+	  target_stop (thread.ptid);
+	}
     }
   else
     {
@@ -506,9 +499,9 @@ mi_cmd_target_detach (const char *command, const char *const *argv, int argc)
 
       /* Pick any thread in the desired process.  Current
 	 target_detach detaches from the parent of inferior_ptid.  */
-      tp = iterate_over_threads ([&] (struct thread_info *ti)
+      tp = find_thread ([&] (struct thread_info *ti)
 	{
-	  return ti->ptid.pid () == pid && ti->state != THREAD_EXITED;
+	  return ti->ptid.pid () == pid && ti->state () != THREAD_EXITED;
 	});
       if (!tp)
 	error (_("Thread group is empty"));
@@ -539,6 +532,11 @@ mi_cmd_thread_select (const char *command, const char *const *argv, int argc)
 
   thread_select (argv[0], thr);
 
+  /* We don't call print_selected_inferior here as this never prints
+     anything when the output is MI like (as it is now).  MI consumers are
+     expected to derive the inferior change from the global thread-id
+     included in the print_selected_thread_frame output.  */
+
   print_selected_thread_frame (current_uiout,
 			       USER_SELECTED_THREAD | USER_SELECTED_FRAME);
 }
@@ -557,13 +555,13 @@ mi_cmd_thread_list_ids (const char *command, const char *const *argv, int argc)
   {
     ui_out_emit_tuple tuple_emitter (current_uiout, "thread-ids");
 
-    for (thread_info *tp : all_non_exited_threads ())
+    for (thread_info &tp : all_non_exited_threads ())
       {
-	if (tp->ptid == inferior_ptid)
-	  current_thread = tp->global_num;
+	if (tp.ptid == inferior_ptid)
+	  current_thread = tp.global_num;
 
 	num++;
-	current_uiout->field_signed ("thread-id", tp->global_num);
+	current_uiout->field_signed ("thread-id", tp.global_num);
       }
   }
 
@@ -590,7 +588,7 @@ print_one_inferior (struct inferior *inferior, bool recurse,
   if (ids.empty () || (ids.find (inferior->pid) != ids.end ()))
     {
       gdb::unordered_set<int> cores;
-      ui_out_emit_tuple tuple_emitter (uiout, NULL);
+      ui_out_emit_tuple tuple_emitter (uiout);
 
       uiout->field_fmt ("id", "i%d", inferior->num);
       uiout->field_string ("type", "process");
@@ -605,17 +603,14 @@ print_one_inferior (struct inferior *inferior, bool recurse,
 
       if (inferior->pid != 0)
 	{
-	  iterate_over_threads ([&] (struct thread_info *ti)
-	    {
-	      if (ti->ptid.pid () == inferior->pid)
-		{
-		  int core = target_core_of_thread (ti->ptid);
+	  for (auto &ti : all_threads ())
+	    if (ti.ptid.pid () == inferior->pid)
+	      {
+		int core = target_core_of_thread (ti.ptid);
 
-		  if (core != -1)
-		    cores.insert (core);
-		}
-	      return false;
-	    });
+		if (core != -1)
+		  cores.insert (core);
+	      }
 	}
 
       if (!cores.empty ())
@@ -689,7 +684,7 @@ list_available_thread_groups (const gdb::unordered_set<int> &ids, int recurse)
       if (!ids.empty () && ids.find (pid_i) == ids.end ())
 	continue;
 
-      ui_out_emit_tuple tuple_emitter (uiout, NULL);
+      ui_out_emit_tuple tuple_emitter (uiout);
 
       uiout->field_string ("id", *pid);
       uiout->field_string ("type", "process");
@@ -711,7 +706,7 @@ list_available_thread_groups (const gdb::unordered_set<int> &ids, int recurse)
 
 	      for (const osdata_item &child : children)
 		{
-		  ui_out_emit_tuple inner_tuple_emitter (uiout, NULL);
+		  ui_out_emit_tuple inner_tuple_emitter (uiout);
 		  const std::string *tid = get_osdata_column (child, "tid");
 		  const std::string *tcore = get_osdata_column (child, "core");
 
@@ -760,9 +755,9 @@ mi_cmd_list_thread_groups (const char *command, const char *const *argv,
 	  available = 1;
 	  break;
 	case RECURSE_OPT:
-	  if (strcmp (oarg, "0") == 0)
+	  if (streq (oarg, "0"))
 	    ;
-	  else if (strcmp (oarg, "1") == 0)
+	  else if (streq (oarg, "1"))
 	    recurse = 1;
 	  else
 	    error (_("only '0' and '1' are valid values "
@@ -879,7 +874,7 @@ mi_cmd_data_list_changed_registers (const char *command,
      contents.  */
 
   prev_regs = std::move (this_regs);
-  this_regs = frame_save_as_regcache (get_selected_frame (NULL));
+  this_regs = frame_save_as_regcache (get_selected_frame ());
 
   /* Note that the test for a valid register must include checking the
      gdbarch_register_name because gdbarch_num_regs may be allocated
@@ -1013,7 +1008,7 @@ mi_cmd_data_list_register_values (const char *command, const char *const *argv,
 
   format = (int) argv[oind][0];
 
-  frame = get_selected_frame (NULL);
+  frame = get_selected_frame ();
   gdbarch = get_frame_arch (frame);
   numregs = gdbarch_num_cooked_regs (gdbarch);
 
@@ -1063,7 +1058,7 @@ output_register (const frame_info_ptr &frame, int regnum, int format,
   if (skip_unavailable && !val->entirely_available ())
     return;
 
-  ui_out_emit_tuple tuple_emitter (uiout, NULL);
+  ui_out_emit_tuple tuple_emitter (uiout);
   uiout->field_signed ("number", regnum);
 
   if (format == 'N')
@@ -1316,7 +1311,7 @@ mi_cmd_data_read_memory (const char *command, const char *const *argv,
 	int col_byte;
 	struct value_print_options print_opts;
 
-	ui_out_emit_tuple tuple_emitter (uiout, NULL);
+	ui_out_emit_tuple tuple_emitter (uiout);
 	uiout->field_core_addr ("addr", gdbarch, addr + row_byte);
 	/* ui_out_field_core_addr_symbolic (uiout, "saddr", addr +
 	   row_byte); */
@@ -1415,7 +1410,7 @@ mi_cmd_data_read_memory_bytes (const char *command, const char *const *argv,
   ui_out_emit_list list_emitter (uiout, "memory");
   for (const memory_read_result &read_result : result)
     {
-      ui_out_emit_tuple tuple_emitter (uiout, NULL);
+      ui_out_emit_tuple tuple_emitter (uiout);
 
       uiout->field_core_addr ("begin", gdbarch, read_result.begin);
       uiout->field_core_addr ("offset", gdbarch, read_result.begin - addr);
@@ -1590,9 +1585,9 @@ mi_cmd_enable_timings (const char *command, const char *const *argv, int argc)
     do_timings = 1;
   else if (argc == 1)
     {
-      if (strcmp (argv[0], "yes") == 0)
+      if (streq (argv[0], "yes"))
 	do_timings = 1;
-      else if (strcmp (argv[0], "no") == 0)
+      else if (streq (argv[0], "no"))
 	do_timings = 0;
       else
 	goto usage_error;
@@ -1796,8 +1791,10 @@ captured_mi_execute_command (struct mi_interp *mi, struct ui_out *uiout,
 	  gdb_puts (context->token.c_str (), mi->raw_stdout);
 	  /* There's no particularly good reason why target-connect results
 	     in not ^done.  Should kill ^connected for MI3.  */
-	  gdb_puts (strcmp (context->command.get (), "target-select") == 0
-		    ? "^connected" : "^done", mi->raw_stdout);
+	  gdb_puts ((streq (context->command.get (), "target-select")
+		     ? "^connected"
+		     : "^done"),
+		    mi->raw_stdout);
 	  mi_out_put (uiout, mi->raw_stdout);
 	  mi_out_rewind (uiout);
 	  mi_print_timing_maybe (mi->raw_stdout);
@@ -1967,14 +1964,33 @@ struct user_selected_context
     save_selected_frame (&m_previous_frame_id, &m_previous_frame_level);
   }
 
-  /* Return true if the user selected context has changed since this object
-     was created.  */
-  bool has_changed () const
+  /* Return a set of flags indicating which parts of the user selected
+     context have changed since this object was created, or 0 (the empty
+     set of flags) if nothing has changed.  */
+  user_selected_what what_changed () const
   {
+    /* If anything changed then we report both the thread and frame at a
+       minimum.  We optionally add the inferior if we know that it
+       changed.
+
+       This means that for pure frame changes, e.g. -stack-select-frame, we
+       still report both a thread and a frame, which isn't ideal, but
+       there's also the case where -thread-select is used to re-select the
+       current thread, in this case we'd still like to see the thread
+       reported, at least, that's what we have historically done.  */
+    user_selected_what state
+      = USER_SELECTED_THREAD | USER_SELECTED_FRAME;
+
     /* Did the selected thread change?  */
     if (m_previous_ptid != null_ptid && inferior_ptid != null_ptid
 	&& m_previous_ptid != inferior_ptid)
-      return true;
+      {
+	/* Did the inferior change too?  */
+	if (m_previous_ptid.pid () != inferior_ptid.pid ())
+	  state |= USER_SELECTED_INFERIOR;
+
+	return state;
+      }
 
     /* Grab details of the currently selected frame, for comparison.  */
     frame_id current_frame_id;
@@ -1983,7 +1999,7 @@ struct user_selected_context
 
     /* Did the selected frame level change?  */
     if (current_frame_level != m_previous_frame_level)
-      return true;
+      return state;
 
     /* Did the selected frame id change?  If the innermost frame is
        selected then the level will be -1, and the frame-id will be
@@ -1992,10 +2008,10 @@ struct user_selected_context
        other than the innermost frame selected.  */
     if (current_frame_level != -1
 	&& current_frame_id != m_previous_frame_id)
-      return true;
+      return state;
 
     /* Nothing changed!  */
-    return false;
+    return 0;
   }
 private:
   /* The previously selected thread.  This might be null_ptid if there was
@@ -2059,7 +2075,7 @@ mi_cmd_execute (struct mi_parse *parse)
       if (tp == NULL)
 	error (_("Invalid thread id: %d"), parse->thread);
 
-      if (tp->state == THREAD_EXITED)
+      if (tp->state () == THREAD_EXITED)
 	error (_("Thread id: %d has terminated"), parse->thread);
 
       if (parse->cmd->preserve_user_selected_context ())
@@ -2099,10 +2115,13 @@ mi_cmd_execute (struct mi_parse *parse)
 
   parse->cmd->invoke (parse);
 
-  if (!parse->cmd->preserve_user_selected_context ()
-      && current_user_selected_context.has_changed ())
-    interps_notify_user_selected_context_changed
-      (USER_SELECTED_THREAD | USER_SELECTED_FRAME);
+  if (!parse->cmd->preserve_user_selected_context ())
+    {
+      user_selected_what what
+	= current_user_selected_context.what_changed ();
+      if (what != 0)
+	notify_user_selected_context_changed (what);
+    }
 }
 
 /* See mi-main.h.  */
@@ -2151,7 +2170,6 @@ mi_load_progress (const char *section_name,
   using namespace std::chrono;
   static steady_clock::time_point last_update;
   static char *previous_sect_name = NULL;
-  int new_section;
   struct mi_interp *mi = as_mi_interp (current_interpreter ());
 
   /* If the current interpreter is not an MI interpreter, then just
@@ -2170,9 +2188,8 @@ mi_load_progress (const char *section_name,
   scoped_restore save_uiout
     = make_scoped_restore (&current_uiout, uiout.get ());
 
-  new_section = (previous_sect_name ?
-		 strcmp (previous_sect_name, section_name) : 1);
-  if (new_section)
+  if (previous_sect_name == nullptr
+      || !streq (previous_sect_name, section_name))
     {
       xfree (previous_sect_name);
       previous_sect_name = xstrdup (section_name);
@@ -2181,7 +2198,7 @@ mi_load_progress (const char *section_name,
 	gdb_puts (mi->current_token, mi->raw_stdout);
       gdb_puts ("+download", mi->raw_stdout);
       {
-	ui_out_emit_tuple tuple_emitter (uiout.get (), NULL);
+	ui_out_emit_tuple tuple_emitter (uiout.get ());
 	uiout->field_string ("section", section_name);
 	uiout->field_signed ("section-size", total_section);
 	uiout->field_signed ("total-size", grand_total);
@@ -2199,7 +2216,7 @@ mi_load_progress (const char *section_name,
 	gdb_puts (mi->current_token, mi->raw_stdout);
       gdb_puts ("+download", mi->raw_stdout);
       {
-	ui_out_emit_tuple tuple_emitter (uiout.get (), NULL);
+	ui_out_emit_tuple tuple_emitter (uiout.get ());
 	uiout->field_string ("section", section_name);
 	uiout->field_signed ("section-sent", sent_so_far);
 	uiout->field_signed ("section-size", total_section);
@@ -2302,7 +2319,7 @@ mi_cmd_trace_find (const char *command, const char *const *argv, int argc)
 
   mode = argv[0];
 
-  if (strcmp (mode, "none") == 0)
+  if (streq (mode, "none"))
     {
       tfind_1 (tfind_number, -1, 0, 0, 0);
       return;
@@ -2310,39 +2327,39 @@ mi_cmd_trace_find (const char *command, const char *const *argv, int argc)
 
   check_trace_running (current_trace_status ());
 
-  if (strcmp (mode, "frame-number") == 0)
+  if (streq (mode, "frame-number"))
     {
       if (argc != 2)
 	error (_("frame number is required"));
       tfind_1 (tfind_number, atoi (argv[1]), 0, 0, 0);
     }
-  else if (strcmp (mode, "tracepoint-number") == 0)
+  else if (streq (mode, "tracepoint-number"))
     {
       if (argc != 2)
 	error (_("tracepoint number is required"));
       tfind_1 (tfind_tp, atoi (argv[1]), 0, 0, 0);
     }
-  else if (strcmp (mode, "pc") == 0)
+  else if (streq (mode, "pc"))
     {
       if (argc != 2)
 	error (_("PC is required"));
       tfind_1 (tfind_pc, 0, parse_and_eval_address (argv[1]), 0, 0);
     }
-  else if (strcmp (mode, "pc-inside-range") == 0)
+  else if (streq (mode, "pc-inside-range"))
     {
       if (argc != 3)
 	error (_("Start and end PC are required"));
       tfind_1 (tfind_range, 0, parse_and_eval_address (argv[1]),
 	       parse_and_eval_address (argv[2]), 0);
     }
-  else if (strcmp (mode, "pc-outside-range") == 0)
+  else if (streq (mode, "pc-outside-range"))
     {
       if (argc != 3)
 	error (_("Start and end PC are required"));
       tfind_1 (tfind_outside, 0, parse_and_eval_address (argv[1]),
 	       parse_and_eval_address (argv[2]), 0);
     }
-  else if (strcmp (mode, "line") == 0)
+  else if (streq (mode, "line"))
     {
       if (argc != 2)
 	error (_("Line is required"));
@@ -2356,7 +2373,7 @@ mi_cmd_trace_find (const char *command, const char *const *argv, int argc)
 	error (_("Could not find the specified line"));
 
       CORE_ADDR start_pc, end_pc;
-      if (sal.line > 0 && find_line_pc_range (sal, &start_pc, &end_pc))
+      if (sal.line > 0 && find_pc_range_for_sal (sal, &start_pc, &end_pc))
 	tfind_1 (tfind_range, 0, start_pc, end_pc - 1, 0);
       else
 	error (_("Could not find the specified line"));
@@ -2365,26 +2382,24 @@ mi_cmd_trace_find (const char *command, const char *const *argv, int argc)
     error (_("Invalid mode '%s'"), mode);
 
   if (has_stack_frames () || get_traceframe_number () >= 0)
-    print_stack_frame (get_selected_frame (NULL), 1, LOC_AND_ADDRESS, 1);
+    print_stack_frame (get_selected_frame (), 1, LOC_AND_ADDRESS, 1);
 }
 
 void
 mi_cmd_trace_save (const char *command, const char *const *argv, int argc)
 {
   int target_saves = 0;
-  int generate_ctf = 0;
   const char *filename;
   int oind = 0;
   const char *oarg;
 
   enum opt
   {
-    TARGET_SAVE_OPT, CTF_OPT
+    TARGET_SAVE_OPT,
   };
   static const struct mi_opt opts[] =
     {
       {"r", TARGET_SAVE_OPT, 0},
-      {"ctf", CTF_OPT, 0},
       { 0, 0, 0 }
     };
 
@@ -2400,9 +2415,6 @@ mi_cmd_trace_save (const char *command, const char *const *argv, int argc)
 	case TARGET_SAVE_OPT:
 	  target_saves = 1;
 	  break;
-	case CTF_OPT:
-	  generate_ctf = 1;
-	  break;
 	}
     }
 
@@ -2412,10 +2424,7 @@ mi_cmd_trace_save (const char *command, const char *const *argv, int argc)
 
   filename = argv[oind];
 
-  if (generate_ctf)
-    trace_save_ctf (filename, target_saves);
-  else
-    trace_save_tfile (filename, target_saves);
+  trace_save_tfile (filename, target_saves);
 }
 
 void
@@ -2615,7 +2624,7 @@ mi_cmd_trace_frame_collected (const char *command, const char *const *argv,
 
     ui_out_emit_list list_emitter (uiout, "registers");
 
-    frame = get_selected_frame (NULL);
+    frame = get_selected_frame ();
     gdbarch = get_frame_arch (frame);
     numregs = gdbarch_num_cooked_regs (gdbarch);
 
@@ -2638,7 +2647,7 @@ mi_cmd_trace_frame_collected (const char *command, const char *const *argv,
 
 	tsv = find_trace_state_variable_by_number (tvar);
 
-	ui_out_emit_tuple tuple_emitter (uiout, NULL);
+	ui_out_emit_tuple tuple_emitter (uiout);
 
 	if (tsv != NULL)
 	  {
@@ -2668,7 +2677,7 @@ mi_cmd_trace_frame_collected (const char *command, const char *const *argv,
       {
 	gdbarch *gdbarch = current_inferior ()->arch ();
 
-	ui_out_emit_tuple tuple_emitter (uiout, NULL);
+	ui_out_emit_tuple tuple_emitter (uiout);
 
 	uiout->field_core_addr ("address", gdbarch, r.start);
 	uiout->field_signed ("length", r.length);

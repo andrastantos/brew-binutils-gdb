@@ -302,7 +302,6 @@ brew_final_link_relocate (
 
 static int
 brew_elf_relocate_section (
-  bfd *output_bfd,
   struct bfd_link_info *info,
   bfd *input_bfd,
   asection *input_section,
@@ -316,7 +315,7 @@ brew_elf_relocate_section (
   Elf_Internal_Rela *rel;
   Elf_Internal_Rela *relend;
 
-  symtab_hdr = & elf_tdata (input_bfd)->symtab_hdr;
+  symtab_hdr = &elf_symtab_hdr (input_bfd);
   sym_hashes = elf_sym_hashes (input_bfd);
   relend     = relocs + input_section->reloc_count;
 
@@ -343,7 +342,7 @@ brew_elf_relocate_section (
         {
           sym = local_syms + r_symndx;
           sec = local_sections [r_symndx];
-          relocation = _bfd_elf_rela_local_sym(output_bfd, sym, &sec, rel);
+          relocation = _bfd_elf_rela_local_sym(info->output_bfd, sym, &sec, rel);
 
           name = bfd_elf_string_from_elf_section(
             input_bfd,
@@ -462,18 +461,6 @@ brew_elf_relocate_section (
   return true;
 }
 
-/* Return the section that should be marked against GC for a given relocation. */
-static asection *
-brew_elf_gc_mark_hook(
-  asection *sec,
-  struct bfd_link_info *info,
-  Elf_Internal_Rela *rel,
-  struct elf_link_hash_entry *h,
-  Elf_Internal_Sym *sym
-) {
-  return _bfd_elf_gc_mark_hook (sec, info, rel, h, sym);
-}
-
 /* Look through the relocs for a section during the first phase.
    Since we don't do .gots or .plts, we just need to consider the
    virtual table relocs for gc. */
@@ -492,7 +479,7 @@ brew_elf_check_relocs(
   if (bfd_link_relocatable (info))
     return true;
 
-  symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
+  symtab_hdr = &elf_symtab_hdr (abfd);
   sym_hashes = elf_sym_hashes (abfd);
 
   rel_end = relocs + sec->reloc_count;
@@ -528,7 +515,6 @@ brew_elf_check_relocs(
 #define elf_info_to_howto_rel            NULL
 #define elf_info_to_howto                brew_info_to_howto_rela
 #define elf_backend_relocate_section     brew_elf_relocate_section
-#define elf_backend_gc_mark_hook         brew_elf_gc_mark_hook
 #define elf_backend_check_relocs         brew_elf_check_relocs
 
 #define elf_backend_can_gc_sections      1

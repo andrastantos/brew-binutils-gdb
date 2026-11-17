@@ -1,6 +1,6 @@
 /* pe.h  -  PE COFF header information
 
-   Copyright (C) 1999-2025 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -387,6 +387,11 @@ struct external_SYMBOL_EX
   char e_sclass[1];
   char e_numaux[1];
 } ATTRIBUTE_PACKED ;
+
+#define IMAGE_SYM_UNDEFINED      0
+#define IMAGE_SYM_ABSOLUTE       0xffff
+#define IMAGE_SYM_DEBUG          0xfffe
+#define IMAGE_SYM_SECTION_MAX    0xfeff
 
 #define	SYMENT_BIGOBJ	struct external_SYMBOL_EX
 #define	SYMESZ_BIGOBJ	20

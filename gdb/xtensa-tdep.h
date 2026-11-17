@@ -1,6 +1,6 @@
 /* Target-dependent code for the Xtensa port of GDB, the GNU debugger.
 
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -89,23 +89,23 @@ enum xtensa_target_flags_t
 
 /*  Mask.  */
 
-typedef struct 
+struct xtensa_reg_mask_t
 {
   int reg_num;
   int bit_start;
   int bit_size;
-} xtensa_reg_mask_t;
+};
 
-typedef struct 
+struct xtensa_mask_t
 {
   int count;
   xtensa_reg_mask_t *mask;
-} xtensa_mask_t;
+};
 
 
 /*  Xtensa register representation.  */
 
-typedef struct 
+struct xtensa_register_t
 {
   const char *name;            	/* Register name.  */
   int offset;             	/* Offset.  */
@@ -124,7 +124,7 @@ typedef struct
   const xtensa_mask_t *mask;	/* Register is a compilation of other regs.  */
   const char *fetch;		/* Instruction sequence to fetch register.  */
   const char *store;		/* Instruction sequence to store register.  */
-} xtensa_register_t;
+};
 
 /*  For xtensa-config.c to expand to the structure above.  */
 #define XTREG(index,ofs,bsz,sz,al,tnum,flg,cp,ty,gr,name,fet,sto,mas,ct,x,y) \
@@ -244,9 +244,9 @@ struct xtensa_gdbarch_tdep : gdbarch_tdep_base
 
 #define WB_SHIFT	  2
 
-/* We assign fixed numbers to the registers of the "current" window 
-   (i.e., relative to WB).  The registers get remapped via the reg_map 
-   data structure to their corresponding register in the AR register 
+/* We assign fixed numbers to the registers of the "current" window
+   (i.e., relative to WB).  The registers get remapped via the reg_map
+   data structure to their corresponding register in the AR register
    file (see xtensa-tdep.c).  */
 
 #endif /* GDB_XTENSA_TDEP_H */

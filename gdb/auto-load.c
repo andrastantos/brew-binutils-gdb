@@ -1,6 +1,6 @@
 /* GDB routines for supporting auto-loaded scripts.
 
-   Copyright (C) 2012-2025 Free Software Foundation, Inc.
+   Copyright (C) 2012-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include <ctype.h>
 #include "auto-load.h"
 #include "gdbsupport/gdb_vecs.h"
 #include "progspace.h"
@@ -31,7 +30,6 @@
 #include "cli/cli-cmds.h"
 #include "cli/cli-decode.h"
 #include "cli/cli-setshow.h"
-#include "readline/tilde.h"
 #include "completer.h"
 #include "fnmatch.h"
 #include "top.h"
@@ -270,7 +268,8 @@ auto_load_safe_path_vec_update (void)
   for (size_t i = 0; i < len; i++)
     {
       gdb::unique_xmalloc_ptr<char> &in_vec = auto_load_safe_path_vec[i];
-      gdb::unique_xmalloc_ptr<char> expanded (tilde_expand (in_vec.get ()));
+      gdb::unique_xmalloc_ptr<char> expanded
+	= gdb_rl_tilde_expand (in_vec.get ());
       gdb::unique_xmalloc_ptr<char> real_path = gdb_realpath (expanded.get ());
 
       /* Ensure the current entry is at least tilde_expand-ed.  ORIGINAL makes
@@ -280,7 +279,7 @@ auto_load_safe_path_vec_update (void)
 
       if (debug_auto_load)
 	{
-	  if (strcmp (in_vec.get (), original.get ()) == 0)
+	  if (streq (in_vec.get (), original.get ()))
 	    auto_load_debug_printf ("Using directory \"%s\".",
 				    in_vec.get ());
 	  else
@@ -289,7 +288,7 @@ auto_load_safe_path_vec_update (void)
 	}
 
       /* If gdb_realpath returns a different content, append it.  */
-      if (strcmp (real_path.get (), in_vec.get ()) != 0)
+      if (!streq (real_path.get (), in_vec.get ()))
 	{
 	  auto_load_debug_printf ("And canonicalized as \"%s\".",
 				  real_path.get ());
@@ -463,18 +462,18 @@ filename_is_in_auto_load_safe_path_vec (const char *filename,
 	pattern = p.get ();
 	break;
       }
-  
+
   if (pattern == NULL)
     {
       if (*filename_realp == NULL)
 	{
 	  *filename_realp = gdb_realpath (filename);
-	  if (debug_auto_load && strcmp (filename_realp->get (), filename) != 0)
+	  if (debug_auto_load && !streq (filename_realp->get (), filename))
 	    auto_load_debug_printf ("Resolved file \"%s\" as \"%s\".",
 				    filename, filename_realp->get ());
 	}
 
-      if (strcmp (filename_realp->get (), filename) != 0)
+      if (!streq (filename_realp->get (), filename))
 	for (const gdb::unique_xmalloc_ptr<char> &p : auto_load_safe_path_vec)
 	  if (filename_is_in_pattern (filename_realp->get (), p.get ()))
 	    {
@@ -609,13 +608,7 @@ static const registry<program_space>::key<auto_load_pspace_info>
 static struct auto_load_pspace_info *
 get_auto_load_pspace_data (struct program_space *pspace)
 {
-  struct auto_load_pspace_info *info;
-
-  info = auto_load_pspace_data.get (pspace);
-  if (info == NULL)
-    info = auto_load_pspace_data.emplace (pspace);
-
-  return info;
+  return &auto_load_pspace_data.try_emplace (pspace);
 }
 
 /* Hash function for the loaded script hash.  */
@@ -636,7 +629,7 @@ eq_loaded_script_entry (const void *a, const void *b)
   const struct loaded_script *ea = (const struct loaded_script *) a;
   const struct loaded_script *eb = (const struct loaded_script *) b;
 
-  return strcmp (ea->name, eb->name) == 0 && ea->language == eb->language;
+  return streq (ea->name, eb->name) && ea->language == eb->language;
 }
 
 /* Initialize the table to track loaded scripts.
@@ -885,6 +878,11 @@ void
 auto_load_objfile_script (struct objfile *objfile,
 			  const struct extension_language_defn *language)
 {
+  AUTO_LOAD_SCOPED_DEBUG_ENTER_EXIT;
+  auto_load_debug_printf ("objfile: %s, language: %s",
+			  objfile_name (objfile),
+			  ext_lang_capitalized_name (language));
+
   gdb::unique_xmalloc_ptr<char> realname
     = gdb_realpath (objfile_name (objfile));
 
@@ -922,7 +920,7 @@ auto_load_objfile_script (struct objfile *objfile,
 	(bfd_get_debug_link_info (parent->obfd.get (), &crc32));
 
       if (debuglink.get () != nullptr
-	  && strcmp (debuglink.get (), lbasename (realname.get ())) != 0)
+	  && !streq (debuglink.get (), lbasename (realname.get ())))
 	{
 	  /* Replace the last component of the parent's path with the
 	     debuglink name.  */
@@ -1045,7 +1043,7 @@ execute_script_contents (struct auto_load_pspace_info *pspace_info,
       buf = name_holder.c_str ();
       for (p = buf; *p != '\0'; ++p)
 	{
-	  if (isspace (*p))
+	  if (c_isspace (*p))
 	    break;
 	}
       /* We don't allow nameless scripts, they're not helpful to the user.  */
@@ -1206,23 +1204,23 @@ auto_load_section_scripts (struct objfile *objfile, const char *section_name)
    2) from .debug_gdb_scripts section  */
 
 void
-load_auto_scripts_for_objfile (struct objfile *objfile)
+load_auto_scripts_for_objfile (struct objfile &objfile)
 {
   /* Return immediately if auto-loading has been globally disabled.
      This is to handle sequencing of operations during gdb startup.
      Also return immediately if OBJFILE was not created from a file
      on the local filesystem.  */
   if (!global_auto_load
-      || (objfile->flags & OBJF_NOT_FILENAME) != 0
-      || is_target_filename (objfile->original_name))
+      || (objfile.flags & OBJF_NOT_FILENAME) != 0
+      || is_target_filename (objfile.original_name))
     return;
 
   /* Load any extension language scripts for this objfile.
      E.g., foo-gdb.gdb, foo-gdb.py.  */
-  auto_load_ext_lang_scripts_for_objfile (objfile);
+  auto_load_ext_lang_scripts_for_objfile (&objfile);
 
   /* Load any scripts mentioned in AUTO_SECTION_NAME (.debug_gdb_scripts).  */
-  auto_load_section_scripts (objfile, AUTO_SECTION_NAME);
+  auto_load_section_scripts (&objfile, AUTO_SECTION_NAME);
 }
 
 /* Collect scripts to be printed in a vec.  */
@@ -1261,15 +1259,14 @@ print_script (struct loaded_script *script)
 {
   struct ui_out *uiout = current_uiout;
 
-  ui_out_emit_tuple tuple_emitter (uiout, NULL);
+  ui_out_emit_tuple tuple_emitter (uiout);
 
   uiout->field_string ("loaded", script->loaded ? "Yes" : "No");
   uiout->field_string ("script", script->name);
   uiout->text ("\n");
 
   /* If the name isn't the full path, print it too.  */
-  if (script->full_path != NULL
-      && strcmp (script->name, script->full_path) != 0)
+  if (script->full_path != NULL && !streq (script->name, script->full_path))
     {
       uiout->text ("\tfull name: ");
       uiout->field_string ("full_path", script->full_path);

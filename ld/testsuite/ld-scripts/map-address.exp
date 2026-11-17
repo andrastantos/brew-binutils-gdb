@@ -1,5 +1,5 @@
 # Test address printed by --print-map
-# Copyright (C) 2002-2025 Free Software Foundation, Inc.
+# Copyright (C) 2002-2026 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -121,6 +121,8 @@ if {[regexp_diff \
 } else {
     pass $testname
 }
+
+remote_file host delete fred
 
 if { [is_elf_format] } {
     set testname "map with locals"

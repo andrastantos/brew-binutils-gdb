@@ -205,7 +205,6 @@ eelf_i386.c
 eelf_i386_be.c
 eelf_i386_fbsd.c
 eelf_i386_haiku.c
-eelf_i386_ldso.c
 eelf_i386_sol2.c
 eelf_i386_vxworks.c
 eelf_iamcu.c
@@ -232,7 +231,6 @@ ehppalinux.c
 ehppanbsd.c
 ehppaobsd.c
 ei386aout.c
-ei386beos.c
 ei386bsd.c
 ei386go32.c
 ei386lynx.c

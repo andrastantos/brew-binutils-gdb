@@ -1,6 +1,6 @@
 /* Solaris threads debugging interface.
 
-   Copyright (C) 1996-2025 Free Software Foundation, Inc.
+   Copyright (C) 1996-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -132,54 +132,54 @@ static int sol_thread_active = 0;
 
 /* Types of the libthread_db functions.  */
 
-typedef void (td_log_ftype)(const int on_off);
-typedef td_err_e (td_ta_new_ftype)(const struct ps_prochandle *ph_p,
-				   td_thragent_t **ta_pp);
-typedef td_err_e (td_ta_delete_ftype)(td_thragent_t *ta_p);
-typedef td_err_e (td_init_ftype)(void);
-typedef td_err_e (td_ta_get_ph_ftype)(const td_thragent_t *ta_p,
-				      struct ps_prochandle **ph_pp);
-typedef td_err_e (td_ta_get_nthreads_ftype)(const td_thragent_t *ta_p,
-					    int *nthread_p);
-typedef td_err_e (td_ta_tsd_iter_ftype)(const td_thragent_t *ta_p,
-					td_key_iter_f *cb, void *cbdata_p);
-typedef td_err_e (td_ta_thr_iter_ftype)(const td_thragent_t *ta_p,
-					td_thr_iter_f *cb, void *cbdata_p,
-					td_thr_state_e state, int ti_pri,
-					sigset_t *ti_sigmask_p,
-					unsigned ti_user_flags);
-typedef td_err_e (td_thr_validate_ftype)(const td_thrhandle_t *th_p);
-typedef td_err_e (td_thr_tsd_ftype)(const td_thrhandle_t * th_p,
-				    const thread_key_t key, void **data_pp);
-typedef td_err_e (td_thr_get_info_ftype)(const td_thrhandle_t *th_p,
-					 td_thrinfo_t *ti_p);
-typedef td_err_e (td_thr_getfpregs_ftype)(const td_thrhandle_t *th_p,
-					  prfpregset_t *fpregset);
-typedef td_err_e (td_thr_getxregsize_ftype)(const td_thrhandle_t *th_p,
-					    int *xregsize);
-typedef td_err_e (td_thr_getxregs_ftype)(const td_thrhandle_t *th_p,
-					 const caddr_t xregset);
-typedef td_err_e (td_thr_sigsetmask_ftype)(const td_thrhandle_t *th_p,
-					   const sigset_t ti_sigmask);
-typedef td_err_e (td_thr_setprio_ftype)(const td_thrhandle_t *th_p,
-					const int ti_pri);
-typedef td_err_e (td_thr_setsigpending_ftype)(const td_thrhandle_t *th_p,
-					      const uchar_t ti_pending_flag,
-					      const sigset_t ti_pending);
-typedef td_err_e (td_thr_setfpregs_ftype)(const td_thrhandle_t *th_p,
-					  const prfpregset_t *fpregset);
-typedef td_err_e (td_thr_setxregs_ftype)(const td_thrhandle_t *th_p,
-					 const caddr_t xregset);
-typedef td_err_e (td_ta_map_id2thr_ftype)(const td_thragent_t *ta_p,
-					  thread_t tid,
+using td_log_ftype = void (const int on_off);
+using td_ta_new_ftype = td_err_e (const struct ps_prochandle *ph_p,
+				  td_thragent_t **ta_pp);
+using td_ta_delete_ftype = td_err_e (td_thragent_t *ta_p);
+using td_init_ftype = td_err_e (void);
+using td_ta_get_ph_ftype = td_err_e (const td_thragent_t *ta_p,
+				     struct ps_prochandle **ph_pp);
+using td_ta_get_nthreads_ftype = td_err_e (const td_thragent_t *ta_p,
+					   int *nthread_p);
+using td_ta_tsd_iter_ftype = td_err_e (const td_thragent_t *ta_p,
+				       td_key_iter_f *cb, void *cbdata_p);
+using td_ta_thr_iter_ftype = td_err_e (const td_thragent_t *ta_p,
+				       td_thr_iter_f *cb, void *cbdata_p,
+				       td_thr_state_e state, int ti_pri,
+				       sigset_t *ti_sigmask_p,
+				       unsigned ti_user_flags);
+using td_thr_validate_ftype = td_err_e (const td_thrhandle_t *th_p);
+using td_thr_tsd_ftype = td_err_e (const td_thrhandle_t * th_p,
+				   const thread_key_t key, void **data_pp);
+using td_thr_get_info_ftype = td_err_e (const td_thrhandle_t *th_p,
+					td_thrinfo_t *ti_p);
+using td_thr_getfpregs_ftype = td_err_e (const td_thrhandle_t *th_p,
+					 prfpregset_t *fpregset);
+using td_thr_getxregsize_ftype = td_err_e (const td_thrhandle_t *th_p,
+					   int *xregsize);
+using td_thr_getxregs_ftype = td_err_e (const td_thrhandle_t *th_p,
+					const caddr_t xregset);
+using td_thr_sigsetmask_ftype = td_err_e (const td_thrhandle_t *th_p,
+					  const sigset_t ti_sigmask);
+using td_thr_setprio_ftype = td_err_e (const td_thrhandle_t *th_p,
+				       const int ti_pri);
+using td_thr_setsigpending_ftype
+  = td_err_e (const td_thrhandle_t *th_p, const uchar_t ti_pending_flag,
+	      const sigset_t ti_pending);
+using td_thr_setfpregs_ftype = td_err_e (const td_thrhandle_t *th_p,
+					 const prfpregset_t *fpregset);
+using td_thr_setxregs_ftype = td_err_e (const td_thrhandle_t *th_p,
+					const caddr_t xregset);
+using td_ta_map_id2thr_ftype = td_err_e (const td_thragent_t *ta_p,
+					 thread_t tid,
+					 td_thrhandle_t *th_p);
+using td_ta_map_lwp2thr_ftype = td_err_e (const td_thragent_t *ta_p,
+					  lwpid_t lwpid,
 					  td_thrhandle_t *th_p);
-typedef td_err_e (td_ta_map_lwp2thr_ftype)(const td_thragent_t *ta_p,
-					   lwpid_t lwpid,
-					   td_thrhandle_t *th_p);
-typedef td_err_e (td_thr_getgregs_ftype)(const td_thrhandle_t *th_p,
-					 prgregset_t regset);
-typedef td_err_e (td_thr_setgregs_ftype)(const td_thrhandle_t *th_p,
-					 const prgregset_t regset);
+using td_thr_getgregs_ftype = td_err_e (const td_thrhandle_t *th_p,
+					prgregset_t regset);
+using td_thr_setgregs_ftype = td_err_e (const td_thrhandle_t *th_p,
+					const prgregset_t regset);
 
 /* Pointers to routines from libthread_db resolved by dlopen().  */
 
@@ -451,7 +451,7 @@ sol_thread_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
       if (rtnval.tid_p ())
 	{
 	  thread_info *thr = current_inferior ()->find_thread (rtnval);
-	  if (thr == NULL || thr->state == THREAD_EXITED)
+	  if (thr == NULL || thr->state () == THREAD_EXITED)
 	    {
 	      process_stratum_target *proc_target
 		= current_inferior ()->process_target ();
@@ -605,7 +605,8 @@ check_for_thread_db (void)
   ptid_t ptid;
 
   /* Don't attempt to use thread_db for remote targets.  */
-  if (!(target_can_run () || current_program_space->core_bfd () != nullptr))
+  if (!(target_can_run ()
+	|| get_inferior_core_bfd(current_inferior ()) != nullptr))
     return;
 
   /* Do nothing if we couldn't load libthread_db.so.1.  */
@@ -665,7 +666,7 @@ check_for_thread_db (void)
    the library gets mapped and the symbol table is read in.  */
 
 static void
-sol_thread_new_objfile (struct objfile *objfile)
+sol_thread_new_objfile (struct objfile &objfile)
 {
   check_for_thread_db ();
 }
@@ -997,7 +998,7 @@ sol_update_thread_list_callback (const td_thrhandle_t *th, void *ignored)
 
   ptid_t ptid = ptid_t (current_inferior ()->pid, 0, ti.ti_tid);
   thread_info *thr = current_inferior ()->find_thread (ptid);
-  if (thr == NULL || thr->state == THREAD_EXITED)
+  if (thr == NULL || thr->state () == THREAD_EXITED)
     {
       process_stratum_target *proc_target
 	= current_inferior ()->process_target ();
@@ -1011,7 +1012,7 @@ void
 sol_thread_target::update_thread_list ()
 {
   /* Delete dead threads.  */
-  prune_threads ();
+  prune_threads (current_inferior ()->process_target ());
 
   /* Find any new LWP's.  */
   beneath ()->update_thread_list ();
@@ -1118,14 +1119,14 @@ sol_thread_target::get_ada_task_ptid (long lwp, ULONGEST thread)
        };
 
   struct thread_info *thread_info
-    = iterate_over_threads (thread_db_find_thread_from_tid);
+    = find_thread (thread_db_find_thread_from_tid);
 
   if (thread_info == NULL)
     {
       /* The list of threads is probably not up to date.  Find any
 	 thread that is missing from the list, and try again.  */
       update_thread_list ();
-      thread_info = iterate_over_threads (thread_db_find_thread_from_tid);
+      thread_info = find_thread (thread_db_find_thread_from_tid);
     }
 
   gdb_assert (thread_info != NULL);

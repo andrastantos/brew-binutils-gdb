@@ -1,6 +1,6 @@
 /* Self tests for scoped_mmap for GDB, the GNU debugger.
 
-   Copyright (C) 2018-2025 Free Software Foundation, Inc.
+   Copyright (C) 2018-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -102,7 +102,7 @@ test_normal ()
 
     SELF_CHECK (m.get () != MAP_FAILED);
     SELF_CHECK (m.size () == 7);
-    SELF_CHECK (0 == strcmp ((char *) m.get (), "Hello!"));
+    SELF_CHECK (streq ((char *) m.get (), "Hello!"));
   }
 }
 

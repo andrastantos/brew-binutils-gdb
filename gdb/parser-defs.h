@@ -1,6 +1,6 @@
 /* Parser definitions for GDB.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    Modified from expread.y by the Department of Computer Science at the
    State University of New York at Buffalo.
@@ -224,6 +224,10 @@ struct parser_state : public expr_builder
 
   /* Push a reference to $mumble.  This may result in a convenience
      variable, a history reference, or a register.  */
+  void push_dollar (std::string_view str);
+
+  /* Push a reference to $mumble.  This may result in a convenience
+     variable, a history reference, or a register.  */
   void push_dollar (struct stoken str);
 
   /* Pop an operation from the stack.  */
@@ -266,7 +270,7 @@ struct parser_state : public expr_builder
   /* Function called from the various parsers' yyerror functions to throw
      an error.  The error will include a message identifying the location
      of the error within the current expression.  */
-  void parse_error (const char *msg);
+  [[noreturn]] void parse_error (const char *msg);
 
   /* If this is nonzero, this block is used as the lexical context for
      symbol names.  */

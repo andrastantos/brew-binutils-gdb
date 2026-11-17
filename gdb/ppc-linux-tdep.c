@@ -1,6 +1,6 @@
 /* Target-dependent code for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -61,7 +61,6 @@
 #include "cli/cli-utils.h"
 #include "parser-defs.h"
 #include "user-regs.h"
-#include <ctype.h>
 #include "elf-bfd.h"
 #include "producer.h"
 #include "target-float.h"
@@ -119,7 +118,7 @@
    actually called, the code in the PLT is hit and the function is
    resolved.  In order to better illustrate this, an example is in
    order; the following example is from the gdb testsuite.
-	    
+
 	We start the program shmain.
 
 	    [kev@arroyo testsuite]$ ../gdb gdb.base/shmain
@@ -143,7 +142,7 @@
 	Now run 'til main.
 
 	    (gdb) r
-	    Starting program: gdb.base/shmain 
+	    Starting program: gdb.base/shmain
 	    Breakpoint 1 at 0xffaf790: file gdb.base/shr1.c, line 19.
 
 	    Breakpoint 2, main ()
@@ -252,7 +251,7 @@ static enum return_value_convention
 ppc_linux_return_value (struct gdbarch *gdbarch, struct value *function,
 			struct type *valtype, struct regcache *regcache,
 			struct value **read_value, const gdb_byte *writebuf)
-{  
+{
   gdb_byte *readbuf = nullptr;
   if (read_value != nullptr)
     {
@@ -342,8 +341,8 @@ ppc_linux_ilp32_svr4_solib_ops::in_dynsym_resolve_code (CORE_ADDR pc) const
   if (sym.minsym == nullptr)
     return false;
 
-  return (strcmp (sym.minsym->linkage_name (), "__glink") == 0
-	  || strcmp (sym.minsym->linkage_name (), "__glink_PLTresolve") == 0);
+  return (streq (sym.minsym->linkage_name (), "__glink")
+	  || streq (sym.minsym->linkage_name (), "__glink_PLTresolve"));
 }
 
 /* Follow PLT stub to actual routine.
@@ -575,7 +574,7 @@ static const struct regset ppc32_linux_vsxregset = {
   regcache_collect_regset
 };
 
-/* Program Priorty Register regmap.  */
+/* Program Priority Register regmap.  */
 
 static const struct regcache_map_entry ppc32_regmap_ppr[] =
   {
@@ -583,7 +582,7 @@ static const struct regcache_map_entry ppc32_regmap_ppr[] =
       { 0 }
   };
 
-/* Program Priorty Register regset.  */
+/* Program Priority Register regset.  */
 
 const struct regset ppc32_linux_pprregset = {
   ppc32_regmap_ppr,
@@ -1306,7 +1305,7 @@ ppc64_linux_sighandler_cache_init (const struct tramp_frame *self,
 static struct tramp_frame ppc32_linux_sigaction_tramp_frame = {
   SIGTRAMP_FRAME,
   4,
-  { 
+  {
     { 0x380000ac, ULONGEST_MAX }, /* li r0, 172 */
     { 0x44000002, ULONGEST_MAX }, /* sc */
     { TRAMP_SENTINEL_INSN },
@@ -1327,7 +1326,7 @@ static struct tramp_frame ppc64_linux_sigaction_tramp_frame = {
 static struct tramp_frame ppc32_linux_sighandler_tramp_frame = {
   SIGTRAMP_FRAME,
   4,
-  { 
+  {
     { 0x38000077, ULONGEST_MAX }, /* li r0,119 */
     { 0x44000002, ULONGEST_MAX }, /* sc */
     { TRAMP_SENTINEL_INSN },
@@ -1337,7 +1336,7 @@ static struct tramp_frame ppc32_linux_sighandler_tramp_frame = {
 static struct tramp_frame ppc64_linux_sighandler_tramp_frame = {
   SIGTRAMP_FRAME,
   4,
-  { 
+  {
     { 0x38210080, ULONGEST_MAX }, /* addi r1,r1,128 */
     { 0x38000077, ULONGEST_MAX }, /* li r0,119 */
     { 0x44000002, ULONGEST_MAX }, /* sc */
@@ -1566,9 +1565,6 @@ ppc_linux_record_signal (struct gdbarch *gdbarch, struct regcache *regcache,
   if (record_full_arch_list_add_mem (sp, SIGNAL_FRAMESIZE + sizeof_rt_sigframe))
     return -1;
 
-  if (record_full_arch_list_add_end ())
-    return -1;
-
   return 0;
 }
 
@@ -1708,14 +1704,14 @@ ppc_elfv2_skip_entrypoint (struct gdbarch *gdbarch, CORE_ADDR pc)
 /* Implementation of `gdbarch_stap_is_single_operand', as defined in
    gdbarch.h.  */
 
-static int
+static bool
 ppc_stap_is_single_operand (struct gdbarch *gdbarch, const char *s)
 {
   return (*s == 'i' /* Literal number.  */
-	  || (isdigit (*s) && s[1] == '('
-	      && isdigit (s[2])) /* Displacement.  */
-	  || (*s == '(' && isdigit (s[1])) /* Register indirection.  */
-	  || isdigit (*s)); /* Register value.  */
+	  || (c_isdigit (*s) && s[1] == '('
+	      && c_isdigit (s[2])) /* Displacement.  */
+	  || (*s == '(' && c_isdigit (s[1])) /* Register indirection.  */
+	  || c_isdigit (*s)); /* Register value.  */
 }
 
 /* Implementation of `gdbarch_stap_parse_special_token', as defined in
@@ -1725,16 +1721,15 @@ static expr::operation_up
 ppc_stap_parse_special_token (struct gdbarch *gdbarch,
 			      struct stap_parse_info *p)
 {
-  if (isdigit (*p->arg))
+  if (c_isdigit (*p->arg))
     {
       /* This temporary pointer is needed because we have to do a lookahead.
 	  We could be dealing with a register displacement, and in such case
 	  we would not need to do anything.  */
       const char *s = p->arg;
       char *regname;
-      int len;
 
-      while (isdigit (*s))
+      while (c_isdigit (*s))
 	++s;
 
       if (*s == '(')
@@ -1744,7 +1739,7 @@ ppc_stap_parse_special_token (struct gdbarch *gdbarch,
 	  return {};
 	}
 
-      len = s - p->arg;
+      size_t len = s - p->arg;
       regname = (char *) alloca (len + 2);
       regname[0] = 'r';
 
@@ -1752,7 +1747,7 @@ ppc_stap_parse_special_token (struct gdbarch *gdbarch,
       ++len;
       regname[len] = '\0';
 
-      if (user_reg_map_name_to_regnum (gdbarch, regname, len) == -1)
+      if (user_reg_map_name_to_regnum (gdbarch, { regname, len }) == -1)
 	error (_("Invalid register name `%s' on expression `%s'."),
 	       regname, p->saved_arg);
 
@@ -2011,14 +2006,14 @@ ppc_floatformat_for_type (struct gdbarch *gdbarch,
 {
   if (len == 128 && name)
     {
-      if (strcmp (name, "__float128") == 0
-	  || strcmp (name, "_Float128") == 0
-	  || strcmp (name, "_Float64x") == 0
-	  || strcmp (name, "complex _Float128") == 0
-	  || strcmp (name, "complex _Float64x") == 0)
+      if (streq (name, "__float128")
+	  || streq (name, "_Float128")
+	  || streq (name, "_Float64x")
+	  || streq (name, "complex _Float128")
+	  || streq (name, "complex _Float64x"))
 	return floatformats_ieee_quad;
 
-      if (strcmp (name, "__ibm128") == 0)
+      if (streq (name, "__ibm128"))
 	return floatformats_ibm_long_double;
     }
 
@@ -2035,8 +2030,8 @@ linux_dwarf2_omit_typedef_p (struct type *target_type,
     {
       if ((target_type->code () == TYPE_CODE_FLT
 	   || target_type->code () == TYPE_CODE_COMPLEX)
-	  && (strcmp (name, "long double") == 0
-	      || strcmp (name, "complex long double") == 0))
+	  && (streq (name, "long double")
+	      || streq (name, "complex long double")))
 	{
 	  /* IEEE 128-bit floating point and IBM long double are two
 	     encodings for 128-bit values.  The DWARF debug data can't
@@ -2066,7 +2061,7 @@ linux_dwarf2_omit_typedef_p (struct type *target_type,
 static const char *
 ppc64le_gnu_triplet_regexp (struct gdbarch *gdbarch)
 {
-  return "p(ower)?pc64le";
+  return "p(ower)?pc64le"; /* codespell:ignore.  */
 }
 
 /* Specify the powerpc64 target triplet.
@@ -2078,15 +2073,7 @@ ppc64le_gnu_triplet_regexp (struct gdbarch *gdbarch)
 static const char *
 ppc64_gnu_triplet_regexp (struct gdbarch *gdbarch)
 {
-  return "p(ower)?pc64";
-}
-
-/* Implement the linux_gcc_target_options method.  */
-
-static std::string
-ppc64_linux_gcc_target_options (struct gdbarch *gdbarch)
-{
-  return "";
+  return "p(ower)?pc64"; /* codespell:ignore.  */
 }
 
 /* Fetch and return the TLS DTV (dynamic thread vector) address for PTID.
@@ -2259,11 +2246,6 @@ ppc_linux_init_abi (struct gdbarch_info info,
   /* Linux DWARF register mapping is different from the other OSes.  */
   set_gdbarch_dwarf2_reg_to_regnum (gdbarch,
 				    rs6000_linux_dwarf2_reg_to_regnum);
-  /* Note on Linux the mapping for the DWARF registers and the stab registers
-     use the same numbers.  Install rs6000_linux_dwarf2_reg_to_regnum for the
-     stab register mappings as well.  */
-  set_gdbarch_stab_reg_to_regnum (gdbarch,
-				    rs6000_linux_dwarf2_reg_to_regnum);
   dwarf2_frame_set_adjust_regnum (gdbarch, rs6000_linux_adjust_frame_regnum);
 
   if (tdep->wordsize == 4)
@@ -2303,7 +2285,7 @@ ppc_linux_init_abi (struct gdbarch_info info,
 
       set_gdbarch_skip_solib_resolver (gdbarch, glibc_skip_solib_resolver);
     }
-  
+
   if (tdep->wordsize == 8)
     {
       if (tdep->elf_abi == POWERPC_ELF_V1)
@@ -2347,8 +2329,6 @@ ppc_linux_init_abi (struct gdbarch_info info,
 	set_gdbarch_gnu_triplet_regexp (gdbarch, ppc64le_gnu_triplet_regexp);
       else
 	set_gdbarch_gnu_triplet_regexp (gdbarch, ppc64_gnu_triplet_regexp);
-      /* Set GCC target options.  */
-      set_gdbarch_gcc_target_options (gdbarch, ppc64_linux_gcc_target_options);
       /* Internal thread local address support.  */
       set_gdbarch_get_thread_local_address (gdbarch,
 					    svr4_tls_get_thread_local_address);

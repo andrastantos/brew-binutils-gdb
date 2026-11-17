@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux x86 (i386 and x86-64).
 
-   Copyright (C) 1999-2025 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,7 +18,6 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "elf/common.h"
-#include "gdbsupport/common-defs.h"
 #include "nat/gdb_ptrace.h"
 #include "nat/linux-ptrace.h"
 #include "nat/x86-cpuid.h"
@@ -27,6 +26,12 @@
 #include "x86-linux-dregs.h"
 #include "nat/gdb_ptrace.h"
 #include <sys/user.h>
+
+#ifndef __x86_64__
+#include "nat/i386-linux.h"
+#else
+#include "nat/amd64-linux.h"
+#endif
 
 /* Per-thread arch-specific data we want to keep.  */
 
@@ -181,6 +186,44 @@ x86_check_ssp_support (const int tid)
 		   safe_strerror (errno));
 	  return false;
 	}
+    }
+
+  return true;
+}
+
+/* See nat/x86-linux.h.  */
+
+bool
+i386_ptrace_get_tls_data (int pid, gdb::array_view<user_desc> buffer)
+{
+  gdb_assert (buffer.size () == 3);
+
+  for (int i = 0; i < 3; ++i)
+    {
+      void *addr = (void *) (uintptr_t) (i386_initial_tls_gdt + i);
+      void *data = buffer.slice (i, 1).data ();
+
+      if (ptrace (PTRACE_GET_THREAD_AREA, pid, addr, data) < 0)
+	return false;
+    }
+
+  return true;
+}
+
+/* See nat/x86-linux.h.  */
+
+bool
+i386_ptrace_set_tls_data (int pid, gdb::array_view<user_desc> buffer)
+{
+  gdb_assert (buffer.size () == 3);
+
+  for (int i = 0; i < 3; ++i)
+    {
+      void *addr = (void *) (uintptr_t) (i386_initial_tls_gdt + i);
+      void *data = buffer.slice (i, 1).data ();
+
+      if (ptrace (PTRACE_SET_THREAD_AREA, pid, addr, data) < 0)
+       return false;
     }
 
   return true;

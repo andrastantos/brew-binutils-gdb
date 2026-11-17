@@ -1,6 +1,6 @@
 /* DWARF index storage
 
-   Copyright (C) 2022-2025 Free Software Foundation, Inc.
+   Copyright (C) 2022-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,11 +27,7 @@
 #include "dwarf2/read.h"
 #include "maint.h"
 #include "run-on-main-thread.h"
-
-#if CXX_STD_THREAD
-#include <mutex>
-#include <condition_variable>
-#endif /* CXX_STD_THREAD */
+#include "gdbsupport/cxx-thread.h"
 
 using cutu_reader_up = std::unique_ptr<cutu_reader>;
 
@@ -54,6 +50,10 @@ public:
     = default;
 
   /* Return the current abbrev table_cache.  */
+  abbrev_table_cache &get_abbrev_table_cache ()
+  { return m_abbrev_table_cache; }
+
+  /* Return the current abbrev table_cache.  */
   const abbrev_table_cache &get_abbrev_table_cache () const
   { return m_abbrev_table_cache; }
 
@@ -67,17 +67,6 @@ public:
   /* Add an entry to the index.  The arguments describe the entry; see
      cooked-index.h.  The new entry is returned.  */
   cooked_index_entry *add (sect_offset die_offset, enum dwarf_tag tag,
-			   cooked_index_flag flags,
-			   const char *name,
-			   cooked_index_entry_ref parent_entry,
-			   dwarf2_per_cu *per_cu)
-  {
-    return m_shard->add (die_offset, tag, flags, per_cu->lang (),
-			 name, parent_entry, per_cu);
-  }
-
-  /* Overload that allows the language to be specified.  */
-  cooked_index_entry *add (sect_offset die_offset, enum dwarf_tag tag,
 			   cooked_index_flag flags, enum language lang,
 			   const char *name,
 			   cooked_index_entry_ref parent_entry,
@@ -85,6 +74,13 @@ public:
   {
     return m_shard->add (die_offset, tag, flags, lang,
 			 name, parent_entry, per_cu);
+  }
+
+  /* Add a copy of NAME to the index.  Return a pointer to the
+     copy.  */
+  const char *add (std::string_view name)
+  {
+    return m_shard->add (name);
   }
 
   /* Install the current addrmap into the shard being constructed,
@@ -101,6 +97,12 @@ public:
   addrmap_mutable *get_addrmap ()
   {
     return &m_addrmap;
+  }
+
+  /* Set the mutable addrmap.  */
+  void set_addrmap (addrmap_mutable new_map)
+  {
+    m_addrmap = std::move (new_map);
   }
 
   /* Return the parent_map that is currently being created.  */
@@ -140,6 +142,16 @@ public:
      only be called on the main thread.  */
   void emit_complaints_and_exceptions
        (gdb::unordered_set<gdb_exception> &seen_exceptions);
+
+  /* Record that the FROM CU included the TO CU.  */
+  void record_inclusion (dwarf2_per_cu *from, dwarf2_per_cu *to)
+  {
+    m_inclusions[from].push_back (to);
+  }
+
+  /* Update CUs with all the inclusion information that we've
+     discovered.  */
+  void invert_cu_inclusions ();
 
 private:
   /* The abbrev table cache used by this indexer.  */
@@ -185,6 +197,11 @@ private:
 
   /* Exceptions that we're storing to emit later.  */
   std::vector<gdb_exception> m_exceptions;
+
+  /* Map from a CU to a list of all the CUs that it directly
+     includes.  */
+  gdb::unordered_map<dwarf2_per_cu *,
+		     std::vector<dwarf2_per_cu *>> m_inclusions;
 };
 
 /* The possible states of the index.  See the explanatory comment
@@ -210,7 +227,7 @@ enum class cooked_state
 
    This is an abstract base class that defines the basic behavior of
    scanners.  Separate concrete implementations exist for scanning
-   .debug_names and .debug_info.  */
+   .debug_names, .gdb_index, and .debug_info.  */
 
 class cooked_index_worker
 {
@@ -283,8 +300,14 @@ protected:
 
   /* The per-objfile object.  */
   dwarf2_per_objfile *m_per_objfile;
+
   /* Result of each worker task.  */
   std::vector<cooked_index_worker_result> m_results;
+
+  /* Mutex to synchronize access to M_RESULTS when workers append their
+     result.  */
+  gdb::mutex m_results_mutex;
+
   /* Any warnings emitted.  For the time being at least, this only
      needed in do_reading, not in every worker.  Note that
      deferred_warnings uses gdb_stderr in its constructor, and this
@@ -296,13 +319,12 @@ protected:
      parent relationships.  */
   parent_map_map m_all_parents_map;
 
-#if CXX_STD_THREAD
   /* Current state of this object.  */
   cooked_state m_state = cooked_state::INITIAL;
   /* Mutex and condition variable used to synchronize.  */
-  std::mutex m_mutex;
-  std::condition_variable m_cond;
-#endif /* CXX_STD_THREAD */
+  gdb::mutex m_mutex;
+  gdb::condition_variable m_cond;
+
   /* This flag indicates whether any complaints or exceptions that
      arose during scanning have been reported by 'wait'.  This may
      only be modified on the main thread.  */

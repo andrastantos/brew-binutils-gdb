@@ -1,5 +1,5 @@
 /* Common things used by the various *gnu-nat.c files
-   Copyright (C) 1995-2025 Free Software Foundation, Inc.
+   Copyright (C) 1995-2026 Free Software Foundation, Inc.
 
    Written by Miles Bader <miles@gnu.ai.mit.edu>
 
@@ -42,7 +42,7 @@ extern struct inf *gnu_current_inf;
 /* Converts a GDB pid to a struct proc.  */
 struct proc *inf_tid_to_thread (struct inf *inf, int tid);
 
-typedef void (inf_threads_ftype) (struct proc *thread, void *arg);
+using inf_threads_ftype = void (struct proc *thread, void *arg);
 
 /* Call F for every thread in inferior INF, passing ARG as second parameter.  */
 void inf_threads (struct inf *inf, inf_threads_ftype *f, void *arg);
@@ -130,7 +130,7 @@ struct gnu_nat_target : public inf_child_target
 					ULONGEST offset, ULONGEST len,
 					ULONGEST *xfered_len) override;
 
-  int find_memory_regions (find_memory_region_ftype func, void *data)
+  bool find_memory_regions (find_memory_region_ftype func)
     override;
   void kill () override;
 

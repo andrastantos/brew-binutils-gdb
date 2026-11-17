@@ -1,6 +1,6 @@
 /* Entry in the cooked index
 
-   Copyright (C) 2022-2025 Free Software Foundation, Inc.
+   Copyright (C) 2022-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,8 +18,8 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "dwarf2/cooked-index-entry.h"
+#include "dwarf2/read.h"
 #include "dwarf2/tag.h"
-#include "gdbsupport/gdb-safe-ctype.h"
 #include "gdbsupport/selftest.h"
 
 /* See cooked-index-entry.h.  */
@@ -34,6 +34,7 @@ to_string (cooked_index_flag flags)
     MAP_ENUM_FLAG (IS_TYPE_DECLARATION),
     MAP_ENUM_FLAG (IS_PARENT_DEFERRED),
     MAP_ENUM_FLAG (IS_SYNTHESIZED),
+    MAP_ENUM_FLAG (IS_INLINED),
   };
 
   return flags.to_string (mapping);
@@ -57,7 +58,7 @@ cooked_index_entry::compare (const char *stra, const char *strb,
 	 template functions" section in the manual.  */
       if (c == '<')
 	return '\0';
-      return TOLOWER ((unsigned char) c);
+      return c_tolower (c);
     };
 
   unsigned char a = munge (*stra);
@@ -189,8 +190,15 @@ cooked_index_entry::full_name (struct obstack *storage,
       break;
 
     case language_ada:
+      /* If GNAT emits hierarchical names (patches not in at the time
+	 of writing), then we need to compute the linkage name here.
+	 However for traditional GNAT, the linkage name will be in
+	 'name'.  Detect this by looking for "__"; see also
+	 cooked_index_shard::finalize.  */
       if ((name_flags & FOR_ADA_LINKAGE_NAME) != 0)
 	{
+	  if (strstr (name, "__") != nullptr)
+	    return name;
 	  sep = "__";
 	  break;
 	}
@@ -233,6 +241,28 @@ cooked_index_entry::write_scope (struct obstack *storage,
   obstack_grow (storage, local_name, strlen (local_name));
   obstack_grow (storage, sep, strlen (sep));
 }
+
+/* See cooked_index_entry.h.  */
+
+void
+cooked_index_entry::force_set_language () const
+{
+  gdb_assert (lang == language_unknown);
+  lang = per_cu->lang ();
+}
+
+/* See cooked-index-entry.h.  */
+
+iteration_status
+cooked_index_entry::visit_defining_cus (per_cu_callback callback) const
+{
+  if ((flags & IS_INLINED) == 0)
+    return callback (per_cu->canonical_outermost_cu ());
+
+  return per_cu->recursively_visit_cus (callback);
+}
+
+/* See cooked-index-entry.h.  */
 
 INIT_GDB_FILE (dwarf2_entry)
 {

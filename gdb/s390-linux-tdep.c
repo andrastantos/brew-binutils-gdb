@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux on s390.
 
-   Copyright (C) 2001-2025 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
 
    Contributed by D.J. Barrow (djbarrow@de.ibm.com,barrow_dj@yahoo.com)
    for IBM Deutschland Entwicklung GmbH, IBM Corporation.
@@ -68,7 +68,7 @@
 
 /* Implement cannot_store_register gdbarch method.  */
 
-static int
+static bool
 s390_cannot_store_register (struct gdbarch *gdbarch, int regnum)
 {
   /* The last-break address is read-only.  */
@@ -336,6 +336,7 @@ s390_core_read_description (struct gdbarch *gdbarch,
   asection *section = bfd_get_section_by_name (abfd, ".reg");
   std::optional<gdb::byte_vector> auxv = target_read_auxv_raw (target);
   CORE_ADDR hwcap = linux_get_hwcap (auxv, target, gdbarch);
+  /* codespell:ignore-begin.  */
   bool high_gprs, v1, v2, te, vx, gs;
 
   if (!section)
@@ -358,10 +359,10 @@ s390_core_read_description (struct gdbarch *gdbarch,
 		vx ? tdesc_s390_vx_linux64 :
 		te ? tdesc_s390_te_linux64 :
 		v2 ? tdesc_s390_linux64v2 :
-		v1 ? tdesc_s390_linux64v1 : tdesc_s390_linux64);
+		v1 ? tdesc_s390_linux64v1 : tdesc_s390_linux64).get ();
       else
 	return (v2 ? tdesc_s390_linux32v2 :
-		v1 ? tdesc_s390_linux32v1 : tdesc_s390_linux32);
+		v1 ? tdesc_s390_linux32v1 : tdesc_s390_linux32).get ();
 
     case s390x_sizeof_gregset:
       return (gs ? tdesc_s390x_gs_linux64 :
@@ -369,7 +370,8 @@ s390_core_read_description (struct gdbarch *gdbarch,
 	      vx ? tdesc_s390x_vx_linux64 :
 	      te ? tdesc_s390x_te_linux64 :
 	      v2 ? tdesc_s390x_linux64v2 :
-	      v1 ? tdesc_s390x_linux64v1 : tdesc_s390x_linux64);
+	      v1 ? tdesc_s390x_linux64v1 : tdesc_s390x_linux64).get ();
+  /* codespell:ignore-end.  */
 
     default:
       return NULL;
@@ -385,6 +387,30 @@ struct s390_sigtramp_unwind_cache {
   trad_frame_saved_reg *saved_regs;
 };
 
+/* Return true if the frame pc of THIS_FRAME points to either
+   __kernel_rt_sigreturn or __kernel_sigreturn.  Return the corresponding
+   syscall number in SYSCALL_NR.  */
+
+static bool
+s390_sigtramp_p (const frame_info_ptr &this_frame, int *syscall_nr_ptr)
+{
+  CORE_ADDR pc = get_frame_pc (this_frame);
+  bfd_byte sigreturn[2];
+
+  if (target_read_memory (pc, sigreturn, 2))
+    return false;
+
+  if (sigreturn[0] != op_svc)
+    return false;
+
+  int syscall_nr = sigreturn[1];
+  if (syscall_nr_ptr != nullptr)
+    *syscall_nr_ptr = syscall_nr;
+
+  return (syscall_nr == 119 /* sigreturn */
+	  || syscall_nr == 173 /* rt_sigreturn */);
+}
+
 /* Unwind THIS_FRAME and return the corresponding unwind cache for
    s390_sigtramp_frame_unwind.  */
 
@@ -396,27 +422,29 @@ s390_sigtramp_frame_unwind_cache (const frame_info_ptr &this_frame,
   s390_gdbarch_tdep *tdep = gdbarch_tdep<s390_gdbarch_tdep> (gdbarch);
   int word_size = gdbarch_ptr_bit (gdbarch) / 8;
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-  struct s390_sigtramp_unwind_cache *info;
   ULONGEST this_sp, prev_sp;
-  CORE_ADDR next_ra, next_cfa, sigreg_ptr, sigreg_high_off;
+  CORE_ADDR next_cfa, sigreg_ptr, sigreg_high_off;
   int i;
 
   if (*this_prologue_cache)
     return (struct s390_sigtramp_unwind_cache *) *this_prologue_cache;
 
-  info = FRAME_OBSTACK_ZALLOC (struct s390_sigtramp_unwind_cache);
+  auto *info = frame_obstack_zalloc<s390_sigtramp_unwind_cache> ();
   *this_prologue_cache = info;
   info->saved_regs = trad_frame_alloc_saved_regs (this_frame);
 
   this_sp = get_frame_register_unsigned (this_frame, S390_SP_REGNUM);
-  next_ra = get_frame_pc (this_frame);
   next_cfa = this_sp + 16*word_size + 32;
+
+  int syscall_nr;
+  bool res = s390_sigtramp_p (this_frame, &syscall_nr);
+  gdb_assert (res);
 
   /* New-style RT frame:
 	retcode + alignment (8 bytes)
 	siginfo (128 bytes)
 	ucontext (contains sigregs at offset 5 words).  */
-  if (next_ra == next_cfa)
+  if (syscall_nr == 173 /* rt_sigreturn */)
     {
       sigreg_ptr = next_cfa + 8 + 128 + align_up (5*word_size, 8);
       /* sigregs are followed by uc_sigmask (8 bytes), then by the
@@ -526,20 +554,7 @@ s390_sigtramp_frame_sniffer (const struct frame_unwind *self,
 			     const frame_info_ptr &this_frame,
 			     void **this_prologue_cache)
 {
-  CORE_ADDR pc = get_frame_pc (this_frame);
-  bfd_byte sigreturn[2];
-
-  if (target_read_memory (pc, sigreturn, 2))
-    return 0;
-
-  if (sigreturn[0] != op_svc)
-    return 0;
-
-  if (sigreturn[1] != 119 /* sigreturn */
-      && sigreturn[1] != 173 /* rt_sigreturn */)
-    return 0;
-
-  return 1;
+  return s390_sigtramp_p (this_frame, nullptr) ? 1 : 0;
 }
 
 /* S390 sigtramp frame unwinder.  */
@@ -897,9 +912,6 @@ s390_linux_record_signal (struct gdbarch *gdbarch, struct regcache *regcache,
   if (record_full_arch_list_add_mem (sp, sizeof_rt_sigframe))
     return -1;
 
-  if (record_full_arch_list_add_end ())
-    return -1;
-
   return 0;
 }
 
@@ -1188,7 +1200,7 @@ s390_linux_init_abi_any (struct gdbarch_info info, struct gdbarch *gdbarch)
   set_gdbarch_get_syscall_number (gdbarch, s390_linux_get_syscall_number);
 
   /* Frame handling.  */
-  frame_unwind_append_unwinder (gdbarch, &s390_sigtramp_frame_unwind);
+  frame_unwind_prepend_unwinder (gdbarch, &s390_sigtramp_frame_unwind);
   set_gdbarch_skip_trampoline_code (gdbarch, find_solib_trampoline_target);
 
   /* Enable TLS support.  */

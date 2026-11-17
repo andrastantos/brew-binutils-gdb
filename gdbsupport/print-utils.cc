@@ -1,6 +1,6 @@
 /* Cell-based print utility routines for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,8 +28,8 @@
 char *
 get_print_cell (void)
 {
-  static char buf[NUMCELLS][PRINT_CELL_SIZE];
-  static int cell = 0;
+  static thread_local char buf[NUMCELLS][PRINT_CELL_SIZE];
+  static thread_local int cell = 0;
 
   if (++cell >= NUMCELLS)
     cell = 0;

@@ -1,6 +1,6 @@
 /* Self tests for scoped_fd for GDB, the GNU debugger.
 
-   Copyright (C) 2018-2025 Free Software Foundation, Inc.
+   Copyright (C) 2018-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -74,7 +74,7 @@ test_to_file ()
   SELF_CHECK (sfd.get () >= 0);
 
   unlink (filename);
-  
+
   gdb_file_up file = sfd.to_file ("rw");
   SELF_CHECK (file != nullptr);
   SELF_CHECK (sfd.get () == -1);

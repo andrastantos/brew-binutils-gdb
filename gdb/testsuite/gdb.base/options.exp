@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 
-# Copyright 2019-2025 Free Software Foundation, Inc.
+# Copyright 2019-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -37,14 +37,14 @@ load_lib completion-support.exp
 standard_testfile .c
 
 if {[build_executable "failed to prepare" $testfile $srcfile debug]} {
-    return -1
+    return
 }
 
 clean_restart
 
 if { ![readline_is_used] } {
     untested "no tab completion support without readline"
-    return -1
+    return
 }
 
 set tui_supported_p [allow_tui_tests]
@@ -204,11 +204,9 @@ proc_with_prefix test-print {{prefix ""}} {
 	"-vtbl"
     }
 
-    global binfile
-    clean_restart
-    gdb_load $binfile
+    clean_restart $::testfile
 
-    if ![runto_main] {
+    if {![runto_main]} {
 	return
     }
 
@@ -317,11 +315,9 @@ proc_with_prefix test-backtrace {} {
 	"backtrace no-fil" \
 	"backtrace no-filters"
 
-    global binfile
-    clean_restart
-    gdb_load $binfile
+    clean_restart $::testfile
 
-    if ![runto_main] {
+    if {![runto_main]} {
 	return
     }
 
@@ -1163,7 +1159,7 @@ foreach prefix {
 # Same for "compile print".  Not really a wrapper prefix command like
 # "frame apply", but similar enough that we test pretty much the same
 # things.
-if ![skip_compile_feature_tests] {
+if {![skip_compile_feature_tests]} {
     test-print "compile "
 }
 

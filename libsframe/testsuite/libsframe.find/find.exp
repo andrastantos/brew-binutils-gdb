@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2025 Free Software Foundation, Inc.
+# Copyright (C) 2023-2026 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -32,6 +32,10 @@ if [string equal $COMPAT_DEJAGNU "no"] {
 
 if { [host_execute "testsuite/libsframe.find/findfre-1"] ne "" } {
     fail "findfre-1"
+}
+
+if { [host_execute "testsuite/libsframe.find/findfre-flex-1"] ne "" } {
+    fail "findfre-flex-1"
 }
 
 if { [host_execute "testsuite/libsframe.find/findfunc-1"] ne "" } {

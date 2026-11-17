@@ -1,6 +1,6 @@
 /* Target-dependent code for NetBSD/mips.
 
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    Contributed by Wasabi Systems, Inc.
 
@@ -197,7 +197,7 @@ mipsnbsd_fill_fpreg (const struct regcache *regcache, char *fpregs, int regno)
   for (i = gdbarch_fp0_regnum (gdbarch);
        i <= mips_regnum (gdbarch)->fp_control_status;
        i++)
-    if ((regno == i || regno == -1) 
+    if ((regno == i || regno == -1)
 	&& ! gdbarch_cannot_store_register (gdbarch, i))
       regcache->raw_collect
 	(i, (fpregs + ((i - gdbarch_fp0_regnum (gdbarch))
@@ -214,7 +214,7 @@ mipsnbsd_fill_fpreg (const struct regcache *regcache, char *fpregs, int regno)
 	addu	a0, sp, 16
 	li	v0, 295			# __sigreturn14
 	syscall
-   
+
    Each instruction has a unique encoding, so we simply attempt to match
    the instruction the PC is pointing to with any of the above instructions.
    If there is a hit, we know the offset to the start of the designated
@@ -253,7 +253,7 @@ static const unsigned char sigtramp_retcode_mipseb[RETCODE_SIZE] =
 #define NBSD_MIPS_JB_OFFSET(gdbarch)		(NBSD_MIPS_JB_PC * \
 					 NBSD_MIPS_JB_ELEMENT_SIZE (gdbarch))
 
-static int
+static bool
 mipsnbsd_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
@@ -267,21 +267,21 @@ mipsnbsd_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 
   if (target_read_memory (jb_addr + NBSD_MIPS_JB_OFFSET (gdbarch), buf,
 			  NBSD_MIPS_JB_ELEMENT_SIZE (gdbarch)))
-    return 0;
+    return false;
 
   *pc = extract_unsigned_integer (buf, NBSD_MIPS_JB_ELEMENT_SIZE (gdbarch),
 				  byte_order);
-  return 1;
+  return true;
 }
 
-static int
+static bool
 mipsnbsd_cannot_fetch_register (struct gdbarch *gdbarch, int regno)
 {
   return (regno == MIPS_ZERO_REGNUM
 	  || regno == mips_regnum (gdbarch)->fp_implementation_revision);
 }
 
-static int
+static bool
 mipsnbsd_cannot_store_register (struct gdbarch *gdbarch, int regno)
 {
   return (regno == MIPS_ZERO_REGNUM
@@ -315,7 +315,7 @@ mips_nbsd_ilp32_svr4_solib_ops::fetch_link_map_offsets () const
   static struct link_map_offsets lmo;
   static struct link_map_offsets *lmp = NULL;
 
-  if (lmp == NULL) 
+  if (lmp == NULL)
     {
       lmp = &lmo;
 
@@ -379,7 +379,7 @@ mips_nbsd_lp64_svr4_solib_ops::fetch_link_map_offsets () const
       /* Everything we need is in the first 40 bytes.  */
       lmo.link_map_size = 48;
       lmo.l_addr_offset = 0;
-      lmo.l_name_offset = 16; 
+      lmo.l_name_offset = 16;
       lmo.l_ld_offset = 24;
       lmo.l_next_offset = 32;
       lmo.l_prev_offset = 40;

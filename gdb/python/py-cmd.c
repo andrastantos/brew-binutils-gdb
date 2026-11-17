@@ -1,6 +1,6 @@
 /* gdb commands implemented in Python
 
-   Copyright (C) 2008-2025 Free Software Foundation, Inc.
+   Copyright (C) 2008-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -50,10 +50,8 @@ static const struct cmdpy_completer completers[] =
 
 /* A gdb command.  For the time being only ordinary commands (not
    set/show commands) are allowed.  */
-struct cmdpy_object
+struct cmdpy_object : public PyObject
 {
-  PyObject_HEAD
-
   /* The corresponding gdb command object, or NULL if the command is
      no longer installed.  */
   struct cmd_list_element *command;
@@ -65,8 +63,9 @@ struct cmdpy_object
   struct cmd_list_element *sub_list;
 };
 
-extern PyTypeObject cmdpy_object_type
-    CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("cmdpy_object");
+static_assert (gdb::is_python_allocatable_v<cmdpy_object>);
+
+extern PyTypeObject cmdpy_object_type;
 
 /* Constants used by this module.  */
 static PyObject *invoke_cst;
@@ -79,7 +78,7 @@ static PyObject *
 cmdpy_dont_repeat (PyObject *self, PyObject *args)
 {
   dont_repeat ();
-  Py_RETURN_NONE;
+  return py_none ().release ();
 }
 
 
@@ -189,7 +188,7 @@ cmdpy_completer_helper (struct cmd_list_element *command,
   if (word == NULL)
     {
       /* "brkchars" phase.  */
-      wordobj = gdbpy_ref<>::new_reference (Py_None);
+      wordobj = py_none ();
     }
   else
     {
@@ -461,7 +460,7 @@ cmdpy_init (PyObject *self, PyObject *args, PyObject *kw)
       && cmdtype != class_info && cmdtype != class_breakpoint
       && cmdtype != class_trace && cmdtype != class_obscure
       && cmdtype != class_maintenance && cmdtype != class_user
-      && cmdtype != class_tui)
+      && cmdtype != class_tui && cmdtype != class_essential)
     {
       PyErr_Format (PyExc_RuntimeError, _("Invalid command class argument."));
       return -1;
@@ -595,8 +594,8 @@ cmdpy_init (PyObject *self, PyObject *args, PyObject *kw)
 
 /* Initialize the 'commands' code.  */
 
-static int CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION
-gdbpy_initialize_commands (void)
+static int
+gdbpy_initialize_commands ()
 {
   int i;
 
@@ -622,6 +621,8 @@ gdbpy_initialize_commands (void)
       || PyModule_AddIntConstant (gdb_module, "COMMAND_MAINTENANCE",
 				  class_maintenance) < 0
       || PyModule_AddIntConstant (gdb_module, "COMMAND_USER", class_user) < 0
+      || PyModule_AddIntConstant (gdb_module, "COMMAND_ESSENTIAL",
+				  class_essential) < 0
       || PyModule_AddIntConstant (gdb_module, "COMMAND_TUI", class_tui) < 0)
     return -1;
 

@@ -1,6 +1,6 @@
 /* Main interface for GDB, the GNU debugger.
 
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -35,7 +35,7 @@ extern int return_child_result_value;
 extern int batch_silent;
 extern int batch_flag;
 
-/* * The name of the interpreter if specified on the command line.  */
+/* The name of the interpreter if specified on the command line.  */
 extern std::string interpreter_p;
 
 /* From mingw-hdep.c, used by main.c.  */

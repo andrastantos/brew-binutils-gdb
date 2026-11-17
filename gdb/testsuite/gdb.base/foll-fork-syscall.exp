@@ -1,4 +1,4 @@
-# Copyright 2025 Free Software Foundation, Inc.
+# Copyright 2025-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,11 +21,12 @@
 require !gdb_debug_enabled
 require {is_any_target "i?86-*-*" "x86_64-*-*"}
 require allow_fork_tests
+require allow_xml_test
 
 standard_testfile
 
 if {[build_executable "failed to prepare" $testfile $srcfile debug]} {
-    return -1
+    return
 }
 
 proc setup_gdb {} {
@@ -97,7 +98,7 @@ proc_with_prefix test_catch_syscall {follow-fork-mode detach-on-fork} {
     if {${follow-fork-mode} == "parent"} {
 	set following_inf 1
     } else {
-	set followin_inf 2
+	set following_inf 2
     }
     # Next stop should be the fork catchpoint.
     set expected_re ""

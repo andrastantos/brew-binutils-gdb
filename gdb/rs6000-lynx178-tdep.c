@@ -1,4 +1,4 @@
-/* Copyright (C) 2012-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2012-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -415,4 +415,3 @@ INIT_GDB_FILE (rs6000_lynx178_tdep)
   gdbarch_register_osabi (bfd_arch_rs6000, 0, GDB_OSABI_LYNXOS178,
 			  rs6000_lynx178_init_osabi);
 }
-

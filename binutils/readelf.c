@@ -1,5 +1,5 @@
 /* readelf.c -- display contents of an ELF format file
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
    Originally developed by Eric Youngdale <eric@andante.jic.com>
    Modifications by Nick Clifton <nickc@redhat.com>
@@ -58,6 +58,7 @@
 #define BFD64
 
 #include "bfd.h"
+#include "elf-attrs.h"
 #include "bucomm.h"
 #include "elfcomm.h"
 #include "demanguse.h"
@@ -241,8 +242,6 @@ static bool do_dump = false;
 static bool do_version = false;
 static bool do_histogram = false;
 static bool do_debugging = false;
-static bool do_ctf = false;
-static bool do_sframe = false;
 static bool do_arch = false;
 static bool do_notes = false;
 static bool do_archive_index = false;
@@ -284,6 +283,7 @@ typedef struct filedata
   uint64_t             archive_file_size;
   /* Everything below this point is cleared out by free_filedata.  */
   Elf_Internal_Shdr *  section_headers;
+  Elf_Internal_Shdr ** orig_section_headers;
   Elf_Internal_Phdr *  program_headers;
   char *               string_table;
   uint64_t             string_table_length;
@@ -849,8 +849,8 @@ print_symbol_name (signed int width, const char * symbol)
 		  if (width_remaining < 8)
 		    break;
 		  printf ("\\u%02x%02x%02x",
-			  ((bytes[0] & 0x07) << 6) | ((bytes[1] & 0x3c) >> 2),
-			  ((bytes[1] & 0x03) << 6) | ((bytes[2] & 0x3c) >> 2),
+			  ((bytes[0] & 0x07) << 2) | ((bytes[1] & 0x30) >> 4),
+			  ((bytes[1] & 0x0f) << 4) | ((bytes[2] & 0x3c) >> 2),
 			  ((bytes[2] & 0x03) << 6) | (bytes[3] & 0x3f));
 
 		  break;
@@ -1009,6 +1009,50 @@ is_ia64_vms (Filedata * filedata)
 {
   return filedata->file_header.e_machine == EM_IA_64
     && filedata->file_header.e_ident[EI_OSABI] == ELFOSABI_OPENVMS;
+}
+
+/* Return true if NDX is a special defined section index.  */
+
+static bool
+special_defined_section_index (Filedata *filedata, size_t ndx)
+{
+  if (ndx == SHN_ABS || ndx == SHN_COMMON)
+    return true;
+
+  if (filedata != NULL)
+    switch (filedata->file_header.e_machine)
+      {
+      case EM_MIPS:
+	if (ndx == SHN_MIPS_SCOMMON)
+	  return true;
+	break;
+
+      case EM_TI_C6000:
+	if (ndx == SHN_TIC6X_SCOMMON)
+	  return true;
+	break;
+
+      case EM_X86_64:
+      case EM_L1OM:
+      case EM_K1OM:
+	if (ndx == SHN_X86_64_LCOMMON)
+	  return true;
+	break;
+
+      case EM_IA_64:
+	if (filedata->file_header.e_ident[EI_OSABI] == ELFOSABI_HPUX
+	    && ndx == SHN_IA_64_ANSI_COMMON)
+	  return true;
+
+	if (is_ia64_vms (filedata) && ndx == SHN_IA_64_VMS_SYMVEC)
+	  return true;
+	break;
+
+      default:
+	break;
+      }
+
+  return false;
 }
 
 static const char *
@@ -1790,13 +1834,13 @@ update_all_relocations (size_t nentries)
 {
   size_t sz;
 
-  if (!do_got_section_contents)
+  if (nentries == 0 || !do_got_section_contents)
     return;
 
   if (!all_relocations_root)
     {
       sz = nentries * sizeof (elf_relocation);
-      all_relocations_root = (elf_relocation *) xmalloc (sz);
+      all_relocations_root = xmalloc (sz);
       all_relocations = all_relocations_root;
       all_relocations_count = nentries;
     }
@@ -1804,11 +1848,11 @@ update_all_relocations (size_t nentries)
     {
       size_t orig_count = all_relocations_count;
       sz = (orig_count + nentries) * sizeof (elf_relocation);
-      all_relocations_root = (elf_relocation *)
-	xrealloc (all_relocations_root, sz);
+      all_relocations_root = xrealloc (all_relocations_root, sz);
       all_relocations = all_relocations_root + orig_count;
       all_relocations_count += nentries;
     }
+  memset (all_relocations, 0, nentries * sizeof (elf_relocation));
 }
 
 static uint64_t
@@ -1912,12 +1956,14 @@ dump_relr_relocations (Filedata *          filedata,
       return false;
     }
 
+  uint64_t *alloc_relrs = NULL;
   if (relrs == NULL)
     {
       relrs = get_data (NULL, filedata, relr_offset, 1, relr_size,
 			_("RELR relocation data"));
       if (relrs == NULL)
 	return false;
+      alloc_relrs = relrs;
     }
 
   /* Paranoia.  */
@@ -1931,7 +1977,8 @@ dump_relr_relocations (Filedata *          filedata,
     switch (filedata->file_header.e_machine)
       {
       default:
-	abort ();
+	rtype = "unknown relative";
+	break;
 
       case EM_386:
       case EM_IAMCU:
@@ -2193,7 +2240,7 @@ dump_relr_relocations (Filedata *          filedata,
     }
 
   free (symtab);
-  free (relrs);
+  free (alloc_relrs);
   return true;
 }
 
@@ -2848,7 +2895,7 @@ dump_relocations (Filedata *          filedata,
       if (do_got_section_contents)
 	{
 	  all_relocations[i].r_offset = offset;
-	  all_relocations[i].r_name = rtype;
+	  all_relocations[i].r_name = rtype ? rtype : "unknown";
 	  all_relocations[i].r_symbol = symbol_name;
 	  all_relocations[i].r_addend = rels[i].r_addend;
 	  all_relocations[i].r_type = rel_type;
@@ -3087,26 +3134,52 @@ get_solaris_section_type (unsigned long type)
 {
   switch (type)
     {
-    case 0x6fffffee: return "SUNW_ancillary";
-    case 0x6fffffef: return "SUNW_capchain";
-    case 0x6ffffff0: return "SUNW_capinfo";
-    case 0x6ffffff1: return "SUNW_symsort";
-    case 0x6ffffff2: return "SUNW_tlssort";
-    case 0x6ffffff3: return "SUNW_LDYNSYM";
-    case 0x6ffffff4: return "SUNW_dof";
-    case 0x6ffffff5: return "SUNW_cap";
-    case 0x6ffffff6: return "SUNW_SIGNATURE";
-    case 0x6ffffff7: return "SUNW_ANNOTATE";
-    case 0x6ffffff8: return "SUNW_DEBUGSTR";
-    case 0x6ffffff9: return "SUNW_DEBUG";
-    case 0x6ffffffa: return "SUNW_move";
-    case 0x6ffffffb: return "SUNW_COMDAT";
-    case 0x6ffffffc: return "SUNW_syminfo";
-    case 0x6ffffffd: return "SUNW_verdef";
-    case 0x6ffffffe: return "SUNW_verneed";
-    case 0x6fffffff: return "SUNW_versym";
-    case 0x70000000: return "SPARC_GOTDATA";
-    default: return NULL;
+    case SHT_SUNW_ctf:
+      return "SUNW_ctf";
+    case SHT_SUNW_symnsort:
+      return "SUNW_symnsort";
+    case SHT_SUNW_phname:
+      return "SUNW_phname";
+    case SHT_SUNW_ancillary:
+      return "SUNW_ancillary";
+    case SHT_SUNW_capchain:
+      return "SUNW_capchain";
+    case SHT_SUNW_capinfo:
+      return "SUNW_capinfo";
+    case SHT_SUNW_symsort:
+      return "SUNW_symsort";
+    case SHT_SUNW_tlssort:
+      return "SUNW_tlssort";
+    case SHT_SUNW_LDYNSYM:
+      return "SUNW_LDYNSYM";
+    case SHT_SUNW_dof:
+      return "SUNW_dof";
+    case SHT_SUNW_cap:
+      return "SUNW_cap";
+    case SHT_SUNW_SIGNATURE:
+      return "SUNW_SIGNATURE";
+    case SHT_SUNW_ANNOTATE:
+      return "SUNW_ANNOTATE";
+    case SHT_SUNW_DEBUGSTR:
+      return "SUNW_DEBUGSTR";
+    case SHT_SUNW_DEBUG:
+      return "SUNW_DEBUG";
+    case SHT_SUNW_move:
+      return "SUNW_move";
+    case SHT_SUNW_COMDAT:
+      return "SUNW_COMDAT";
+    case SHT_SUNW_syminfo:
+      return "SUNW_syminfo";
+    case SHT_SUNW_verdef:
+      return "SUNW_verdef";
+    case SHT_SUNW_verneed:
+      return "SUNW_verneed";
+    case SHT_SUNW_versym:
+      return "SUNW_versym";
+    case 0x70000000:
+      return "SPARC_GOTDATA";
+    default:
+      return NULL;
     }
 }
 
@@ -5239,6 +5312,13 @@ decode_AMDGPU_machine_flags (char *out, unsigned int e_flags, Filedata *filedata
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1100, "gfx1100")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1101, "gfx1101")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1102, "gfx1102")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1150, "gfx1150")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1151, "gfx1151")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1152, "gfx1152")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1153, "gfx1153")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1200, "gfx1200")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1201, "gfx1201")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1250, "gfx1250")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX602, "gfx602")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX705, "gfx705")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX805, "gfx805")
@@ -5246,8 +5326,17 @@ decode_AMDGPU_machine_flags (char *out, unsigned int e_flags, Filedata *filedata
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1034, "gfx1034")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX90A, "gfx90a")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX940, "gfx940")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX942, "gfx942")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX950, "gfx950")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1013, "gfx1013")
     AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX1036, "gfx1036")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX9_GENERIC, "gfx9-generic")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX10_1_GENERIC, "gfx10-1-generic")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX10_3_GENERIC, "gfx10-3-generic")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX11_GENERIC, "gfx11-generic")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX9_4_GENERIC, "gfx9-4-generic")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX12_GENERIC, "gfx12-generic")
+    AMDGPU_CASE (EF_AMDGPU_MACH_AMDGCN_GFX12_5_GENERIC, "gfx12-5-generic")
     default:
       out += sprintf (out, _(", <unknown AMDGPU GPU type: %#x>"), mach);
       break;
@@ -5327,6 +5416,20 @@ decode_AMDGPU_machine_flags (char *out, unsigned int e_flags, Filedata *filedata
 	}
 
       e_flags &= ~EF_AMDGPU_FEATURE_SRAMECC_V4;
+
+      /* Extensions for HSA v6+.  */
+      if (abiversion >= ELFABIVERSION_AMDGPU_HSA_V6)
+	{
+	  unsigned int generic_v;
+
+	  generic_v = ((e_flags & EF_AMDGPU_GENERIC_VERSION_V)
+		       >> EF_AMDGPU_GENERIC_VERSION_V_SHIFT);
+
+	  if (generic_v > 0)
+	    out += sprintf (out, _(", generic v%u"), generic_v);
+
+	  e_flags &= ~EF_AMDGPU_GENERIC_VERSION_V;
+	}
     }
 
   if (e_flags != 0)
@@ -6408,6 +6511,7 @@ enum long_option_values
   OPTION_DWARF_DEPTH,
   OPTION_DWARF_START,
   OPTION_DWARF_CHECK,
+  OPTION_DEBUG_DIR,
   OPTION_CTF_DUMP,
   OPTION_CTF_PARENT,
   OPTION_CTF_SYMBOLS,
@@ -6474,6 +6578,7 @@ static struct option options[] =
   {"dwarf-depth",      required_argument, 0, OPTION_DWARF_DEPTH},
   {"dwarf-start",      required_argument, 0, OPTION_DWARF_START},
   {"dwarf-check",      no_argument, 0, OPTION_DWARF_CHECK},
+  {"debug-dir",        required_argument, NULL, OPTION_DEBUG_DIR},
 #ifdef ENABLE_LIBCTF
   {"ctf",	       required_argument, 0, OPTION_CTF_DUMP},
   {"ctf-symbols",      required_argument, 0, OPTION_CTF_SYMBOLS},
@@ -6617,6 +6722,8 @@ usage (FILE * stream)
   --dwarf-depth=N        Do not display DIEs at depth N or greater\n"));
   fprintf (stream, _("\
   --dwarf-start=N        Display DIEs starting at offset N\n"));
+  fprintf (stream, _("\
+  --debug-dir=<DIR>      Search DIR for debug info files\n"));
 #ifdef ENABLE_LIBCTF
   fprintf (stream, _("\
   --ctf=<number|name>    Display CTF info from section <number|name>\n"));
@@ -6896,8 +7003,10 @@ parse_args (struct dump_data *dumpdata, int argc, char ** argv)
 	case OPTION_DWARF_CHECK:
 	  dwarf_check = true;
 	  break;
+	case OPTION_DEBUG_DIR:
+	  separate_debug_info_dir = optarg;
+	  break;
 	case OPTION_CTF_DUMP:
-	  do_ctf = true;
 	  request_dump (dumpdata, CTF_DUMP);
 	  break;
 	case OPTION_CTF_SYMBOLS:
@@ -6913,7 +7022,6 @@ parse_args (struct dump_data *dumpdata, int argc, char ** argv)
 	  dump_ctf_parent_name = strdup (optarg);
 	  break;
 	case OPTION_SFRAME_DUMP:
-	  do_sframe = true;
 	  /* Fix PR/32589 but keep the error messaging same ?  */
 	  if (optarg != NULL && strcmp (optarg, "") == 0)
 	    {
@@ -6927,8 +7035,7 @@ parse_args (struct dump_data *dumpdata, int argc, char ** argv)
 	  else
 	    {
 	      do_dump = true;
-	      const char *sframe_sec_name = strdup (".sframe");
-	      request_dump_byname (sframe_sec_name, SFRAME_DUMP);
+	      request_dump_byname (".sframe", SFRAME_DUMP);
 	    }
 	  break;
 	case OPTION_DYN_SYMS:
@@ -7751,6 +7858,99 @@ offset_from_vma (Filedata * filedata, uint64_t vma, uint64_t size)
   return vma;
 }
 
+/* Save the original section header values.  */
+
+static void
+save_original_section_header_values (Elf_Internal_Shdr *internal,
+				     Elf_Internal_Shdr **orig_internal)
+{
+  /* Nothing to do if they have already been saved.  */
+  if (*orig_internal != NULL)
+    return;
+
+  *orig_internal = xmalloc (sizeof (**orig_internal));
+  **orig_internal = *internal;
+}
+
+
+/* Warn about and clear any invalid ELF section fields.  */
+
+static void
+validate_section_info (Elf_Internal_Shdr *internal,
+		       Elf_Internal_Shdr **orig_internal,
+		       unsigned int i, Filedata *filedata)
+{
+  bool dynamic = orig_internal == NULL;
+  if (!dynamic)
+    {
+      if (internal->sh_link >= filedata->file_header.e_shnum
+	  && !special_defined_section_index (filedata,
+					     internal->sh_link))
+	{
+	  warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		"sh_link", (uint64_t) internal->sh_link, i);
+	  /* Save the original section header values before garbage
+	     values are cleared.  */
+	  save_original_section_header_values (internal, orig_internal);
+	  internal->sh_link = 0;
+	}
+
+      if ((internal->sh_flags & SHF_INFO_LINK) != 0
+	  && internal->sh_info > filedata->file_header.e_shnum)
+	{
+	  warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		"sh_info", (uint64_t) internal->sh_info, i);
+	  save_original_section_header_values (internal, orig_internal);
+	  internal->sh_info = 0;
+	}
+    }
+
+  if (internal->sh_entsize > filedata->file_size)
+    {
+      if (dynamic)
+	warn (_("out of range %s (%" PRIu64 ")\n"),
+	      "DT_RELRENT", (uint64_t) internal->sh_entsize);
+      else
+	{
+	  warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		"sh_entsize", (uint64_t) internal->sh_entsize, i);
+	  save_original_section_header_values (internal, orig_internal);
+	}
+      internal->sh_entsize = 0;
+    }
+
+  if (internal->sh_type != SHT_NOBITS)
+    {
+      uint64_t sh_offset = internal->sh_offset;
+      if (sh_offset > filedata->file_size)
+	{
+	  if (dynamic)
+	    warn (_("out of range %s (%" PRIu64 ")\n"),
+		  "DT_RELR", sh_offset);
+	  else
+	    {
+	      warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		    "sh_offset", sh_offset, i);
+	      save_original_section_header_values (internal, orig_internal);
+	    }
+	  internal->sh_offset = 0;
+	  internal->sh_size = 0;
+	}
+      else if (internal->sh_size > filedata->file_size - sh_offset)
+	{
+	  if (dynamic)
+	    warn (_("out of range %s (%" PRIu64 ")\n"),
+		  "DT_RELRSZ", (uint64_t) internal->sh_size);
+	  else
+	    {
+	      warn (_("out of range %s (%" PRIu64 ") for section %u\n"),
+		    "sh_size", (uint64_t) internal->sh_size, i);
+	      save_original_section_header_values (internal, orig_internal);
+	    }
+	  internal->sh_size = 0;
+	}
+    }
+}
 
 /* Allocate memory and load the sections headers into FILEDATA->filedata->section_headers.
    If PROBE is true, this is just a probe and we do not generate any error
@@ -7761,6 +7961,7 @@ get_32bit_section_headers (Filedata * filedata, bool probe)
 {
   Elf32_External_Shdr * shdrs;
   Elf_Internal_Shdr *   internal;
+  Elf_Internal_Shdr **  orig_internal;
   unsigned int          i;
   unsigned int          size = filedata->file_header.e_shentsize;
   unsigned int          num = probe ? 1 : filedata->file_header.e_shnum;
@@ -7800,9 +8001,14 @@ get_32bit_section_headers (Filedata * filedata, bool probe)
       return false;
     }
 
+  if (!probe)
+    filedata->orig_section_headers = xcalloc2 (num,
+					       sizeof (Elf_Internal_Shdr *));
+
+  orig_internal = filedata->orig_section_headers;
   for (i = 0, internal = filedata->section_headers;
        i < num;
-       i++, internal++)
+       i++, internal++, orig_internal++)
     {
       internal->sh_name      = BYTE_GET (shdrs[i].sh_name);
       internal->sh_type      = BYTE_GET (shdrs[i].sh_type);
@@ -7814,10 +8020,8 @@ get_32bit_section_headers (Filedata * filedata, bool probe)
       internal->sh_info      = BYTE_GET (shdrs[i].sh_info);
       internal->sh_addralign = BYTE_GET (shdrs[i].sh_addralign);
       internal->sh_entsize   = BYTE_GET (shdrs[i].sh_entsize);
-      if (!probe && internal->sh_link > num)
-	warn (_("Section %u has an out of range sh_link value of %u\n"), i, internal->sh_link);
-      if (!probe && internal->sh_flags & SHF_INFO_LINK && internal->sh_info > num)
-	warn (_("Section %u has an out of range sh_info value of %u\n"), i, internal->sh_info);
+      if (!probe)
+	validate_section_info (internal, orig_internal, i, filedata);
     }
 
   free (shdrs);
@@ -7831,6 +8035,7 @@ get_64bit_section_headers (Filedata * filedata, bool probe)
 {
   Elf64_External_Shdr *  shdrs;
   Elf_Internal_Shdr *    internal;
+  Elf_Internal_Shdr **   orig_internal;
   unsigned int           i;
   unsigned int           size = filedata->file_header.e_shentsize;
   unsigned int           num = probe ? 1 : filedata->file_header.e_shnum;
@@ -7872,9 +8077,14 @@ get_64bit_section_headers (Filedata * filedata, bool probe)
       return false;
     }
 
+  if (!probe)
+    filedata->orig_section_headers = xcalloc2 (num,
+					       sizeof (Elf_Internal_Shdr *));
+
+  orig_internal = filedata->orig_section_headers;
   for (i = 0, internal = filedata->section_headers;
        i < num;
-       i++, internal++)
+       i++, internal++, orig_internal++)
     {
       internal->sh_name      = BYTE_GET (shdrs[i].sh_name);
       internal->sh_type      = BYTE_GET (shdrs[i].sh_type);
@@ -7886,10 +8096,8 @@ get_64bit_section_headers (Filedata * filedata, bool probe)
       internal->sh_info      = BYTE_GET (shdrs[i].sh_info);
       internal->sh_offset    = BYTE_GET (shdrs[i].sh_offset);
       internal->sh_addralign = BYTE_GET (shdrs[i].sh_addralign);
-      if (!probe && internal->sh_link > num)
-	warn (_("Section %u has an out of range sh_link value of %u\n"), i, internal->sh_link);
-      if (!probe && internal->sh_flags & SHF_INFO_LINK && internal->sh_info > num)
-	warn (_("Section %u has an out of range sh_info value of %u\n"), i, internal->sh_info);
+      if (!probe)
+	validate_section_info (internal, orig_internal, i, filedata);
     }
 
   free (shdrs);
@@ -8839,10 +9047,18 @@ process_section_headers (Filedata * filedata)
   if (do_section_details)
     printf (_("       Flags\n"));
 
-  for (i = 0, section = filedata->section_headers;
+  Elf_Internal_Shdr **orig_section = filedata->orig_section_headers;
+  Elf_Internal_Shdr *sec;
+  for (i = 0, sec = filedata->section_headers;
        i < filedata->file_header.e_shnum;
-       i++, section++)
+       i++, sec++, orig_section++)
     {
+      /* Dump the original section header values if they exist.  */
+      if (*orig_section)
+	section = *orig_section;
+      else
+	section = sec;
+
       /* Run some sanity checks on the section header.  */
 
       /* Check the sh_link field.  */
@@ -8985,6 +9201,9 @@ process_section_headers (Filedata * filedata)
       printf (do_wide ? " %-15s " : " %-15.15s ",
 	      get_section_type_name (filedata, section->sh_type));
 
+      bool special_defined_section
+	= special_defined_section_index (filedata, section->sh_link);
+
       if (is_32bit_elf)
 	{
 	  const char * link_too_big = NULL;
@@ -9001,7 +9220,8 @@ process_section_headers (Filedata * filedata)
 	  else
 	    printf (" %3s ", get_elf_section_flags (filedata, section->sh_flags));
 
-	  if (section->sh_link >= filedata->file_header.e_shnum)
+	  if (!special_defined_section
+	      && section->sh_link >= filedata->file_header.e_shnum)
 	    {
 	      link_too_big = "";
 	      /* The sh_link value is out of range.  Normally this indicates
@@ -9027,20 +9247,27 @@ process_section_headers (Filedata * filedata)
 		}
 	    }
 
+	  if (special_defined_section)
+	    printf ("%2s ",
+		    printable_section_name_from_index (filedata,
+						       section->sh_link,
+						       NULL));
+
 	  if (do_section_details)
 	    {
-	      if (link_too_big != NULL && * link_too_big)
-		printf ("<%s> ", link_too_big);
-	      else
-		printf ("%2u ", section->sh_link);
-	      printf ("%3u %2lu\n", section->sh_info,
-		      (unsigned long) section->sh_addralign);
+	      if (!special_defined_section)
+		{
+		  if (link_too_big != NULL && * link_too_big)
+		    printf ("<%s> ", link_too_big);
+		  else
+		    printf ("%2u ", section->sh_link);
+		}
 	    }
-	  else
-	    printf ("%2u %3u %2lu\n",
-		    section->sh_link,
-		    section->sh_info,
-		    (unsigned long) section->sh_addralign);
+	  else if (!special_defined_section)
+	    printf ("%2u ", section->sh_link);
+
+	  printf ("%3u %2lu\n", section->sh_info,
+		  (unsigned long) section->sh_addralign);
 
 	  if (link_too_big && ! * link_too_big)
 	    warn (_("section %u: sh_link value of %u is larger than the number of sections\n"),
@@ -9077,9 +9304,17 @@ process_section_headers (Filedata * filedata)
 	  if (do_section_details)
 	    fputs ("  ", stdout);
 	  else
-	    printf (" %3s ", get_elf_section_flags (filedata, section->sh_flags));
+	    printf (" %3s ", get_elf_section_flags (filedata,
+						    section->sh_flags));
 
-	  printf ("%2u %3u ", section->sh_link, section->sh_info);
+	  if (special_defined_section)
+	    printf ("%2s ",
+		    printable_section_name_from_index (filedata,
+						       section->sh_link,
+						       NULL));
+	  else
+	    printf ("%2u ", section->sh_link);
+	  printf ("%3u ", section->sh_info);
 
 	  if ((unsigned long) section->sh_addralign == section->sh_addralign)
 	    printf ("%2lu\n", (unsigned long) section->sh_addralign);
@@ -9100,7 +9335,13 @@ process_section_headers (Filedata * filedata)
 	      printf ("  ");
 	      print_vma (section->sh_offset, LONG_HEX);
 	    }
-	  printf ("  %u\n       ", section->sh_link);
+	  if (special_defined_section)
+	    printf ("  %s\n       ",
+		    printable_section_name_from_index (filedata,
+						       section->sh_link,
+						       NULL));
+	  else
+	    printf ("  %u\n       ", section->sh_link);
 	  print_vma (section->sh_size, LONG_HEX);
 	  putchar (' ');
 	  print_vma (section->sh_entsize, LONG_HEX);
@@ -9127,8 +9368,15 @@ process_section_headers (Filedata * filedata)
 
 	  printf (" %3s ", get_elf_section_flags (filedata, section->sh_flags));
 
-	  printf ("     %2u   %3u     %lu\n",
-		  section->sh_link,
+	  if (special_defined_section)
+	    printf ("     %2s",
+		    printable_section_name_from_index (filedata,
+						       section->sh_link,
+						       NULL));
+	  else
+	    printf ("     %2u",
+		    section->sh_link);
+	  printf ("   %3u     %lu\n",
 		  section->sh_info,
 		  (unsigned long) section->sh_addralign);
 	}
@@ -9855,12 +10103,18 @@ display_relocations (Elf_Internal_Shdr *  section,
 
       if (symsec->sh_type != SHT_SYMTAB
 	  && symsec->sh_type != SHT_DYNSYM)
-	return false;
+	{
+	  free (relrs);
+	  return false;
+	}
     }
 
   if (symsec != NULL
       && !get_symtab (filedata, symsec, &symtab, &nsyms, &strtab, &strtablen))
-    return false;
+    {
+      free (relrs);
+      return false;
+    }
 
   bool res;
 
@@ -9872,8 +10126,7 @@ display_relocations (Elf_Internal_Shdr *  section,
 				   relrs,
 				   symtab, nsyms, strtab, strtablen,
 				   dump_reloc);
-      /* RELRS has been freed by dump_relr_relocations.  */
-      relrs = NULL;
+      free (relrs);
     }
   else
     res = dump_relocations (filedata, rel_offset, rel_size,
@@ -9941,7 +10194,11 @@ process_relocs (Filedata * filedata)
 	  switch (rel_type)
 	    {
 	    default:
-	      abort ();
+	      error (_("missing DT_REL and DT_RELA dynamic tags\n"));
+	      /* Avoid may be used uninitialized warning from GCC 14.  */
+	      rel_entsz = 0;
+	      entsz_name = NULL;
+	      return false;
 	    case reltype_rel:
 	      rel_entsz = filedata->dynamic_info[DT_RELENT];
 	      entsz_name = "DT_RELENT";
@@ -9971,19 +10228,42 @@ process_relocs (Filedata * filedata)
 	    }
 
 	  if (rel_type == reltype_relr)
-	    dump_relr_relocations (filedata,
-				   filedata->dynamic_info[DT_RELRSZ],
-				   filedata->dynamic_info[DT_RELRENT],
-				   filedata->dynamic_info[DT_RELR],
-				   NULL,
-				   filedata->dynamic_symbols,
-				   filedata->num_dynamic_syms,
-				   filedata->dynamic_strings,
-				   filedata->dynamic_strings_length,
-				   do_reloc);
+	    {
+	      if (all_relocations_count == 0)
+		{
+		  /* Count DT_RELR relocations when "-D --got-contents"
+		     is passed to readelf.  */
+		  uint64_t num_reloc;
+		  uint64_t *relrs = NULL;
+		  Elf_Internal_Shdr section = {
+		    .sh_type = SHT_RELR,
+		    .sh_offset = filedata->dynamic_info[DT_RELR],
+		    .sh_size = rel_size,
+		    .sh_entsize = rel_entsz
+		  };
+		  validate_section_info (&section, NULL, 0, filedata);
+		  num_reloc = count_relr_relocations (filedata,
+						      &section,
+						      &relrs);
+		  free (relrs);
+		  if (num_reloc == 0)
+		    continue;
+		  update_all_relocations (num_reloc);
+		}
+	      dump_relr_relocations (filedata,
+				     filedata->dynamic_info[DT_RELRSZ],
+				     filedata->dynamic_info[DT_RELRENT],
+				     filedata->dynamic_info[DT_RELR],
+				     NULL,
+				     filedata->dynamic_symbols,
+				     filedata->num_dynamic_syms,
+				     filedata->dynamic_strings,
+				     filedata->dynamic_strings_length,
+				     do_reloc);
+	    }
 	  else
 	    {
-	      if (rel_entsz == 0)
+	      if (rel_entsz == 0 || rel_entsz > rel_size)
 		{
 		  printf (_("<missing or corrupt dynamic tag: %s>\n"),
 			  entsz_name);
@@ -10024,13 +10304,11 @@ process_relocs (Filedata * filedata)
       size_t i;
       bool found = false;
 
-      for (i = 0, section = filedata->section_headers;
-	   i < filedata->file_header.e_shnum;
-	   i++, section++)
-	{
+      section = filedata->section_headers;
+      if (section != NULL)
+	for (i = 0; i < filedata->file_header.e_shnum; i++, section++)
 	  if (display_relocations (section, filedata, do_reloc))
 	    found = true;
-	}
 
       if (do_reloc && ! found)
 	{
@@ -14052,7 +14330,7 @@ process_version_sections (Filedata * filedata)
 			  while (ivn.vn_next);
 			}
 
-		      if (data[cnt + j] != 0x8001
+		      if (data[cnt + j] != (VERSYM_HIDDEN | VERSYM_BASE)
 			  && filedata->version_info[DT_VERSIONTAGIDX (DT_VERDEF)])
 			{
 			  Elf_Internal_Verdef ivd;
@@ -14478,6 +14756,10 @@ get_symbol_version_string (Filedata *filedata,
   *sym_info = (vers_data & VERSYM_HIDDEN) != 0 ? symbol_hidden : symbol_public;
   max_vd_ndx = 0;
 
+  /* Return the empty string for the hidden base version.  */
+  if (vers_data == (VERSYM_HIDDEN | VERSYM_BASE))
+    return "";
+
   /* Usually we'd only see verdef for defined symbols, and verneed for
      undefined symbols.  However, symbols defined by the linker in
      .dynbss for variables copied from a shared library in order to
@@ -14488,7 +14770,7 @@ get_symbol_version_string (Filedata *filedata,
      verneed.  .dynbss might not be mapped to a SHT_NOBITS section.  */
 
   if (psym->st_shndx != SHN_UNDEF
-      && vers_data != 0x8001
+      && vers_data != (VERSYM_HIDDEN | VERSYM_BASE)
       && filedata->version_info[DT_VERSIONTAGIDX (DT_VERDEF)])
     {
       Elf_Internal_Verdef ivd;
@@ -14713,6 +14995,8 @@ print_symbol (Filedata *           filedata,
 	}
     }
 
+  bool is_valid = false;
+
   /* Get the symbol's name.  For section symbols without a
      specific name use the (already computed) section name.  */
   if (ELF_ST_TYPE (psym->st_info) == STT_SECTION
@@ -14723,8 +15007,6 @@ print_symbol (Filedata *           filedata,
     }
   else
     {
-      bool is_valid;
-
       is_valid = valid_symbol_name (strtab, strtab_size, psym->st_name);
       sstr = is_valid  ? strtab + psym->st_name : _("<corrupt>");
     }
@@ -14772,6 +15054,23 @@ print_symbol (Filedata *           filedata,
       && filedata->file_header.e_ident[EI_OSABI] != ELFOSABI_SOLARIS)
     warn (_("local symbol %" PRIu64 " found at index >= %s's sh_info value of %u\n"),
 	  symbol_index, printable_section_name (filedata, section), section->sh_info);
+
+  /* Local symbols in ET_REL whose value is larger than their
+     section's size are suspicious if that section is mergeable - and
+     hence might change offsets of the contents inside the section.  */
+  if (ELF_ST_BIND (psym->st_info) == STB_LOCAL
+      && filedata->file_header.e_type == ET_REL
+      && ! is_special
+      && is_valid
+      && psym->st_shndx < filedata->file_header.e_shnum
+      && filedata->section_headers != NULL
+      && (filedata->section_headers[psym->st_shndx].sh_flags & SHF_MERGE)
+      && psym->st_value > filedata->section_headers[psym->st_shndx].sh_size)
+    warn (_("local symbol %s has a value (%#" PRIx64 ") which is larger than mergeable section %s's size (%#" PRIx64 ")\n"),
+	  strtab + psym->st_name,
+	  psym->st_value,
+	  printable_section_name_from_index (filedata, psym->st_shndx, NULL),
+	  filedata->section_headers[psym->st_shndx].sh_size);
 }
 
 static const char *
@@ -15481,12 +15780,13 @@ process_syminfo (Filedata * filedata)
   return true;
 }
 
-/* A macro which evaluates to TRUE if the region ADDR .. ADDR + NELEM
-   is contained by the region START .. END.  The types of ADDR, START
-   and END should all be the same.  Note both ADDR + NELEM and END
-   point to just beyond the end of the regions that are being tested.  */
-#define IN_RANGE(START,END,ADDR,NELEM)		\
-  (((ADDR) >= (START)) && ((ADDR) < (END)) && ((ADDR) + (NELEM) <= (END)))
+/* Check that reloc at R_OFFSET of size R_SIZE can apply to LEN bytes.  */
+
+static inline bool
+in_range (size_t len, bfd_vma r_offset, unsigned int r_size)
+{
+  return r_offset <= len && r_size <= len - r_offset;
+}
 
 /* Check to see if the given reloc needs to be handled in a target specific
    manner.  If so then process the reloc and return TRUE otherwise return
@@ -15500,7 +15800,7 @@ static bool
 target_specific_reloc_handling (Filedata *filedata,
 				Elf_Internal_Rela *reloc,
 				unsigned char *start,
-				unsigned char *end,
+				size_t size,
 				Elf_Internal_Sym *symtab,
 				uint64_t num_syms)
 {
@@ -15528,9 +15828,9 @@ target_specific_reloc_handling (Filedata *filedata,
 		unsigned int reloc_size = 0;
 		int leb_ret = 0;
 
-		if (reloc->r_offset < (size_t) (end - start))
-		  value = read_leb128 (start + reloc->r_offset, end, false,
-				       &reloc_size, &leb_ret);
+		if (reloc->r_offset < size)
+		  value = read_leb128 (start + reloc->r_offset, start + size,
+				       false, &reloc_size, &leb_ret);
 		if (leb_ret != 0 || reloc_size == 0 || reloc_size > 8)
 		  error (_("LoongArch ULEB128 field at 0x%lx contains invalid "
 			   "ULEB128 value\n"),
@@ -15628,8 +15928,8 @@ target_specific_reloc_handling (Filedata *filedata,
 		    break;
 		  case 11: /* R_MSP430_GNU_SET_ULEB128 */
 		  case 22: /* R_MSP430X_GNU_SET_ULEB128 */
-		    if (reloc->r_offset < (size_t) (end - start))
-		      read_leb128 (start + reloc->r_offset, end, false,
+		    if (reloc->r_offset < size)
+		      read_leb128 (start + reloc->r_offset, start + size, false,
 				   &reloc_size, &leb_ret);
 		    break;
 		  default:
@@ -15649,7 +15949,7 @@ target_specific_reloc_handling (Filedata *filedata,
 		    value = reloc->r_addend + (symtab[sym_index].st_value
 					       - saved_sym->st_value);
 
-		    if (IN_RANGE (start, end, start + reloc->r_offset, reloc_size))
+		    if (in_range (size, reloc->r_offset, reloc_size))
 		      byte_put (start + reloc->r_offset, value, reloc_size);
 		    else
 		      /* PR 21137 */
@@ -15709,7 +16009,7 @@ target_specific_reloc_handling (Filedata *filedata,
 		    value = reloc->r_addend + (symtab[sym_index].st_value
 					       - saved_sym->st_value);
 
-		    if (IN_RANGE (start, end, start + reloc->r_offset, reloc_size))
+		    if (in_range (size, reloc->r_offset, reloc_size))
 		      byte_put (start + reloc->r_offset, value, reloc_size);
 		    else
 		      error (_("MN10300 sym diff reloc contains invalid offset:"
@@ -15762,7 +16062,7 @@ target_specific_reloc_handling (Filedata *filedata,
 	    break;
 
 	  case 0x41: /* R_RL78_ABS32.  */
-	    if (IN_RANGE (start, end, start + reloc->r_offset, 4))
+	    if (in_range (size, reloc->r_offset, 4))
 	      byte_put (start + reloc->r_offset, value, 4);
 	    else
 	      error (_("RL78 sym diff reloc contains invalid offset: "
@@ -15772,7 +16072,7 @@ target_specific_reloc_handling (Filedata *filedata,
 	    return true;
 
 	  case 0x43: /* R_RL78_ABS16.  */
-	    if (IN_RANGE (start, end, start + reloc->r_offset, 2))
+	    if (in_range (size, reloc->r_offset, 2))
 	      byte_put (start + reloc->r_offset, value, 2);
 	    else
 	      error (_("RL78 sym diff reloc contains invalid offset: "
@@ -15941,7 +16241,8 @@ is_32bit_abs_reloc (Filedata * filedata, unsigned int reloc_type)
     case EM_TI_PRU:
       return reloc_type == 11; /* R_PRU_BFD_RELOC_32.  */
     case EM_RISCV:
-      return reloc_type == 1; /* R_RISCV_32.  */
+      return (reloc_type == 1 /* R_RISCV_32.  */
+	      || reloc_type == 56); /* R_RISCV_SET32.  */
     case EM_RL78:
       return reloc_type == 1; /* R_RL78_DIR32.  */
     case EM_RX:
@@ -16608,7 +16909,6 @@ apply_relocations (Filedata *filedata,
 		   uint64_t *num_relocs_return)
 {
   Elf_Internal_Shdr * relsec;
-  unsigned char * end = start + size;
 
   if (relocs_return != NULL)
     {
@@ -16679,7 +16979,7 @@ apply_relocations (Filedata *filedata,
 
 	  reloc_type = get_reloc_type (filedata, rp->r_info);
 
-	  if (target_specific_reloc_handling (filedata, rp, start, end, symtab, num_syms))
+	  if (target_specific_reloc_handling (filedata, rp, start, size, symtab, num_syms))
 	    continue;
 	  else if (is_none_reloc (filedata, reloc_type))
 	    continue;
@@ -16742,8 +17042,7 @@ apply_relocations (Filedata *filedata,
 	      continue;
 	    }
 
-	  rloc = start + rp->r_offset;
-	  if (!IN_RANGE (start, end, rloc, reloc_size))
+	  if (!in_range (size, rp->r_offset, reloc_size))
 	    {
 	      warn (_("skipping invalid relocation offset %#" PRIx64
 		      " in section %s\n"),
@@ -16751,6 +17050,7 @@ apply_relocations (Filedata *filedata,
 		    printable_section_name (filedata, section));
 	      continue;
 	    }
+	  rloc = start + rp->r_offset;
 
 	  sym_index = get_reloc_symindex (rp->r_info);
 	  if (sym_index >= num_syms)
@@ -16837,7 +17137,7 @@ apply_relocations (Filedata *filedata,
       free (symtab);
       /* Let the target specific reloc processing code know that
 	 we have finished with these relocs.  */
-      target_specific_reloc_handling (filedata, NULL, NULL, NULL, NULL, 0);
+      target_specific_reloc_handling (filedata, NULL, NULL, 0, NULL, 0);
 
       if (relocs_return)
 	{
@@ -18146,9 +18446,9 @@ process_mips_fpe_exception (int mask)
 
    Reads at or beyond END will not be made.  */
 
-static unsigned char *
+static const unsigned char *
 display_tag_value (signed int tag,
-		   unsigned char * p,
+		   const unsigned char * p,
 		   const unsigned char * const end)
 {
   uint64_t val;
@@ -18170,7 +18470,7 @@ display_tag_value (signed int tag,
 	{
 	  maxlen -= 1; /* Remove \0 from the character count.  */
 	  print_symbol_name ((int) maxlen, (const char *) p);
-	  size_t len = strnlen ((char *) p, maxlen);
+	  size_t len = strnlen ((const char *) p, maxlen);
 	  if (len == maxlen && p[maxlen] != '\0')
 	    printf (_("<corrupt string tag>"));
 	  p += len + 1;
@@ -18178,7 +18478,7 @@ display_tag_value (signed int tag,
       else
 	{
 	  printf (_("<corrupt string tag>"));
-	  p = (unsigned char *) end;
+	  p = end;
 	}
       printf ("\"\n");
     }
@@ -18194,8 +18494,8 @@ display_tag_value (signed int tag,
 
 /* ARC ABI attributes section.  */
 
-static unsigned char *
-display_arc_attribute (unsigned char * p,
+static const unsigned char *
+display_arc_attribute (const unsigned char * p,
 		       const unsigned char * const end)
 {
   unsigned int tag;
@@ -18511,8 +18811,8 @@ static arm_attr_public_tag arm_attr_public_tags[] =
 };
 #undef LOOKUP
 
-static unsigned char *
-display_arm_attribute (unsigned char * p,
+static const unsigned char *
+display_arm_attribute (const unsigned char * p,
 		       const unsigned char * const end)
 {
   unsigned int tag;
@@ -18658,10 +18958,10 @@ display_arm_attribute (unsigned char * p,
   return display_tag_value (tag, p, end);
 }
 
-static unsigned char *
-display_gnu_attribute (unsigned char * p,
-		       unsigned char * (* display_proc_gnu_attribute)
-		       (unsigned char *, unsigned int, const unsigned char * const),
+static const unsigned char *
+display_gnu_attribute (const unsigned char * p,
+		       const unsigned char * (* display_proc_gnu_attribute)
+		       (const unsigned char *, unsigned int, const unsigned char * const),
 		       const unsigned char * const end)
 {
   unsigned int tag;
@@ -18706,8 +19006,8 @@ display_gnu_attribute (unsigned char * p,
   return display_tag_value (tag, p, end);
 }
 
-static unsigned char *
-display_m68k_gnu_attribute (unsigned char * p,
+static const unsigned char *
+display_m68k_gnu_attribute (const unsigned char * p,
 			    unsigned int tag,
 			    const unsigned char * const end)
 {
@@ -18744,8 +19044,8 @@ display_m68k_gnu_attribute (unsigned char * p,
   return display_tag_value (tag & 1, p, end);
 }
 
-static unsigned char *
-display_power_gnu_attribute (unsigned char * p,
+static const unsigned char *
+display_power_gnu_attribute (const unsigned char * p,
 			     unsigned int tag,
 			     const unsigned char * const end)
 {
@@ -18863,8 +19163,8 @@ display_power_gnu_attribute (unsigned char * p,
   return display_tag_value (tag & 1, p, end);
 }
 
-static unsigned char *
-display_s390_gnu_attribute (unsigned char * p,
+static const unsigned char *
+display_s390_gnu_attribute (const unsigned char * p,
 			    unsigned int tag,
 			    const unsigned char * const end)
 {
@@ -18976,8 +19276,8 @@ display_sparc_hwcaps2 (unsigned int mask)
   fputc ('\n', stdout);
 }
 
-static unsigned char *
-display_sparc_gnu_attribute (unsigned char * p,
+static const unsigned char *
+display_sparc_gnu_attribute (const unsigned char * p,
 			     unsigned int tag,
 			     const unsigned char * const end)
 {
@@ -19039,8 +19339,8 @@ print_mips_fp_abi_value (unsigned int val)
     }
 }
 
-static unsigned char *
-display_mips_gnu_attribute (unsigned char * p,
+static const unsigned char *
+display_mips_gnu_attribute (const unsigned char * p,
 			    unsigned int tag,
 			    const unsigned char * const end)
 {
@@ -19079,8 +19379,8 @@ display_mips_gnu_attribute (unsigned char * p,
   return display_tag_value (tag & 1, p, end);
 }
 
-static unsigned char *
-display_tic6x_attribute (unsigned char * p,
+static const unsigned char *
+display_tic6x_attribute (const unsigned char * p,
 			 const unsigned char * const end)
 {
   unsigned int tag;
@@ -19316,7 +19616,7 @@ display_tic6x_attribute (unsigned char * p,
 }
 
 static void
-display_raw_attribute (unsigned char * p, unsigned char const * const end)
+display_raw_attribute (const unsigned char * p, unsigned char const * const end)
 {
   uint64_t addr = 0;
   size_t bytes = end - p;
@@ -19360,8 +19660,8 @@ display_raw_attribute (unsigned char * p, unsigned char const * const end)
   putchar ('\n');
 }
 
-static unsigned char *
-display_msp430_attribute (unsigned char * p,
+static const unsigned char *
+display_msp430_attribute (const unsigned char * p,
 			  const unsigned char * const end)
 {
   uint64_t val;
@@ -19440,8 +19740,8 @@ display_msp430_attribute (unsigned char * p,
   return p;
 }
 
-static unsigned char *
-display_msp430_gnu_attribute (unsigned char * p,
+static const unsigned char *
+display_msp430_gnu_attribute (const unsigned char * p,
 			      unsigned int tag,
 			      const unsigned char * const end)
 {
@@ -19485,8 +19785,8 @@ static struct riscv_attr_tag_t riscv_attr_tag[] =
 #undef T
 };
 
-static unsigned char *
-display_riscv_attribute (unsigned char *p,
+static const unsigned char *
+display_riscv_attribute (const unsigned char *p,
 			 const unsigned char * const end)
 {
   uint64_t val;
@@ -19545,8 +19845,8 @@ display_riscv_attribute (unsigned char *p,
   return p;
 }
 
-static unsigned char *
-display_csky_attribute (unsigned char * p,
+static const unsigned char *
+display_csky_attribute (const unsigned char * p,
 			const unsigned char * const end)
 {
   uint64_t tag;
@@ -19656,8 +19956,8 @@ static bool
 process_attributes (Filedata * filedata,
 		    const char * public_name,
 		    unsigned int proc_type,
-		    unsigned char * (* display_pub_attribute) (unsigned char *, const unsigned char * const),
-		    unsigned char * (* display_proc_gnu_attribute) (unsigned char *, unsigned int, const unsigned char * const))
+		    const unsigned char * (* display_pub_attribute) (const unsigned char *, const unsigned char * const),
+		    const unsigned char * (* display_proc_gnu_attribute) (const unsigned char *, unsigned int, const unsigned char * const))
 {
   /* Find the section header so that we get the size.  */
   Elf_Internal_Shdr * sect = find_section_by_type (filedata, proc_type);
@@ -19674,7 +19974,7 @@ process_attributes (Filedata * filedata,
     return false;
 
   bool res = true;
-  unsigned char * p = contents;
+  const unsigned char * p = contents;
   /* The first character is the version of the attributes.
      Currently only version 1, (aka 'A') is recognised here.  */
   if (*p != 'A')
@@ -19751,7 +20051,7 @@ process_attributes (Filedata * filedata,
 	  int tag;
 	  unsigned int val;
 	  uint64_t size;
-	  unsigned char * end;
+	  const unsigned char * end;
 
 	  /* PR binutils/17531: Safe handling of corrupt files.  */
 	  if (attr_len < 6)
@@ -19838,8 +20138,348 @@ process_attributes (Filedata * filedata,
 	}
     }
 
-free_data:
+ free_data:
   free (contents);
+
+  return res;
+}
+
+typedef obj_attr_tag_info_t oav2_known_tag_t;
+
+typedef struct
+{
+  const char *subsec_name;
+  const oav2_known_tag_t *known_tags;
+  size_t len;
+} oav2_known_subsection_t;
+
+static const oav2_known_tag_t known_tags_aeabi_feature_and_bits[] =
+{
+  {"Tag_Feature_BTI", Tag_Feature_BTI},
+  {"Tag_Feature_PAC", Tag_Feature_PAC},
+  {"Tag_Feature_GCS", Tag_Feature_GCS},
+};
+
+static const oav2_known_tag_t known_tags_aeabi_pauthabi[] =
+{
+  {"Tag_PAuth_Platform", Tag_PAuth_Platform},
+  {"Tag_PAuth_Schema",   Tag_PAuth_Schema},
+};
+static const oav2_known_subsection_t known_subsections[] =
+{
+  {
+    .subsec_name = "aeabi_feature_and_bits",
+    .known_tags = known_tags_aeabi_feature_and_bits,
+    .len = ARRAY_SIZE (known_tags_aeabi_feature_and_bits),
+  },
+  {
+    .subsec_name = "aeabi_pauthabi",
+    .known_tags = known_tags_aeabi_pauthabi,
+    .len = ARRAY_SIZE (known_tags_aeabi_pauthabi),
+  },
+};
+
+static const oav2_known_subsection_t *
+oav2_identify_subsection (const char *name)
+{
+  for (unsigned i = 0; i < ARRAY_SIZE (known_subsections); ++i)
+    if (strcmp (name, known_subsections[i].subsec_name) == 0)
+      return &known_subsections[i];
+  return NULL;
+}
+
+static const oav2_known_tag_t *
+oav2_identify_tag (const oav2_known_subsection_t *subsec, obj_attr_tag_t tag)
+{
+  for (unsigned i = 0; i < subsec->len; ++i)
+    {
+      const oav2_known_tag_t *known_tag = &subsec->known_tags[i];
+      if (known_tag->value == tag)
+	return known_tag;
+    }
+  return NULL;
+}
+
+static const unsigned char *
+oav2_display_attr_value (const unsigned char *cursor,
+			 const unsigned char *const end,
+			 obj_attr_encoding_v2_t value_encoding)
+{
+  switch (value_encoding)
+    {
+    case OA_ENC_NTBS:
+      cursor = display_tag_value (-1, cursor, end);
+      break;
+    case OA_ENC_ULEB128:
+      cursor = display_tag_value (0, cursor, end);
+      break;
+    case OA_ENC_UNSET:
+      abort ();
+    }
+  return cursor;
+}
+
+/* Print out the raw attribute value.  It should be feasible to support custom
+   formatters here for known tags that explain the interpretation of specific
+   values.  */
+static const unsigned char *
+display_aarch64_attribute (const unsigned char *cursor,
+			   const unsigned char *const end,
+			   const oav2_known_tag_t *tag_info,
+			   obj_attr_encoding_v2_t value_encoding)
+{
+  printf ("    %s:	", tag_info->name);
+  return oav2_display_attr_value (cursor, end, value_encoding);
+}
+
+typedef const unsigned char *(*display_arch_attr_t)
+  (const unsigned char *,
+   const unsigned char *const,
+   const oav2_known_tag_t *,
+   obj_attr_encoding_v2_t);
+
+static const unsigned char *
+display_attr_v2 (const unsigned char *cursor,
+		 const unsigned char *const end,
+		 const oav2_known_subsection_t *subsec_info,
+		 obj_attr_encoding_v2_t value_encoding,
+		 display_arch_attr_t display_arch_attr)
+{
+  obj_attr_tag_t tag;
+  READ_ULEB (tag, cursor, end);
+
+  const oav2_known_tag_t *tag_info = NULL;
+  if (subsec_info != NULL)
+    tag_info = oav2_identify_tag (subsec_info, tag);
+
+  if (tag_info != NULL)
+    return display_arch_attr (cursor, end, tag_info, value_encoding);
+
+  printf ("    Tag_unknown_%"PRIu64":	", tag);
+  return oav2_display_attr_value (cursor, end, value_encoding);
+}
+
+#define READ_SUBSEC_PROPERTY(var, read_len, start, end)				\
+do										\
+  {										\
+    if (start >= end)								\
+      error									\
+	(_("end of data encountered whilst reading property of subsection\n"));	\
+    var = byte_get (start, read_len);						\
+    start += read_len;								\
+  }										\
+while (0)
+
+typedef struct {
+  bool err;
+  uint64_t read;
+} BufferReadOp_t;
+
+/* The minimum subsection length is 7: 4 bytes for the length itself, and 1
+   byte for an empty NUL-terminated string, 1 byte for the comprehension,
+   1 byte for the encoding, and no vendor-data.  */
+#define F_SUBSECTION_LEN 4
+#define F_SUBSECTION_COMPREHENSION 1
+#define F_SUBSECTION_ENCODING 1
+#define F_MIN_SUBSECTION_DATA_LEN \
+  (F_SUBSECTION_LEN + 1 + F_SUBSECTION_COMPREHENSION + F_SUBSECTION_ENCODING)
+
+static BufferReadOp_t
+elf_parse_attrs_subsection_v2 (const unsigned char *cursor,
+			       const uint64_t max_read,
+			       const char *public_name,
+			       display_arch_attr_t display_arch_attr)
+{
+  BufferReadOp_t op = { .err = false, .read = 0 };
+  unsigned int subsection_len = byte_get (cursor, F_SUBSECTION_LEN);
+  cursor += F_SUBSECTION_LEN;
+  op.read += F_SUBSECTION_LEN;
+  if (subsection_len > max_read)
+    {
+      error (_("Bad subsection length: too big (%u > max=%"PRIu64")\n"),
+	     subsection_len, max_read);
+      /* Error, but still try to display the content until meeting a more
+	 serious error.  */
+      subsection_len = max_read;
+      op.err = true;
+    }
+  else if (subsection_len < F_MIN_SUBSECTION_DATA_LEN)
+    {
+      error (_("Bad subsection length: too small (%u < min=%u)\n"),
+	     subsection_len, F_MIN_SUBSECTION_DATA_LEN);
+      /* Error, but still try to display the content until meeting a more
+	 serious error.  */
+      subsection_len = max_read;
+      op.err = true;
+    }
+
+  const size_t MAX_SUBSECTION_NAME_LEN
+    = subsection_len - F_SUBSECTION_LEN
+      - F_SUBSECTION_COMPREHENSION - F_SUBSECTION_ENCODING;
+  size_t subsection_name_len
+    = strnlen ((char *) cursor, MAX_SUBSECTION_NAME_LEN);
+  if (subsection_name_len >= MAX_SUBSECTION_NAME_LEN)
+    {
+      error (_("Subsection name seems corrupted (missing '\\0')\n"));
+      op.err = true;
+      return op;
+    }
+  /* Note: if the length of the subsection name is 0 (i.e. the string is '\0'),
+     it is still considered a valid name for dumping, and an empty string will
+     be displayed.
+     However, in practice, such a name would be unexploitable by the linker
+     during the merge, thus the subsection would be dropped.  */
+  subsection_name_len += 1;
+
+  /* Note: at this stage,
+     1. the length of the subsection name is validated, as the presence of '\0'
+	at the end of the string, so no risk of buffer overrun.
+     2. the data for comprehension and encoding can also safely be read.  */
+  const unsigned char *const end = cursor + subsection_len - F_SUBSECTION_LEN;
+  while (cursor < end)
+    {
+      const char *subsec_name = (const char *) cursor;
+      printf (_(" - Name:	  %s\n"), subsec_name);
+      /* The code below needs to be kept in sync with the code of
+	 bfd_elf_obj_attr_subsection_v2_scope() in bfd/elf-attrs.c.  */
+      size_t public_name_len = strlen (public_name);
+      bool public_subsection
+	= ((strncmp (subsec_name, public_name, public_name_len) == 0
+	    && subsec_name[public_name_len] == '_')
+	   || (strncmp (subsec_name, "gnu_", 4) == 0
+	       && strncmp (subsec_name + 4, "testing_", 8) != 0));
+      cursor += subsection_name_len;
+      op.read += subsection_name_len;
+
+      printf (_("   Scope:	  %s\n"),
+	      public_subsection ? "public" : "private");
+      printf (_("   Length:	  %u\n"), subsection_len);
+
+      uint8_t optional;
+      READ_SUBSEC_PROPERTY (optional, sizeof (optional), cursor, end);
+      op.read += sizeof (optional);
+
+      if (optional > 1)
+	{
+	  error (_("Optional value seems corrupted, got %d but only"
+		   " 0 (false) or 1 (true) are valid values\n"),
+		 optional);
+	  op.err = true;
+	  op.read = subsection_len;
+	  return op;
+	}
+
+      printf (_("   Comprehension: %s\n"), optional ? "optional" : "required");
+
+      uint8_t value_encoding_raw;
+      READ_SUBSEC_PROPERTY (value_encoding_raw, sizeof (value_encoding_raw),
+			    cursor, end);
+      op.read += sizeof (value_encoding_raw);
+
+      enum obj_attr_encoding_v2 value_encoding
+	= obj_attr_encoding_v2_from_u8 (value_encoding_raw);
+
+      if (value_encoding > OA_ENC_MAX)
+	{
+	  error (_("Attribute type seems corrupted, got %d but only 0 (ULEB128)"
+		   " or 1 (NTBS) are valid types\n"),
+		 value_encoding_raw);
+	  op.err = true;
+	  op.read = subsection_len;
+	  return op;
+	}
+
+      switch (value_encoding)
+	{
+	case OA_ENC_ULEB128:
+	  printf (_("   Encoding:	  ULEB128\n"));
+	  break;
+	case OA_ENC_NTBS:
+	  printf (_("   Encoding:	  NTBS\n"));
+	  break;
+	default:
+	  abort ();
+	}
+
+      const oav2_known_subsection_t *subsec_info
+	= oav2_identify_subsection (subsec_name);
+      printf (_("   Values:\n"));
+      while (cursor < end)
+	{
+	  const unsigned char *cursor_new
+	    = display_attr_v2 (cursor, end, subsec_info, value_encoding,
+			       display_arch_attr);
+	  op.read += (cursor_new - cursor);
+	  cursor = cursor_new;
+	}
+      putchar ('\n');
+    }
+
+  if (cursor != end)
+    abort ();
+
+  return op;
+}
+
+static bool
+process_attributes_v2 (Filedata *filedata,
+		       const char *public_name,
+		       uint32_t section_type,
+		       display_arch_attr_t display_arch_attr)
+{
+  /* Find the section header so that we get the size.  */
+  Elf_Internal_Shdr *sec_hdr = find_section_by_type (filedata, section_type);
+  if (sec_hdr == NULL)
+    /* No section, exit without error.  */
+    return true;
+
+  unsigned char *const data = (unsigned char *)
+    get_data (NULL, filedata, sec_hdr->sh_offset, 1, sec_hdr->sh_size,
+	      _("object attributes"));
+  if (data == NULL)
+    return false;
+
+  unsigned char *cursor = data;
+  bool res = true;
+
+  /* The first character is the version of the attributes.
+     Currently only version 1, (aka 'A') is recognised here.  */
+  if (*cursor != 'A')
+    {
+      error (_("Unknown attributes version '%c'(0x%02x) - expecting 'A'\n"),
+	     ISPRINT (*cursor) ? *cursor : '?', *cursor);
+      res = false;
+      goto free_data;
+    }
+
+  ++cursor;
+
+  printf (_("Subsections:\n"));
+  BufferReadOp_t op;
+  uint64_t remaining;
+  for (remaining = sec_hdr->sh_size - 1; // already read 'A'
+       remaining >= F_MIN_SUBSECTION_DATA_LEN;
+       remaining -= op.read, cursor += op.read)
+    {
+      op = elf_parse_attrs_subsection_v2 (cursor, remaining, public_name,
+					  display_arch_attr);
+      if (op.err)
+	{
+	  error (_("Cannot parse subsection at offset %"PRIx64"\n"),
+	    sec_hdr->sh_size - remaining);
+	  res = false;
+	  goto free_data;
+	}
+    }
+
+  if (remaining != 0)
+    {
+      error (_("Object attributes section ends prematurely\n"));
+      res = false;
+    }
+
+ free_data:
+  free (data);
 
   return res;
 }
@@ -21036,7 +21676,7 @@ process_got_section_contents (Filedata * filedata)
   bool res = true;
   bool found = false;
 
-  if (!do_got_section_contents)
+  if (!do_got_section_contents || all_relocations_count == 0)
     return res;
 
   switch (filedata->file_header.e_type)
@@ -21107,12 +21747,12 @@ process_got_section_contents (Filedata * filedata)
 	  }
 
 	entries = section->sh_size / entsz;
-	if (entries == 1)
-	  printf (_("\nGlobal Offset Table '%s' contains 1 entry:\n"),
-		  name);
-	else
-	  printf (_("\nGlobal Offset Table '%s' contains %" PRIu64
-		    " entries:\n"), name, entries);
+	printf (ngettext ("\nGlobal Offset Table '%s' contains %" PRIu64
+			  " entry:\n",
+			  "\nGlobal Offset Table '%s' contains %" PRIu64
+			  " entries:\n",
+			  entries),
+		name, entries);
 
 	uint64_t g;
 
@@ -21356,6 +21996,8 @@ get_note_type (Filedata * filedata, unsigned e_type)
 	return _("NT_386_IOPERM (x86 I/O permissions)");
       case NT_X86_XSTATE:
 	return _("NT_X86_XSTATE (x86 XSAVE extended state)");
+      case NT_X86_XSAVE_LAYOUT:
+	return _("NT_X86_XSAVE_LAYOUT (x86 XSAVE Layout description)");
       case NT_X86_CET:
 	return _("NT_X86_CET (x86 CET state)");
       case NT_X86_SHSTK:
@@ -21414,6 +22056,10 @@ get_note_type (Filedata * filedata, unsigned e_type)
 	return _("NT_ARM_ZT (AArch64 SME2 ZT registers)");
       case NT_ARM_PAC_ENABLED_KEYS:
 	return _("NT_ARM_PAC_ENABLED_KEYS (AArch64 pointer authentication enabled keys)");
+      case NT_ARM_FPMR:
+	return _("NT_ARM_FPMR (AArch64 Floating Point Mode Register)");
+      case NT_ARM_POE:
+	return _("NT_ARM_POE (AArch64 Permission Overlay Extension Register)");
       case NT_ARC_V2:
 	return _("NT_ARC_V2 (ARC HS accumulator/extra registers)");
       case NT_RISCV_CSR:
@@ -23745,8 +24391,8 @@ process_notes_at (Filedata *           filedata,
   char *end;
   bool res = true;
 
-  if (length <= 0)
-    return false;
+  if (length == 0)
+    return true;
 
   if (section)
     {
@@ -24063,8 +24709,8 @@ process_notes (Filedata * filedata)
   return true;
 }
 
-static unsigned char *
-display_public_gnu_attributes (unsigned char * start,
+static const unsigned char *
+display_public_gnu_attributes (const unsigned char * start,
 			       const unsigned char * const end)
 {
   printf (_("  Unknown GNU attribute: %s\n"), start);
@@ -24075,13 +24721,13 @@ display_public_gnu_attributes (unsigned char * start,
   return (unsigned char *) end;
 }
 
-static unsigned char *
-display_generic_attribute (unsigned char * start,
+static const unsigned char *
+display_generic_attribute (const unsigned char * start,
 			   unsigned int tag,
 			   const unsigned char * const end)
 {
   if (tag == 0)
-    return (unsigned char *) end;
+    return end;
 
   return display_tag_value (tag, start, end);
 }
@@ -24106,6 +24752,10 @@ process_arch_specific (Filedata * filedata)
       return process_attributes (filedata, "aeabi", SHT_ARM_ATTRIBUTES,
 				 display_arm_attribute,
 				 display_generic_attribute);
+
+    case EM_AARCH64:
+      return process_attributes_v2 (filedata, "aeabi", SHT_AARCH64_ATTRIBUTES,
+				    display_aarch64_attribute);
 
     case EM_MIPS:
     case EM_MIPS_RS3_LE:
@@ -24238,6 +24888,12 @@ free_filedata (Filedata *filedata)
   free (filedata->program_interpreter);
   free (filedata->program_headers);
   free (filedata->section_headers);
+  if (filedata->orig_section_headers)
+    {
+      for (unsigned int i = 0; i < filedata->file_header.e_shnum; i++)
+	free (filedata->orig_section_headers[i]);
+      free (filedata->orig_section_headers);
+    }
   free (filedata->string_table);
   free (filedata->dump.dump_sects);
   free (filedata->dynamic_strings);
@@ -24433,7 +25089,8 @@ process_object (Filedata * filedata)
   if (! process_section_headers (filedata))
     {
       /* Without loaded section headers we cannot process lots of things.  */
-      do_unwind = do_version = do_dump = do_arch = false;
+      do_unwind = do_version = do_dump = do_arch
+	= do_got_section_contents = false;
 
       if (! do_using_dynamic)
 	do_syms = do_dyn_syms = do_reloc = false;

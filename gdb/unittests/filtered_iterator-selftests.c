@@ -1,6 +1,6 @@
 /* Self tests for the filtered_iterator class.
 
-   Copyright (C) 2019-2025 Free Software Foundation, Inc.
+   Copyright (C) 2019-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,82 +19,9 @@
 
 #include "gdbsupport/selftest.h"
 #include "gdbsupport/filtered-iterator.h"
-
-#include <iterator>
+#include "int-array-iterator.h"
 
 namespace selftests {
-
-/* An iterator class that iterates on integer arrays.  */
-
-struct int_array_iterator
-{
-  using value_type = int;
-  using reference = int &;
-  using pointer = int *;
-  using iterator_category = std::forward_iterator_tag;
-  using difference_type = int;
-
-  /* Create an iterator that points at the first element of an integer
-     array at ARRAY of size SIZE.  */
-  int_array_iterator (int *array, size_t size)
-    : m_array (array), m_size (size)
-  {}
-
-  /* Create a past-the-end iterator.  */
-  int_array_iterator ()
-    : m_array (nullptr), m_size (0)
-  {}
-
-  bool operator== (const int_array_iterator &other) const
-  {
-    /* If both are past-the-end, they are equal.  */
-    if (m_array == nullptr && other.m_array == nullptr)
-      return true;
-
-    /* If just one of them is past-the-end, they are not equal.  */
-    if (m_array == nullptr || other.m_array == nullptr)
-      return false;
-
-    /* If they are both not past-the-end, make sure they iterate on the
-       same array (we shouldn't compare iterators that iterate on different
-       things).  */
-    SELF_CHECK (m_array == other.m_array);
-
-    /* They are equal if they have the same current index.  */
-    return m_cur_idx == other.m_cur_idx;
-  }
-
-  bool operator!= (const int_array_iterator &other) const
-  {
-    return !(*this == other);
-  }
-
-  void operator++ ()
-  {
-    /* Make sure nothing tries to increment a past the end iterator. */
-    SELF_CHECK (m_cur_idx < m_size);
-
-    m_cur_idx++;
-
-    /* Mark the iterator as "past-the-end" if we have reached the end.  */
-    if (m_cur_idx == m_size)
-      m_array = nullptr;
-  }
-
-  int operator* () const
-  {
-    /* Make sure nothing tries to dereference a past the end iterator.  */
-    SELF_CHECK (m_cur_idx < m_size);
-
-    return m_array[m_cur_idx];
-  }
-
-private:
-  /* A nullptr value in M_ARRAY indicates a past-the-end iterator.  */
-  int *m_array;
-  size_t m_size;
-  size_t m_cur_idx = 0;
-};
 
 /* Filter to only keep the even numbers.  */
 
@@ -115,12 +42,15 @@ test_filtered_iterator ()
   std::vector<int> even_ints;
   const std::vector<int> expected_even_ints { 4, 4, 6, 8 };
 
+  int_array_iterator begin (array, ARRAY_SIZE (array));
+  int_array_iterator end;
   filtered_iterator<int_array_iterator, even_numbers_only>
-    iter (array, ARRAY_SIZE (array));
-  filtered_iterator<int_array_iterator, even_numbers_only> end;
+    filtered_iter (begin, end);
+  filtered_iterator<int_array_iterator, even_numbers_only>
+    filtered_end (end, end);
 
-  for (; iter != end; ++iter)
-    even_ints.push_back (*iter);
+  for (; filtered_iter != filtered_end; ++filtered_iter)
+    even_ints.push_back (*filtered_iter);
 
   SELF_CHECK (even_ints == expected_even_ints);
 }
@@ -152,10 +82,12 @@ test_filtered_iterator_eq ()
 {
   int array[] = { 4, 4, 5, 6, 7, 8, 9 };
 
+  int_array_iterator begin (array, ARRAY_SIZE (array));
+  int_array_iterator end;
   filtered_iterator<int_array_iterator, even_numbers_only>
-    iter1(array, ARRAY_SIZE (array));
+    iter1 (begin, end);
   filtered_iterator<int_array_iterator, even_numbers_only>
-    iter2(array, ARRAY_SIZE (array));
+    iter2 (begin, end);
 
   /* They start equal.  */
   SELF_CHECK (iter1 == iter2);

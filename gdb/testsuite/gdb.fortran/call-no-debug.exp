@@ -1,4 +1,4 @@
-# Copyright 2020-2025 Free Software Foundation, Inc.
+# Copyright 2020-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@ if {[prepare_for_testing_full "failed to prepare" \
 	 [list $testfile [list debug f90] \
 	      $srcfile [list debug f90] \
 	      $srcfile2 [list nodebug f90]]]} {
-    return -1
+    return
 }
 
 # Find a possibly mangled version of NAME, a function we want to call
@@ -67,8 +67,8 @@ proc find_mangled_name { name } {
 set some_func [find_mangled_name "some_func"]
 set string_func [find_mangled_name "string_func"]
 
-if ![fortran_runto_main] {
-    return -1
+if {![fortran_runto_main]} {
+    return
 }
 
 # Call the function SOME_FUNC, that takes a single integer and returns
@@ -104,5 +104,5 @@ if { $symbol_name == "" } {
 	"'${symbol_name}' has unknown return type; cast the call to its declared return type"
     gdb_test_stdio "call (integer) ${symbol_name} (&'abcdefg', 3)" \
 	" abc" \
-	"\\\$\\d+ = 0"
+	"$valnum_re = 0"
 }

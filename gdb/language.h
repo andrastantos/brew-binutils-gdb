@@ -1,6 +1,6 @@
 /* Source-language-related definitions for GDB.
 
-   Copyright (C) 1991-2025 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    Contributed by the Department of Computer Science at the State University
    of New York at Buffalo.
@@ -59,7 +59,7 @@ range_check;
 extern enum array_ordering
   {
     array_row_major, array_column_major
-  } 
+  }
 array_ordering;
 
 
@@ -81,6 +81,20 @@ case_sensitivity;
 enum macro_expansion
   {
     macro_expansion_no, macro_expansion_c
+  };
+
+/* How should shadowed, or shadowing, variables be printed.  */
+
+enum class lang_vars_shadowing
+  {
+    /* Adds shadowed information for such variables.  */
+    PRINT,
+
+    /* Does not print shadowed variables.  */
+    HIDE,
+
+    /* Print variables without shadow information.  */
+    NONE,
   };
 
 
@@ -346,14 +360,6 @@ struct language_defn
   virtual void language_arch_info (struct gdbarch *,
 				   struct language_arch_info *) const = 0;
 
-  /* Find the definition of the type with the given name.  */
-
-  virtual struct type *lookup_transparent_type (const char *name,
-						domain_search_flags flags) const
-  {
-    return basic_lookup_transparent_type (name, flags);
-  }
-
   /* Find all symbols in the current program space matching NAME in
      DOMAIN, according to this language's rules.
 
@@ -361,18 +367,13 @@ struct language_defn
      The caller is responsible for iterating up through superblocks
      if desired.
 
-     For each one, call CALLBACK with the symbol.  If CALLBACK
-     returns false, the iteration ends at that point.
-
-     This field may not be NULL.  If the language does not need any
-     special processing here, 'iterate_over_symbols' should be
-     used as the definition.  */
-  virtual bool iterate_over_symbols
+     For each one, call CALLBACK with the symbol.  */
+  virtual void for_each_symbol
 	(const struct block *block, const lookup_name_info &name,
 	 domain_search_flags domain,
-	 gdb::function_view<symbol_found_callback_ftype> callback) const
+	 for_each_symbol_callback_ftype callback) const
   {
-    return ::iterate_over_symbols (block, name, domain, callback);
+    ::for_each_symbol (block, name, domain, callback);
   }
 
   /* Return a pointer to the function that should be used to match a
@@ -524,12 +525,6 @@ struct language_defn
 
   virtual int parser (struct parser_state *ps) const;
 
-  /* Print the character CH (of type CHTYPE) on STREAM as part of the
-     contents of a literal string whose delimiter is QUOTER.  */
-
-  virtual void emitchar (int ch, struct type *chtype,
-			 struct ui_file *stream, int quoter) const;
-
   virtual void printchar (int ch, struct type *chtype,
 			  struct ui_file * stream) const;
 
@@ -657,6 +652,18 @@ struct language_defn
 
   virtual const struct lang_varobj_ops *varobj_ops () const;
 
+  /* Normally a "static link" (a reference to an outer frame) is
+     represented by DW_AT_static_link in DWARF.  However, some
+     compilers do not emit this -- but do provide some
+     language-specific way to find the correct outer frame.  If the
+     ordinary search for a static link fails for a given frame, then
+     this method will be called for that frame's language.  It should
+     either return the correct outer instance, if one exists, or a
+     null frame if no such frame exists.  */
+
+  virtual frame_info_ptr follow_static_link (const frame_info_ptr &frame)
+    const;
+
 protected:
 
   /* This is the overridable part of the GET_SYMBOL_NAME_MATCHER method.
@@ -675,17 +682,11 @@ extern const struct language_defn *get_current_language ();
    always points to *some* valid struct; it can be used without checking
    it for validity.
 
-   The current language affects expression parsing and evaluation
-   (FIXME: it might be cleaner to make the evaluation-related stuff
-   separate exp_opcodes for each different set of semantics.  We
-   should at least think this through more clearly with respect to
-   what happens if the language is changed between parsing and
-   evaluation) and printing of things like types and arrays.  It does
-   *not* affect symbol-reading-- each source file in a symbol-file has
-   its own language and we should keep track of that regardless of the
-   language when symbols are read.  If we want some manual setting for
-   the language of symbol files (e.g. detecting when ".c" files are
-   C++), it should be a separate setting from the current_language.  */
+   The current language affects expression parsing and evaluation and
+   printing of things like types and values.  It does *not* affect
+   symbol-reading -- each source file in a symbol-file has its own
+   language and we should keep track of that regardless of the
+   language when symbols are read.  */
 
 #define current_language (get_current_language ())
 
@@ -703,7 +704,7 @@ extern const char lang_frame_mismatch_warn[];
 
 extern bool warn_frame_lang_mismatch;
 
-/* language_mode == 
+/* language_mode ==
    language_mode_auto:   current_language automatically set upon selection
    of scope (e.g. stack frame)
    language_mode_manual: current_language set only by user.  */
@@ -756,7 +757,7 @@ struct symbol *
 					    const char *name);
 
 
-/* These macros define the behavior of the expression 
+/* These macros define the behavior of the expression
    evaluator.  */
 
 /* Should we range check values against the domain of their type?  */
@@ -777,20 +778,9 @@ extern void language_info ();
 
 extern void set_language (enum language lang);
 
-typedef void lazily_set_language_ftype ();
+using lazily_set_language_ftype = void ();
 extern void lazily_set_language (lazily_set_language_ftype *fun);
 
-
-/* Test a character to decide whether it can be printed in literal form
-   or needs to be printed in another representation.  For example,
-   in C the literal form of the character with octal value 141 is 'a'
-   and the "other representation" is '\141'.  The "other representation"
-   is program language dependent.  */
-
-#define PRINT_LITERAL_FORM(c)		\
-  ((c) >= 0x20				\
-   && ((c) < 0x7F || (c) >= 0xA0)	\
-   && (!sevenbit_strings || (c) < 0x80))
 
 /* Error messages */
 
@@ -825,6 +815,10 @@ void c_get_string (struct value *value,
 symbol_name_matcher_ftype *get_symbol_name_matcher
   (const language_defn *lang, const lookup_name_info &lookup_name);
 
+/* Returns the shadowing option supported for the input language.  */
+
+extern lang_vars_shadowing get_lang_vars_shadowing_option (enum language lang);
+
 /* Save the current language and restore it upon destruction.  */
 
 class scoped_restore_current_language
@@ -836,6 +830,8 @@ public:
   /* Set the current language as well.  */
   explicit scoped_restore_current_language (enum language lang);
 
+  DISABLE_COPY_AND_ASSIGN (scoped_restore_current_language);
+
   ~scoped_restore_current_language ();
 
   scoped_restore_current_language (scoped_restore_current_language &&other)
@@ -844,11 +840,6 @@ public:
     m_fun = other.m_fun;
     other.dont_restore ();
   }
-
-  scoped_restore_current_language (const scoped_restore_current_language &)
-      = delete;
-  scoped_restore_current_language &operator=
-      (const scoped_restore_current_language &) = delete;
 
   /* Cancel restoring on scope exit.  */
   void dont_restore ()

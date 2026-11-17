@@ -1,6 +1,6 @@
 /* Common definitions.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -222,6 +222,12 @@
 /* Pull in gdb::unique_xmalloc_ptr.  */
 #include "gdbsupport/gdb_unique_ptr.h"
 
+/* Note that there's no simple way to enforce the use of the c-ctype
+   functions.  We can't poison the <ctype.h> functions (see
+   safe-ctype.h) because that will provoke errors from libstdc++
+   headers.  */
+#include "c-ctype.h"
+
 /* sbrk on macOS is not useful for our purposes, since sbrk(0) always
    returns the same value.  brk/sbrk on macOS is just an emulation
    that always returns a pointer to a 4MB section reserved for
@@ -231,4 +237,6 @@
 #define HAVE_USEFUL_SBRK 1
 #endif
 
+#else
+#  error gdbsupport/common-defs.h should not be included manually
 #endif /* GDBSUPPORT_COMMON_DEFS_H */

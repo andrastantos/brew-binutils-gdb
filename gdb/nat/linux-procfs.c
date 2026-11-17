@@ -1,5 +1,5 @@
 /* Linux-specific PROCFS manipulation routines.
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -105,7 +105,7 @@ parse_proc_status_state (const char *state)
       return PROC_STATE_TRACING_STOP;
     case 'T':
       /* Before Linux 2.6.33, tracing stop used uppercase T.  */
-      if (strcmp (state, "T (stopped)\n") == 0)
+      if (streq (state, "T (stopped)\n"))
 	return PROC_STATE_STOPPED;
       else /* "T (tracing stop)\n" */
 	return PROC_STATE_TRACING_STOP;

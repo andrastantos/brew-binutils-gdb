@@ -1,6 +1,6 @@
 /* Target-dependent code for AMD64.
 
-   Copyright (C) 2001-2025 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
 
    Contributed by Jiri Smid, SuSE Labs.
 
@@ -61,7 +61,7 @@
 
 /* Register information.  */
 
-static const char * const amd64_register_names[] = 
+static const char * const amd64_register_names[] =
 {
   "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp",
 
@@ -79,7 +79,7 @@ static const char * const amd64_register_names[] =
   "mxcsr",
 };
 
-static const char * const amd64_ymm_names[] = 
+static const char * const amd64_ymm_names[] =
 {
   "ymm0", "ymm1", "ymm2", "ymm3",
   "ymm4", "ymm5", "ymm6", "ymm7",
@@ -95,7 +95,7 @@ static const char * const amd64_ymm_avx512_names[] =
   "ymm28", "ymm29", "ymm30", "ymm31"
 };
 
-static const char * const amd64_ymmh_names[] = 
+static const char * const amd64_ymmh_names[] =
 {
   "ymm0h", "ymm1h", "ymm2h", "ymm3h",
   "ymm4h", "ymm5h", "ymm6h", "ymm7h",
@@ -329,7 +329,7 @@ static const char * const amd64_byte_names[] =
 
 static const char * const amd64_word_names[] =
 {
-  "ax", "bx", "cx", "dx", "si", "di", "bp", "", 
+  "ax", "bx", "cx", "dx", "si", "di", "bp", "",
   "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w"
 };
 
@@ -337,7 +337,7 @@ static const char * const amd64_word_names[] =
 
 static const char * const amd64_dword_names[] =
 {
-  "eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp", 
+  "eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp",
   "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
   "eip"
 };
@@ -424,7 +424,7 @@ amd64_pseudo_register_write (gdbarch *gdbarch, const frame_info_ptr &next_frame,
 
 /* Implement the 'ax_pseudo_register_collect' gdbarch method.  */
 
-static int
+static void
 amd64_ax_pseudo_register_collect (struct gdbarch *gdbarch,
 				  struct agent_expr *ax, int regnum)
 {
@@ -438,17 +438,15 @@ amd64_ax_pseudo_register_collect (struct gdbarch *gdbarch,
 	ax_reg_mask (ax, gpnum - AMD64_NUM_LOWER_BYTE_REGS);
       else
 	ax_reg_mask (ax, gpnum);
-      return 0;
     }
   else if (i386_dword_regnum_p (gdbarch, regnum))
     {
       int gpnum = regnum - tdep->eax_regnum;
 
       ax_reg_mask (ax, gpnum);
-      return 0;
     }
   else
-    return i386_ax_pseudo_register_collect (gdbarch, ax, regnum);
+    i386_ax_pseudo_register_collect (gdbarch, ax, regnum);
 }
 
 
@@ -693,11 +691,12 @@ amd64_classify (struct type *type, enum amd64_reg_class theclass[2])
 
   /* Arguments of types (signed and unsigned) _Bool, char, short, int,
      long, long long, and pointers are in the INTEGER class.  Similarly,
-     range types, used by languages such as Ada, are also in the INTEGER
-     class.  */
+     range and fixed-point types, used by languages such as Ada, are
+     also in the INTEGER class.  This comes form the System V ABI
+     (section 3.2.3, Parameter Passing).  */
   if ((code == TYPE_CODE_INT || code == TYPE_CODE_ENUM
        || code == TYPE_CODE_BOOL || code == TYPE_CODE_RANGE
-       || code == TYPE_CODE_CHAR
+       || code == TYPE_CODE_CHAR || code == TYPE_CODE_FIXED_POINT
        || code == TYPE_CODE_PTR || TYPE_IS_REFERENCE (type))
       && (len == 1 || len == 2 || len == 4 || len == 8))
     theclass[0] = AMD64_INTEGER;
@@ -726,7 +725,7 @@ amd64_classify (struct type *type, enum amd64_reg_class theclass[2])
   /* Arguments of complex T - where T is one of the types _Float16, float or
      double - get treated as if they are implemented as:
 
-     struct complexT {
+     struct complex_T {
        T real;
        T imag;
      };
@@ -1021,7 +1020,7 @@ if (return_method == return_method_struct)
      containing ellipsis (...) in the declaration) %al is used as
      hidden argument to specify the number of SSE registers used.  */
   regcache_raw_write_unsigned (regcache, AMD64_RAX_REGNUM, sse_reg);
-  return sp; 
+  return sp;
 }
 
 static CORE_ADDR
@@ -1149,9 +1148,9 @@ static const unsigned char twobyte_has_modrm[256] = {
   /*	   0 1 2 3 4 5 6 7 8 9 a b c d e f	  */
 };
 
-static int amd64_syscall_p (const struct amd64_insn *insn, int *lengthp);
+static bool amd64_syscall_p (const struct amd64_insn *insn, int *lengthp);
 
-static int
+static bool
 rex_prefix_p (gdb_byte pfx)
 {
   return REX_PREFIX_P (pfx);
@@ -1674,7 +1673,7 @@ amd64_displaced_step_copy_insn (struct gdbarch *gdbarch,
   return displaced_step_copy_insn_closure_up (dsc.release ());
 }
 
-static int
+static bool
 amd64_absolute_jmp_p (const struct amd64_insn *details)
 {
   const gdb_byte *insn = &details->raw_insn[details->opcode_offset];
@@ -1683,35 +1682,35 @@ amd64_absolute_jmp_p (const struct amd64_insn *details)
     {
       /* jump near, absolute indirect (/4) */
       if ((insn[1] & 0x38) == 0x20)
-	return 1;
+	return true;
 
       /* jump far, absolute indirect (/5) */
       if ((insn[1] & 0x38) == 0x28)
-	return 1;
+	return true;
     }
 
-  return 0;
+  return false;
 }
 
-/* Return non-zero if the instruction DETAILS is a jump, zero otherwise.  */
+/* Return true if the instruction DETAILS is a jump, false otherwise.  */
 
-static int
+static bool
 amd64_jmp_p (const struct amd64_insn *details)
 {
   const gdb_byte *insn = &details->raw_insn[details->opcode_offset];
 
   /* jump short, relative.  */
   if (insn[0] == 0xeb)
-    return 1;
+    return true;
 
   /* jump near, relative.  */
   if (insn[0] == 0xe9)
-    return 1;
+    return true;
 
   return amd64_absolute_jmp_p (details);
 }
 
-static int
+static bool
 amd64_absolute_call_p (const struct amd64_insn *details)
 {
   const gdb_byte *insn = &details->raw_insn[details->opcode_offset];
@@ -1720,17 +1719,17 @@ amd64_absolute_call_p (const struct amd64_insn *details)
     {
       /* Call near, absolute indirect (/2) */
       if ((insn[1] & 0x38) == 0x10)
-	return 1;
+	return true;
 
       /* Call far, absolute indirect (/3) */
       if ((insn[1] & 0x38) == 0x18)
-	return 1;
+	return true;
     }
 
-  return 0;
+  return false;
 }
 
-static int
+static bool
 amd64_ret_p (const struct amd64_insn *details)
 {
   /* NOTE: gcc can emit "repz ; ret".  */
@@ -1743,32 +1742,32 @@ amd64_ret_p (const struct amd64_insn *details)
     case 0xca: /* ret far, pop N bytes */
     case 0xcb: /* ret far */
     case 0xcf: /* iret */
-      return 1;
+      return true;
 
     default:
-      return 0;
+      return false;
     }
 }
 
-static int
+static bool
 amd64_call_p (const struct amd64_insn *details)
 {
   const gdb_byte *insn = &details->raw_insn[details->opcode_offset];
 
   if (amd64_absolute_call_p (details))
-    return 1;
+    return true;
 
   /* call near, relative */
   if (insn[0] == 0xe8)
-    return 1;
+    return true;
 
-  return 0;
+  return false;
 }
 
-/* Return non-zero if INSN is a system call, and set *LENGTHP to its
-   length in bytes.  Otherwise, return zero.  */
+/* Return true if INSN is a system call, and set *LENGTHP to its
+   length in bytes.  Otherwise, return false.  */
 
-static int
+static bool
 amd64_syscall_p (const struct amd64_insn *details, int *lengthp)
 {
   const gdb_byte *insn = &details->raw_insn[details->opcode_offset];
@@ -1776,18 +1775,18 @@ amd64_syscall_p (const struct amd64_insn *details, int *lengthp)
   if (insn[0] == 0x0f && insn[1] == 0x05)
     {
       *lengthp = 2;
-      return 1;
+      return true;
     }
 
-  return 0;
+  return false;
 }
 
 /* Classify the instruction at ADDR using PRED.
    Throw an error if the memory can't be read.  */
 
-static int
+static bool
 amd64_classify_insn_at (struct gdbarch *gdbarch, CORE_ADDR addr,
-			int (*pred) (const struct amd64_insn *))
+			bool (*pred) (const struct amd64_insn *))
 {
   struct amd64_insn details;
 
@@ -1796,14 +1795,12 @@ amd64_classify_insn_at (struct gdbarch *gdbarch, CORE_ADDR addr,
   read_code (addr, buf.data (), buf.size ());
   amd64_get_insn_details (buf.data (), &details);
 
-  int classification = pred (&details);
-
-  return classification;
+  return pred (&details);
 }
 
 /* The gdbarch insn_is_call method.  */
 
-static int
+static bool
 amd64_insn_is_call (struct gdbarch *gdbarch, CORE_ADDR addr)
 {
   return amd64_classify_insn_at (gdbarch, addr, amd64_call_p);
@@ -1811,7 +1808,7 @@ amd64_insn_is_call (struct gdbarch *gdbarch, CORE_ADDR addr)
 
 /* The gdbarch insn_is_ret method.  */
 
-static int
+static bool
 amd64_insn_is_ret (struct gdbarch *gdbarch, CORE_ADDR addr)
 {
   return amd64_classify_insn_at (gdbarch, addr, amd64_ret_p);
@@ -1819,7 +1816,7 @@ amd64_insn_is_ret (struct gdbarch *gdbarch, CORE_ADDR addr)
 
 /* The gdbarch insn_is_jump method.  */
 
-static int
+static bool
 amd64_insn_is_jump (struct gdbarch *gdbarch, CORE_ADDR addr)
 {
   return amd64_classify_insn_at (gdbarch, addr, amd64_jmp_p);
@@ -2155,9 +2152,7 @@ amd64_init_frame_cache (struct amd64_frame_cache *cache)
 static struct amd64_frame_cache *
 amd64_alloc_frame_cache (void)
 {
-  struct amd64_frame_cache *cache;
-
-  cache = FRAME_OBSTACK_ZALLOC (struct amd64_frame_cache);
+  auto *cache = frame_obstack_zalloc<struct amd64_frame_cache> ();
   amd64_init_frame_cache (cache);
   return cache;
 }
@@ -2213,7 +2208,7 @@ amd64_analyze_stack_align (CORE_ADDR pc, CORE_ADDR current_pc,
 		pushq -8(%reg)
 
      "andq $-XXX, %rsp" can be either 4 bytes or 7 bytes:
-     
+
 	0x48 0x83 0xe4 0xf0			andq $-16, %rsp
 	0x48 0x81 0xe4 0x00 0xff 0xff 0xff	andq $-256, %rsp
    */
@@ -2279,7 +2274,7 @@ amd64_analyze_stack_align (CORE_ADDR pc, CORE_ADDR current_pc,
       /* MOD must be binary 10 and R/M must be binary 100.  */
       if ((buf[offset + 2] & 0xc7) != 0x44)
 	return pc;
-      
+
       /* REG has register number.  */
       r = (buf[offset + 2] >> 3) & 7;
 
@@ -2345,7 +2340,7 @@ amd64_analyze_stack_align (CORE_ADDR pc, CORE_ADDR current_pc,
 
 static CORE_ADDR
 amd64_x32_analyze_stack_align (CORE_ADDR pc, CORE_ADDR current_pc,
-			       struct amd64_frame_cache *cache) 
+			       struct amd64_frame_cache *cache)
 {
   /* There are 2 code sequences to re-align stack before the frame
      gets set up:
@@ -2377,12 +2372,12 @@ amd64_x32_analyze_stack_align (CORE_ADDR pc, CORE_ADDR current_pc,
 		[addr32] pushq -8(%reg)
 
      "andq $-XXX, %rsp" can be either 4 bytes or 7 bytes:
-     
+
 	0x48 0x83 0xe4 0xf0			andq $-16, %rsp
 	0x48 0x81 0xe4 0x00 0xff 0xff 0xff	andq $-256, %rsp
 
      "andl $-XXX, %esp" can be either 3 bytes or 6 bytes:
-     
+
 	0x83 0xe4 0xf0			andl $-16, %esp
 	0x81 0xe4 0x00 0xff 0xff 0xff	andl $-256, %esp
    */
@@ -2454,7 +2449,7 @@ amd64_x32_analyze_stack_align (CORE_ADDR pc, CORE_ADDR current_pc,
       /* MOD must be binary 10 and R/M must be binary 100.  */
       if ((buf[offset + 2] & 0xc7) != 0x44)
 	return pc;
-      
+
       /* REG has register number.  */
       r = (buf[offset + 2] >> 3) & 7;
 
@@ -2784,14 +2779,14 @@ amd64_skip_xmm_prologue (CORE_ADDR pc, CORE_ADDR start_pc)
   if (pc == start_pc)
     return pc;
 
-  start_pc_sal = find_pc_sect_line (start_pc, NULL, 0);
+  start_pc_sal = find_sal_for_pc_sect (start_pc, NULL, 0);
   if (start_pc_sal.symtab == NULL
       || producer_is_gcc_ge_4 (start_pc_sal.symtab->compunit ()
-			       ->producer ()) < 6
+			       .producer ()) < 6
       || start_pc_sal.pc != start_pc || pc >= start_pc_sal.end)
     return pc;
 
-  next_sal = find_pc_sect_line (start_pc_sal.end, NULL, 0);
+  next_sal = find_sal_for_pc_sect (start_pc_sal.end, NULL, 0);
   if (next_sal.line != start_pc_sal.line)
     return pc;
 
@@ -2850,7 +2845,7 @@ amd64_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR start_pc)
     {
       CORE_ADDR post_prologue_pc
 	= skip_prologue_using_sal (gdbarch, func_addr);
-      struct compunit_symtab *cust = find_pc_compunit_symtab (func_addr);
+      struct compunit_symtab *cust = find_compunit_symtab_for_pc (func_addr);
 
       /* LLVM backend (Clang/Flang) always emits a line note before the
 	 prologue and another one after.  We trust clang and newer Intel
@@ -3200,7 +3195,7 @@ static const struct frame_base amd64_frame_base =
 
 /* Implement core of the stack_frame_destroyed_p gdbarch method.  */
 
-static int
+static bool
 amd64_stack_frame_destroyed_p_1 (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
   gdb_byte insn;
@@ -3214,12 +3209,12 @@ amd64_stack_frame_destroyed_p_1 (struct gdbarch *gdbarch, CORE_ADDR pc)
     return pc > epilogue;
 
   if (target_read_memory (pc, &insn, 1))
-    return 0;   /* Can't read memory at pc.  */
+    return false;   /* Can't read memory at pc.  */
 
   if (insn != 0xc3)     /* 'ret' instruction.  */
-    return 0;
+    return false;
 
-  return 1;
+  return true;
 }
 
 /* Normal frames, but in a function epilogue.  */
@@ -3230,16 +3225,16 @@ amd64_stack_frame_destroyed_p_1 (struct gdbarch *gdbarch, CORE_ADDR pc)
    follow any instruction such as 'leave' or 'pop %ebp' that destroys
    the function's stack frame.  */
 
-static int
+static bool
 amd64_stack_frame_destroyed_p (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
-  struct compunit_symtab *cust = find_pc_compunit_symtab (pc);
+  struct compunit_symtab *cust = find_compunit_symtab_for_pc (pc);
 
   if (cust != nullptr && cust->producer () != nullptr
       && producer_is_llvm (cust->producer ()))
     return amd64_stack_frame_destroyed_p_1 (gdbarch, pc);
 
-  return 0;
+  return false;
 }
 
 static int
@@ -3255,7 +3250,7 @@ amd64_epilogue_frame_sniffer_1 (const struct frame_unwind *self,
     return 0;
 
   bool unwind_valid_p
-    = compunit_epilogue_unwind_valid (find_pc_compunit_symtab (pc));
+    = compunit_epilogue_unwind_valid (find_compunit_symtab_for_pc (pc));
   if (override_p)
     {
       if (unwind_valid_p)
@@ -3379,7 +3374,7 @@ static const struct frame_unwind_legacy amd64_epilogue_frame_unwind (
   amd64_epilogue_frame_unwind_stop_reason,
   amd64_epilogue_frame_this_id,
   amd64_frame_prev_register,
-  NULL, 
+  NULL,
   amd64_epilogue_frame_sniffer
 );
 
@@ -3446,7 +3441,7 @@ const struct regset amd64_fpregset =
    address is copied into PC.  This routine returns non-zero on
    success.  */
 
-static int
+static bool
 amd64_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 {
   gdb_byte buf[8];
@@ -3459,17 +3454,17 @@ amd64_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
   /* If JB_PC_OFFSET is -1, we have no way to find out where the
      longjmp will land.	 */
   if (jb_pc_offset == -1)
-    return 0;
+    return false;
 
   get_frame_register (frame, AMD64_RDI_REGNUM, buf);
   jb_addr= extract_typed_address
 	    (buf, builtin_type (gdbarch)->builtin_data_ptr);
   if (target_read_memory (jb_addr + jb_pc_offset, buf, len))
-    return 0;
+    return false;
 
   *pc = extract_typed_address (buf, builtin_type (gdbarch)->builtin_func_ptr);
 
-  return 1;
+  return true;
 }
 
 static const int amd64_record_regmap[] =
@@ -3594,16 +3589,8 @@ amd64_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch,
   set_gdbarch_fp0_regnum (gdbarch, AMD64_ST0_REGNUM); /* %st(0) */
 
   /* The "default" register numbering scheme for AMD64 is referred to
-     as the "DWARF Register Number Mapping" in the System V psABI.
-     The preferred debugging format for all known AMD64 targets is
-     actually DWARF2, and GCC doesn't seem to support DWARF (that is
-     DWARF-1), but we provide the same mapping just in case.  This
-     mapping is also used for stabs, which GCC does support.  */
-  set_gdbarch_stab_reg_to_regnum (gdbarch, amd64_dwarf_reg_to_regnum);
+     as the "DWARF Register Number Mapping" in the System V psABI.  */
   set_gdbarch_dwarf2_reg_to_regnum (gdbarch, amd64_dwarf_reg_to_regnum);
-
-  /* We don't override SDB_REG_RO_REGNUM, since COFF doesn't seem to
-     be in use on any of the supported AMD64 targets.  */
 
   /* Call dummy code.  */
   set_gdbarch_push_dummy_call (gdbarch, amd64_push_dummy_call);
@@ -3718,21 +3705,20 @@ amd64_x32_none_init_abi (gdbarch_info info, gdbarch *arch)
 const struct target_desc *
 amd64_target_description (uint64_t xstate_bv, bool segments)
 {
-  static target_desc *amd64_tdescs \
+  static const_target_desc_up amd64_tdescs \
     [2/*AVX*/][2/*AVX512*/][2/*PKRU*/][2/*CET_U*/][2/*segments*/] = {};
-  target_desc **tdesc;
+  const_target_desc_up &tdesc
+    = amd64_tdescs[(xstate_bv & X86_XSTATE_AVX) ? 1 : 0]
+		  [(xstate_bv & X86_XSTATE_AVX512) ? 1 : 0]
+		  [(xstate_bv & X86_XSTATE_PKRU) ? 1 : 0]
+		  [(xstate_bv & X86_XSTATE_CET_U) ? 1 : 0]
+		  [segments ? 1 : 0];
 
-  tdesc = &amd64_tdescs[(xstate_bv & X86_XSTATE_AVX) ? 1 : 0]
-    [(xstate_bv & X86_XSTATE_AVX512) ? 1 : 0]
-    [(xstate_bv & X86_XSTATE_PKRU) ? 1 : 0]
-    [(xstate_bv & X86_XSTATE_CET_U) ? 1 : 0]
-    [segments ? 1 : 0];
+  if (tdesc == nullptr)
+    tdesc = amd64_create_target_description (xstate_bv, false,
+					     false, segments);
 
-  if (*tdesc == NULL)
-    *tdesc = amd64_create_target_description (xstate_bv, false,
-					      false, segments);
-
-  return *tdesc;
+  return tdesc.get ();
 }
 
 #if GDB_SELF_TEST

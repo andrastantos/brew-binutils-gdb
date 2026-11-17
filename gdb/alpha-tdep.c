@@ -1,6 +1,6 @@
 /* Target-dependent code for the ALPHA architecture, for GDB, the GNU Debugger.
 
-   Copyright (C) 1993-2025 Free Software Foundation, Inc.
+   Copyright (C) 1993-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -99,13 +99,13 @@ static const char * const alpha_register_names[] =
 };
 static_assert (ALPHA_NUM_REGS == ARRAY_SIZE (alpha_register_names));
 
-static int
+static bool
 alpha_cannot_fetch_register (struct gdbarch *gdbarch, int regno)
 {
-  return (strlen (alpha_register_names[regno]) == 0);
+  return strlen (alpha_register_names[regno]) == 0;
 }
 
-static int
+static bool
 alpha_cannot_store_register (struct gdbarch *gdbarch, int regno)
 {
   return (regno == ALPHA_ZERO_REGNUM
@@ -114,28 +114,28 @@ alpha_cannot_store_register (struct gdbarch *gdbarch, int regno)
 
 /* Is REGNUM a member of REGGROUP?  */
 
-static int
+static bool
 alpha_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
 			   const struct reggroup *group)
 {
-  /* Filter out any registers eliminated, but whose regnum is 
+  /* Filter out any registers eliminated, but whose regnum is
      reserved for backward compatibility, e.g. the vfp.  */
   if (*gdbarch_register_name (gdbarch, regnum) == '\0')
-    return 0;
+    return false;
 
   if (group == all_reggroup)
-    return 1;
+    return true;
 
   /* Zero should not be saved or restored.  Technically it is a general
      register (just as $f31 would be a float if we represented it), but
      there's no point displaying it during "info regs", so leave it out
      of all groups except for "all".  */
   if (regnum == ALPHA_ZERO_REGNUM)
-    return 0;
+    return false;
 
   /* All other registers are saved and restored.  */
   if (group == save_reggroup || group == restore_reggroup)
-    return 1;
+    return true;
 
   /* All other groups are non-overlapping.  */
 
@@ -205,7 +205,7 @@ alpha_sts (struct gdbarch *gdbarch, void *out, const void *in)
    bytes, as the representation of integers in floating point
    registers is different.  */
 
-static int
+static bool
 alpha_convert_register_p (struct gdbarch *gdbarch, int regno,
 			  struct type *type)
 {
@@ -213,10 +213,10 @@ alpha_convert_register_p (struct gdbarch *gdbarch, int regno,
 	  && type->length () == 4);
 }
 
-static int
+static bool
 alpha_register_to_value (const frame_info_ptr &frame, int regnum,
 			 struct type *valtype, gdb_byte *out,
-			int *optimizedp, int *unavailablep)
+			 bool *optimizedp, bool *unavailablep)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct value *value = get_frame_register_value (frame, regnum);
@@ -228,7 +228,7 @@ alpha_register_to_value (const frame_info_ptr &frame, int regnum,
   if (*optimizedp || *unavailablep)
     {
       release_value (value);
-      return 0;
+      return false;
     }
 
   /* Convert to VALTYPE.  */
@@ -237,7 +237,7 @@ alpha_register_to_value (const frame_info_ptr &frame, int regnum,
   alpha_sts (gdbarch, out, value->contents_all ().data ());
 
   release_value (value);
-  return 1;
+  return true;
 }
 
 static void
@@ -510,7 +510,7 @@ alpha_extract_return_value (struct type *valtype, struct regcache *regcache,
     }
 }
 
-/* Insert the given value into REGCACHE as if it was being 
+/* Insert the given value into REGCACHE as if it was being
    returned by a function.  */
 
 static void
@@ -622,7 +622,7 @@ alpha_return_in_memory_always (struct type *type)
 
 constexpr gdb_byte alpha_break_insn[] = { 0x80, 0, 0, 0 }; /* call_pal bpt */
 
-typedef BP_MANIPULATION (alpha_break_insn) alpha_breakpoint;
+using alpha_breakpoint = BP_MANIPULATION (alpha_break_insn);
 
 
 /* This returns the PC of the first insn after the prologue.
@@ -637,7 +637,7 @@ alpha_after_prologue (CORE_ADDR pc)
   if (!find_pc_partial_function (pc, NULL, &func_addr, &func_end))
     return 0;
 
-  sal = find_pc_line (func_addr, 0);
+  sal = find_sal_for_pc (func_addr, 0);
   if (sal.end < func_end)
     return sal.end;
 
@@ -736,7 +736,7 @@ static const int stq_c_opcode = 0x2f;
 
 /* Checks for an atomic sequence of instructions beginning with a LDL_L/LDQ_L
    instruction and ending with a STL_C/STQ_C instruction.  If such a sequence
-   is found, attempt to step through it.  A breakpoint is placed at the end of 
+   is found, attempt to step through it.  A breakpoint is placed at the end of
    the sequence.  */
 
 static std::vector<CORE_ADDR>
@@ -748,7 +748,7 @@ alpha_deal_with_atomic_sequence (struct gdbarch *gdbarch, CORE_ADDR pc)
   unsigned int insn = alpha_read_insn (gdbarch, loc);
   int insn_count;
   int index;
-  int last_breakpoint = 0; /* Defaults to 0 (no breakpoints placed).  */  
+  int last_breakpoint = 0; /* Defaults to 0 (no breakpoints placed).  */
   const int atomic_sequence_length = 16; /* Instruction sequence length.  */
   int bc_insn_count = 0; /* Conditional branch instruction count.  */
 
@@ -757,7 +757,7 @@ alpha_deal_with_atomic_sequence (struct gdbarch *gdbarch, CORE_ADDR pc)
       && INSN_OPCODE (insn) != ldq_l_opcode)
     return {};
 
-  /* Assume that no atomic sequence is longer than "atomic_sequence_length" 
+  /* Assume that no atomic sequence is longer than "atomic_sequence_length"
      instructions.  */
   for (insn_count = 0; insn_count < atomic_sequence_length; ++insn_count)
     {
@@ -765,7 +765,7 @@ alpha_deal_with_atomic_sequence (struct gdbarch *gdbarch, CORE_ADDR pc)
       insn = alpha_read_insn (gdbarch, loc);
 
       /* Assume that there is at most one branch in the atomic
-	 sequence.  If a branch is found, put a breakpoint in 
+	 sequence.  If a branch is found, put a breakpoint in
 	 its destination address.  */
       if (INSN_OPCODE (insn) >= br_opcode)
 	{
@@ -800,7 +800,7 @@ alpha_deal_with_atomic_sequence (struct gdbarch *gdbarch, CORE_ADDR pc)
   breaks[0] = loc;
 
   /* Check for duplicated breakpoints.  Check also for a breakpoint
-     placed (branch instruction's destination) anywhere in sequence.  */ 
+     placed (branch instruction's destination) anywhere in sequence.  */
   if (last_breakpoint
       && (breaks[1] == breaks[0]
 	  || (breaks[1] >= pc && breaks[1] <= closing_insn)))
@@ -820,7 +820,7 @@ alpha_deal_with_atomic_sequence (struct gdbarch *gdbarch, CORE_ADDR pc)
    which we extract the PC (JB_PC) that we will land at.  The PC is copied
    into the "pc".  This routine returns true on success.  */
 
-static int
+static bool
 alpha_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
@@ -833,10 +833,10 @@ alpha_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 
   if (target_read_memory (jb_addr + (tdep->jb_pc * tdep->jb_elt_size),
 			  raw_buffer, tdep->jb_elt_size))
-    return 0;
+    return false;
 
   *pc = extract_unsigned_integer (raw_buffer, tdep->jb_elt_size, byte_order);
-  return 1;
+  return true;
 }
 
 
@@ -855,12 +855,10 @@ static struct alpha_sigtramp_unwind_cache *
 alpha_sigtramp_frame_unwind_cache (const frame_info_ptr &this_frame,
 				   void **this_prologue_cache)
 {
-  struct alpha_sigtramp_unwind_cache *info;
-
   if (*this_prologue_cache)
     return (struct alpha_sigtramp_unwind_cache *) *this_prologue_cache;
 
-  info = FRAME_OBSTACK_ZALLOC (struct alpha_sigtramp_unwind_cache);
+  auto *info = frame_obstack_zalloc<alpha_sigtramp_unwind_cache> ();
   *this_prologue_cache = info;
 
   gdbarch *arch = get_frame_arch (this_frame);
@@ -876,7 +874,7 @@ alpha_sigtramp_frame_unwind_cache (const frame_info_ptr &this_frame,
 static CORE_ADDR
 alpha_sigtramp_register_address (struct gdbarch *gdbarch,
 				 CORE_ADDR sigcontext_addr, int regnum)
-{ 
+{
   alpha_gdbarch_tdep *tdep = gdbarch_tdep<alpha_gdbarch_tdep> (gdbarch);
 
   if (regnum >= 0 && regnum < 32)
@@ -884,7 +882,7 @@ alpha_sigtramp_register_address (struct gdbarch *gdbarch,
   else if (regnum >= ALPHA_FP0_REGNUM && regnum < ALPHA_FP0_REGNUM + 32)
     return sigcontext_addr + tdep->sc_fpregs_offset + regnum * 8;
   else if (regnum == ALPHA_PC_REGNUM)
-    return sigcontext_addr + tdep->sc_pc_offset; 
+    return sigcontext_addr + tdep->sc_pc_offset;
 
   return 0;
 }
@@ -1093,7 +1091,7 @@ Otherwise, you told GDB there was a function where there isn't one, or\n\
    something about the traditional layout of alpha stack frames.  */
 
 struct alpha_heuristic_unwind_cache
-{ 
+{
   CORE_ADDR vfp;
   CORE_ADDR start_pc;
   trad_frame_saved_reg *saved_regs;
@@ -1123,7 +1121,7 @@ alpha_heuristic_analyze_probing_loop (struct gdbarch *gdbarch, CORE_ADDR *pc,
 	subq    REG_INDEX,0x1,REG_INDEX
 	lda     REG_PROBE,<immediate>(REG_PROBE)
 	bne     REG_INDEX, LOOP_START
- 
+
 	lda     sp,<immediate>(REG_PROBE)
 
      If anything different is found, the function returns without
@@ -1149,14 +1147,14 @@ alpha_heuristic_analyze_probing_loop (struct gdbarch *gdbarch, CORE_ADDR *pc,
   cur_frame_size -= MEM_DISP (insn);
 
   /* stq     zero,<immediate>(REG_PROBE) */
-  
+
   cur_pc += ALPHA_INSN_SIZE;
   insn = alpha_read_insn (gdbarch, cur_pc);
   if (INSN_OPCODE (insn) != stq_opcode
       || MEM_RA (insn) != 0x1f
       || MEM_RB (insn) != reg_probe)
     return;
-  
+
   /* subq    REG_INDEX,0x1,REG_INDEX */
 
   cur_pc += ALPHA_INSN_SIZE;
@@ -1168,9 +1166,9 @@ alpha_heuristic_analyze_probing_loop (struct gdbarch *gdbarch, CORE_ADDR *pc,
       || OPR_RA (insn) != reg_index
       || OPR_RC (insn) != reg_index)
     return;
-  
+
   /* lda     REG_PROBE,<immediate>(REG_PROBE) */
-  
+
   cur_pc += ALPHA_INSN_SIZE;
   insn = alpha_read_insn (gdbarch, cur_pc);
   if (INSN_OPCODE (insn) != lda_opcode
@@ -1207,7 +1205,6 @@ alpha_heuristic_frame_unwind_cache (const frame_info_ptr &this_frame,
 				    CORE_ADDR start_pc)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
-  struct alpha_heuristic_unwind_cache *info;
   ULONGEST val;
   CORE_ADDR limit_pc, cur_pc;
   int frame_reg, frame_size, return_reg, reg;
@@ -1215,7 +1212,7 @@ alpha_heuristic_frame_unwind_cache (const frame_info_ptr &this_frame,
   if (*this_prologue_cache)
     return (struct alpha_heuristic_unwind_cache *) *this_prologue_cache;
 
-  info = FRAME_OBSTACK_ZALLOC (struct alpha_heuristic_unwind_cache);
+  auto *info = frame_obstack_zalloc<alpha_heuristic_unwind_cache> ();
   *this_prologue_cache = info;
   info->saved_regs = trad_frame_alloc_saved_regs (this_frame);
 
@@ -1403,7 +1400,7 @@ alpha_heuristic_frame_prev_register (const frame_info_ptr &this_frame,
      the correct place.  */
   if (regnum == ALPHA_PC_REGNUM)
     regnum = info->return_reg;
-  
+
   return trad_frame_get_prev_register (this_frame, info->saved_regs, regnum);
 }
 
@@ -1522,7 +1519,7 @@ alpha_fill_fp_regs (const struct regcache *regcache,
 
 /* Return nonzero if the G_floating register value in REG is equal to
    zero for FP control instructions.  */
-   
+
 static int
 fp_register_zero_p (LONGEST reg)
 {
@@ -1597,7 +1594,7 @@ alpha_next_pc (struct regcache *regcache, CORE_ADDR pc)
 	  case 0x35:              /* FBNE */
 	    regno += gdbarch_fp0_regnum (gdbarch);
 	}
-      
+
       rav = regcache_raw_get_signed (regcache, regno);
 
       switch (op)
@@ -1636,7 +1633,7 @@ alpha_next_pc (struct regcache *regcache, CORE_ADDR pc)
 	  break;
 
 	/* Floating point branches.  */
-	
+
 	case 0x31:              /* FBEQ */
 	  if (fp_register_zero_p (rav))
 	    goto branch_taken;
@@ -1705,7 +1702,7 @@ alpha_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     return arches->gdbarch;
 
   if (tdesc == nullptr)
-    tdesc = tdesc_alpha;
+    tdesc = tdesc_alpha.get ();
 
   /* Validate target description.  */
   if (tdesc_has_registers (tdesc))
@@ -1753,7 +1750,7 @@ alpha_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_long_bit (gdbarch, 64);
   set_gdbarch_long_long_bit (gdbarch, 64);
   set_gdbarch_wchar_bit (gdbarch, 64);
-  set_gdbarch_wchar_signed (gdbarch, 0);
+  set_gdbarch_wchar_signed (gdbarch, false);
   set_gdbarch_float_bit (gdbarch, 32);
   set_gdbarch_double_bit (gdbarch, 64);
   set_gdbarch_long_double_bit (gdbarch, 64);
@@ -1794,7 +1791,7 @@ alpha_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_sw_breakpoint_from_kind (gdbarch,
 				       alpha_breakpoint::bp_from_kind);
   set_gdbarch_decr_pc_after_break (gdbarch, ALPHA_INSN_SIZE);
-  set_gdbarch_cannot_step_breakpoint (gdbarch, 1);
+  set_gdbarch_cannot_step_breakpoint (gdbarch, true);
 
   /* Handles single stepping of atomic sequences.  */
   set_gdbarch_get_next_pcs (gdbarch, alpha_software_single_step);

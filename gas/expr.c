@@ -1,5 +1,5 @@
 /* expr.c -operands, expressions-
-   Copyright (C) 1987-2025 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -34,8 +34,6 @@
 #endif
 
 bool literal_prefix_dollar_hex = false;
-
-static void clean_up_expression (expressionS * expressionP);
 
 /* We keep a mapping of expression symbols to file positions, so that
    we can provide better error messages.  */
@@ -185,12 +183,11 @@ symbol_lookup_or_make (const char *name, bool start)
 symbolS *
 expr_build_uconstant (offsetT value)
 {
-  expressionS e;
-
-  e.X_op = O_constant;
-  e.X_add_number = value;
-  e.X_unsigned = 1;
-  e.X_extrabit = 0;
+  expressionS e = {
+    .X_op = O_constant,
+    .X_add_number = value,
+    .X_unsigned = 1
+  };
   return make_expr_symbol (&e);
 }
 
@@ -801,14 +798,19 @@ operand (expressionS *expressionP, enum expr_mode mode)
   segT segment;
   operatorT op = O_absent; /* For unary operators.  */
 
+#ifdef md_expr_init
+  md_expr_init (expressionP);
+#else
+  memset (expressionP, 0, sizeof (*expressionP));
+#endif
+
   /* All integers are regarded as unsigned unless they are negated.
      This is because the only thing which cares whether a number is
      unsigned is the code in emit_expr which extends constants into
      bignums.  It should only sign extend negative numbers, so that
      something like ``.quad 0x80000000'' is not sign extended even
      though it appears negative if valueT is 32 bits.  */
-  expressionP->X_unsigned = 1;
-  expressionP->X_extrabit = 0;
+  expressionP->X_unsigned = 1;				\
 
   /* Digits, assume it is a bignum.  */
 
@@ -1061,7 +1063,9 @@ operand (expressionS *expressionP, enum expr_mode mode)
 	     character, parity errors and all, is taken as the value
 	     of the operand.  VERY KINKY.  */
 	  expressionP->X_op = O_constant;
-	  expressionP->X_add_number = *input_line_pointer++;
+	  expressionP->X_add_number = *input_line_pointer;
+	  if (!is_end_of_stmt (*input_line_pointer))
+	    input_line_pointer++;
 	  break;
 	}
 
@@ -1323,7 +1327,6 @@ operand (expressionS *expressionP, enum expr_mode mode)
       /* In MRI mode, this is a floating point constant represented
 	 using hexadecimal digits.  */
 
-      ++input_line_pointer;
       integer_constant (16, expressionP);
       break;
 
@@ -1451,9 +1454,6 @@ operand (expressionS *expressionP, enum expr_mode mode)
       break;
     }
 
-  /* It is more 'efficient' to clean up the expressionS when they are
-     created.  Doing it here saves lines of code.  */
-  clean_up_expression (expressionP);
   SKIP_ALL_WHITESPACE ();		/* -> 1st char after operand.  */
   know (!is_whitespace (*input_line_pointer));
 
@@ -1477,39 +1477,6 @@ operand (expressionS *expressionP, enum expr_mode mode)
       return S_GET_SEGMENT (expressionP->X_add_symbol);
     case O_register:
       return reg_section;
-    }
-}
-
-/* Internal.  Simplify a struct expression for use by expr ().  */
-
-/* In:	address of an expressionS.
-	The X_op field of the expressionS may only take certain values.
-	Elsewise we waste time special-case testing. Sigh. Ditto SEG_ABSENT.
-
-   Out:	expressionS may have been modified:
-	Unused fields zeroed to help expr ().  */
-
-static void
-clean_up_expression (expressionS *expressionP)
-{
-  switch (expressionP->X_op)
-    {
-    case O_illegal:
-    case O_absent:
-      expressionP->X_add_number = 0;
-      /* Fall through.  */
-    case O_big:
-    case O_constant:
-    case O_register:
-      expressionP->X_add_symbol = NULL;
-      /* Fall through.  */
-    case O_symbol:
-    case O_uminus:
-    case O_bit_not:
-      expressionP->X_op_symbol = NULL;
-      break;
-    default:
-      break;
     }
 }
 
@@ -1674,8 +1641,9 @@ expr_begin (void)
 void
 expr_end (void)
 {
-  for (size_t i = 0; i < ARRAY_SIZE (seen); i++)
-    free (seen[i]);
+  if (ENABLE_LEAK_CHECK)
+    for (size_t i = 0; i < ARRAY_SIZE (seen); i++)
+      free (seen[i]);
 }
 
 /* Return the encoding for the operator at INPUT_LINE_POINTER, and
@@ -1888,7 +1856,9 @@ expr (int rankarg,		/* Larger # is higher rank.  */
 
       input_line_pointer += op_chars;	/* -> after operator.  */
 
-      right.X_md = 0;
+#ifdef md_expr_init_rest
+      md_expr_init_rest (&right);
+#endif
       rightseg = expr (op_rank[op_left], &right, mode);
       if (right.X_op == O_absent)
 	{
@@ -2504,22 +2474,19 @@ resolve_expression (expressionS *expressionP)
 void resolve_register (expressionS *expP)
 {
   symbolS *sym;
-  offsetT acc = 0;
-  const expressionS *e = expP;
+  offsetT acc;
+  const expressionS *e;
 
   if (expP->X_op != O_symbol)
     return;
 
-  do
-    {
-      if (!md_register_arithmetic && e->X_add_number)
-	break;
-      sym = e->X_add_symbol;
-      acc += e->X_add_number;
-      e = symbol_get_value_expression (sym);
-    }
-  while (symbol_equated_p (sym));
+  sym = symbol_equated_to (expP->X_add_symbol, &acc);
+  acc += expP->X_add_number;
+  if (sym == NULL
+      || (!md_register_arithmetic && acc != 0))
+    return;
 
+  e = symbol_get_value_expression (sym);
   if (e->X_op == O_register)
     {
       expr_copy (expP, e);
@@ -2629,10 +2596,64 @@ restore_line_pointer (char c)
   return c;
 }
 
-unsigned int
+offsetT
 get_single_number (void)
 {
   expressionS exp;
+
+  SKIP_WHITESPACE ();
+
+  switch (*input_line_pointer)
+    {
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case '8':
+    case '9':
+      break;
+
+#if defined (TC_M68K)
+    case '%':
+    case '@':
+      if (!flag_m68k_mri)
+	goto bad;
+      break;
+#elif defined (LITERAL_PREFIXPERCENT_BIN)
+    case '%':
+      break;
+#endif
+
+    case '$':
+#if !defined (DOLLAR_DOT) && !defined (TC_M68K)
+      if (!literal_prefix_dollar_hex || input_line_pointer[1] == 'L')
+	goto bad;
+#else
+      if (!DOLLAR_AMBIGU
+#ifndef DOLLAR_DOT
+	  || !flag_m68k_mri
+#endif
+	  || !hex_p (input_line_pointer[1]))
+	goto bad;
+#endif
+      break;
+
+    default:
+      goto bad;
+    }
+
   operand (&exp, expr_normal);
+
+  if (exp.X_op != O_constant)
+    {
+  bad:
+      as_bad (_("bad number"));
+      exp.X_add_number = 0;
+    }
+
   return exp.X_add_number;
 }

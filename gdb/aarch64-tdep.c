@@ -1,6 +1,6 @@
 /* Common target dependent code for GDB on AArch64 systems.
 
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GDB.
@@ -54,7 +54,6 @@
 
 #include "opcode/aarch64.h"
 #include <algorithm>
-#include <unordered_map>
 
 /* For inferior_ptid and current_inferior ().  */
 #include "inferior.h"
@@ -66,7 +65,8 @@
 #define HA_MAX_NUM_FLDS		4
 
 /* All possible aarch64 target descriptors.  */
-static std::unordered_map <aarch64_features, target_desc *> tdesc_aarch64_map;
+static gdb::unordered_map <aarch64_features, const_target_desc_up>
+  tdesc_aarch64_map;
 
 /* The standard register names, and all the valid aliases for them.
    We're not adding fp here, that name is already taken, see
@@ -171,7 +171,7 @@ static const char *const aarch64_gcs_linux_register_names[] = {
   "gcs_features_locked",
 };
 
-static int aarch64_stack_frame_destroyed_p (struct gdbarch *, CORE_ADDR);
+static bool aarch64_stack_frame_destroyed_p (struct gdbarch *, CORE_ADDR);
 
 /* AArch64 prologue cache structure.  */
 struct aarch64_prologue_cache
@@ -355,8 +355,7 @@ aarch64_analyze_prologue (struct gdbarch *gdbarch,
 	break;
 
       if (inst.opcode->iclass == addsub_imm
-	  && (inst.opcode->op == OP_ADD
-	      || strcmp ("sub", inst.opcode->name) == 0))
+	  && (inst.opcode->op == OP_ADD || streq ("sub", inst.opcode->name)))
 	{
 	  unsigned rd = inst.operands[0].reg.regno;
 	  unsigned rn = inst.operands[1].reg.regno;
@@ -382,7 +381,7 @@ aarch64_analyze_prologue (struct gdbarch *gdbarch,
 	    seen_stack_set = true;
 	}
       else if (inst.opcode->iclass == addsub_ext
-	       && strcmp ("sub", inst.opcode->name) == 0)
+	       && streq ("sub", inst.opcode->name))
 	{
 	  unsigned rd = inst.operands[0].reg.regno;
 	  unsigned rn = inst.operands[1].reg.regno;
@@ -433,7 +432,7 @@ aarch64_analyze_prologue (struct gdbarch *gdbarch,
 				  << inst.operands[1].shifter.amount);
 	}
       else if (inst.opcode->iclass == log_shift
-	       && strcmp (inst.opcode->name, "orr") == 0)
+	       && streq (inst.opcode->name, "orr"))
 	{
 	  unsigned rd = inst.operands[0].reg.regno;
 	  unsigned rn = inst.operands[1].reg.regno;
@@ -477,7 +476,7 @@ aarch64_analyze_prologue (struct gdbarch *gdbarch,
       else if ((inst.opcode->iclass == ldstpair_off
 		|| (inst.opcode->iclass == ldstpair_indexed
 		    && inst.operands[2].addr.preind))
-	       && strcmp ("stp", inst.opcode->name) == 0)
+	       && streq ("stp", inst.opcode->name))
 	{
 	  /* STP with addressing mode Pre-indexed and Base register.  */
 	  unsigned rt1;
@@ -526,7 +525,7 @@ aarch64_analyze_prologue (struct gdbarch *gdbarch,
 		    && (inst.opcode->op == OP_STR_POS
 			|| inst.opcode->op == OP_STRF_POS)))
 	       && inst.operands[1].addr.base_regno == AARCH64_SP_REGNUM
-	       && strcmp ("str", inst.opcode->name) == 0)
+	       && streq ("str", inst.opcode->name))
 	{
 	  /* STR (immediate) */
 	  unsigned int rt = inst.operands[0].reg.regno;
@@ -1026,7 +1025,7 @@ aarch64_scan_prologue (const frame_info_ptr &this_frame,
   if (find_pc_partial_function (block_addr, NULL, &prologue_start,
 				&prologue_end))
     {
-      struct symtab_and_line sal = find_pc_line (prologue_start, 0);
+      struct symtab_and_line sal = find_sal_for_pc (prologue_start, 0);
 
       if (sal.line == 0)
 	{
@@ -1102,12 +1101,10 @@ aarch64_make_prologue_cache_1 (const frame_info_ptr &this_frame,
 static struct aarch64_prologue_cache *
 aarch64_make_prologue_cache (const frame_info_ptr &this_frame, void **this_cache)
 {
-  struct aarch64_prologue_cache *cache;
-
   if (*this_cache != NULL)
     return (struct aarch64_prologue_cache *) *this_cache;
 
-  cache = FRAME_OBSTACK_ZALLOC (struct aarch64_prologue_cache);
+  auto *cache = frame_obstack_zalloc<aarch64_prologue_cache> ();
   cache->saved_regs = trad_frame_alloc_saved_regs (this_frame);
   *this_cache = cache;
 
@@ -1236,12 +1233,10 @@ static const frame_unwind_legacy aarch64_prologue_unwind (
 static struct aarch64_prologue_cache *
 aarch64_make_stub_cache (const frame_info_ptr &this_frame, void **this_cache)
 {
-  struct aarch64_prologue_cache *cache;
-
   if (*this_cache != NULL)
     return (struct aarch64_prologue_cache *) *this_cache;
 
-  cache = FRAME_OBSTACK_ZALLOC (struct aarch64_prologue_cache);
+  auto *cache = frame_obstack_zalloc<aarch64_prologue_cache> ();
   cache->saved_regs = trad_frame_alloc_saved_regs (this_frame);
   *this_cache = cache;
 
@@ -1939,7 +1934,11 @@ static void
 aarch64_shadow_stack_push (gdbarch *gdbarch, CORE_ADDR new_addr,
 			   regcache *regcache)
 {
-  aarch64_push_gcs_entry (regcache, new_addr);
+  bool gcs_is_enabled;
+
+  (void) gdbarch_get_shadow_stack_pointer (gdbarch, regcache, gcs_is_enabled);
+  if (gcs_is_enabled)
+    aarch64_push_gcs_entry (regcache, new_addr);
 }
 
 /* Implement the "push_dummy_call" gdbarch method.  */
@@ -2586,7 +2585,7 @@ aarch64_gdb_print_insn (bfd_vma memaddr, disassemble_info *info)
    1101.0100.0010.0000.0000.0000.0000.0000 = 0xd4200000.  */
 constexpr gdb_byte aarch64_default_breakpoint[] = {0x00, 0x00, 0x20, 0xd4};
 
-typedef BP_MANIPULATION (aarch64_default_breakpoint) aarch64_breakpoint;
+using aarch64_breakpoint = BP_MANIPULATION (aarch64_default_breakpoint);
 
 /* Extract from an array REGS containing the (raw) register state a
    function return value of type TYPE, and copy that, in virtual
@@ -2846,7 +2845,7 @@ aarch64_return_value (struct gdbarch *gdbarch, struct value *func_value,
 
 /* Implement the "get_longjmp_target" gdbarch method.  */
 
-static int
+static bool
 aarch64_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 {
   CORE_ADDR jb_addr;
@@ -2859,10 +2858,10 @@ aarch64_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 
   if (target_read_memory (jb_addr + tdep->jb_pc * tdep->jb_elt_size, buf,
 			  X_REGISTER_SIZE))
-    return 0;
+    return false;
 
   *pc = extract_unsigned_integer (buf, X_REGISTER_SIZE, byte_order);
-  return 1;
+  return true;
 }
 
 /* Implement the "gen_return_address" gdbarch method.  */
@@ -3137,7 +3136,7 @@ aarch64_pseudo_register_type (struct gdbarch *gdbarch, int regnum)
 
 /* Implement the "pseudo_register_reggroup_p" tdesc_arch_data method.  */
 
-static int
+static bool
 aarch64_pseudo_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
 				    const struct reggroup *group)
 {
@@ -3164,7 +3163,7 @@ aarch64_pseudo_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
     return group == all_reggroup || group == vector_reggroup;
   /* RA_STATE is used for unwinding only.  Do not assign it to any groups.  */
   if (tdep->has_pauth () && regnum == tdep->ra_sign_state_regnum)
-    return 0;
+    return false;
 
   return group == all_reggroup;
 }
@@ -4033,15 +4032,12 @@ aarch64_read_description (const aarch64_features &features)
     error (_("VQ is %" PRIu64 ", maximum supported value is %d"), features.vq,
 	   AARCH64_MAX_SVE_VQ);
 
-  struct target_desc *tdesc = tdesc_aarch64_map[features];
+  const_target_desc_up &tdesc = tdesc_aarch64_map[features];
 
-  if (tdesc == NULL)
-    {
-      tdesc = aarch64_create_target_description (features);
-      tdesc_aarch64_map[features] = tdesc;
-    }
+  if (tdesc == nullptr)
+    tdesc = aarch64_create_target_description (features);
 
-  return tdesc;
+  return tdesc.get ();
 }
 
 /* Return the VQ used when creating the target description TDESC.  */
@@ -4140,18 +4136,22 @@ aarch64_features_from_target_desc (const struct target_desc *tdesc)
   features.gcs_linux = (tdesc_find_feature (tdesc, "org.gnu.gdb.aarch64.gcs.linux")
 			!= nullptr);
 
+  /* Check for FPMR feature.  */
+  features.fpmr = (tdesc_find_feature (tdesc, "org.gnu.gdb.aarch64.fpmr")
+		   != nullptr);
+
   return features;
 }
 
 /* Implement the "cannot_store_register" gdbarch method.  */
 
-static int
+static bool
 aarch64_cannot_store_register (struct gdbarch *gdbarch, int regnum)
 {
   aarch64_gdbarch_tdep *tdep = gdbarch_tdep<aarch64_gdbarch_tdep> (gdbarch);
 
   if (!tdep->has_pauth ())
-    return 0;
+    return false;
 
   /* Pointer authentication registers are read-only.  */
   return (regnum >= tdep->pauth_reg_base
@@ -4160,25 +4160,25 @@ aarch64_cannot_store_register (struct gdbarch *gdbarch, int regnum)
 
 /* Implement the stack_frame_destroyed_p gdbarch method.  */
 
-static int
+static bool
 aarch64_stack_frame_destroyed_p (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
   CORE_ADDR func_start, func_end;
   if (!find_pc_partial_function (pc, NULL, &func_start, &func_end))
-    return 0;
+    return false;
 
   enum bfd_endian byte_order_for_code = gdbarch_byte_order_for_code (gdbarch);
 
   ULONGEST insn_from_memory;
   if (!safe_read_memory_unsigned_integer (pc, 4, byte_order_for_code,
 					  &insn_from_memory))
-    return 0;
+    return false;
 
   uint32_t insn = insn_from_memory;
 
   aarch64_inst inst;
   if (aarch64_decode_insn (insn, &inst, 1, nullptr) != 0)
-    return 0;
+    return false;
 
   return streq (inst.opcode->name, "ret");
 }
@@ -4359,7 +4359,7 @@ aarch64_remove_non_address_bits (struct gdbarch *gdbarch, CORE_ADDR pointer)
 
       /* If the thread is running, we will not be able to fetch the mask
 	 registers.  */
-      if (thread != nullptr && thread->state != THREAD_RUNNING)
+      if (thread != nullptr && thread->state () != THREAD_RUNNING)
 	{
 	  /* Otherwise, fetch the register cache and the masks.  */
 	  struct regcache *regs
@@ -4548,6 +4548,16 @@ aarch64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
       num_pseudo_regs += 32;	/* add the Sn scalar register pseudos */
       num_pseudo_regs += 32;	/* add the Hn scalar register pseudos */
       num_pseudo_regs += 32;	/* add the Bn scalar register pseudos */
+    }
+
+  int fpmr_regnum = -1;
+  const struct tdesc_feature *feature_fpmr
+      = tdesc_find_feature (tdesc, "org.gnu.gdb.aarch64.fpmr");
+  if (feature_fpmr != nullptr)
+    {
+      fpmr_regnum = num_regs++;
+      valid_p &= tdesc_numbered_register (feature_fpmr, tdesc_data.get (),
+					  fpmr_regnum, "fpmr");
     }
 
   int first_sme_regnum = -1;
@@ -4749,6 +4759,7 @@ aarch64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   tdep->tls_register_count = tls_register_count;
   tdep->gcs_reg_base = first_gcs_regnum;
   tdep->gcs_linux_reg_base = first_gcs_linux_regnum;
+  tdep->fpmr_regnum = fpmr_regnum;
 
   /* Set the SME register set details.  The pseudo-registers will be adjusted
      later.  */
@@ -4775,7 +4786,7 @@ aarch64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 				       aarch64_breakpoint::kind_from_pc);
   set_gdbarch_sw_breakpoint_from_kind (gdbarch,
 				       aarch64_breakpoint::bp_from_kind);
-  set_gdbarch_have_nonsteppable_watchpoint (gdbarch, 1);
+  set_gdbarch_have_nonsteppable_watchpoint (gdbarch, true);
   set_gdbarch_get_next_pcs (gdbarch, aarch64_software_single_step);
 
   /* Information about registers, etc.  */
@@ -4819,7 +4830,7 @@ aarch64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_long_long_bit (gdbarch, 64);
   set_gdbarch_ptr_bit (gdbarch, 64);
   set_gdbarch_char_signed (gdbarch, 0);
-  set_gdbarch_wchar_signed (gdbarch, 0);
+  set_gdbarch_wchar_signed (gdbarch, false);
   set_gdbarch_float_format (gdbarch, floatformats_ieee_single);
   set_gdbarch_double_format (gdbarch, floatformats_ieee_double);
   set_gdbarch_long_double_format (gdbarch, floatformats_ieee_quad);
@@ -4838,7 +4849,7 @@ aarch64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_print_insn (gdbarch, aarch64_gdb_print_insn);
 
   /* Virtual tables.  */
-  set_gdbarch_vbit_in_delta (gdbarch, 1);
+  set_gdbarch_vbit_in_delta (gdbarch, true);
 
   /* Hook in the ABI-specific overrides, if they have been registered.  */
   info.target_desc = tdesc;
@@ -5117,12 +5128,64 @@ struct aarch64_mem_r
   uint64_t addr;   /* Memory address.  */
 };
 
+/* The record infrastructure supports the following result values:
+   1. res  < 0: Process record: failed to record execution log.
+   2. res == 0: No failure.
+   3. res  > 0: Process record: inferior program stopped.
+
+   For aarch64 we distinguish one additional value, so we use an enum with 4
+   values.  */
+
 enum aarch64_record_result
 {
-  AARCH64_RECORD_SUCCESS,
-  AARCH64_RECORD_UNSUPPORTED,
-  AARCH64_RECORD_UNKNOWN
+  /* Process record: failed to record execution log.  */
+  AARCH64_RECORD_FAILURE = -1,
+  /* No failure.  */
+  AARCH64_RECORD_SUCCESS = 0,
+  /* Process record does not support instruction $hex at address $hex.
+     Process record: failed to record execution log.  */
+  AARCH64_RECORD_UNSUPPORTED = 1,
+  /* Process record: inferior program stopped.  */
+  AARCH64_RECORD_UNKNOWN = 2
 };
+
+/* Convert from aarch64_record_result.  */
+
+static inline int
+from_aarch64_record_result (int val)
+{
+  if (val == AARCH64_RECORD_FAILURE)
+    return -1;
+
+  if (val == AARCH64_RECORD_SUCCESS)
+    return 0;
+
+  if (val == AARCH64_RECORD_UNSUPPORTED)
+    {
+      /* After printing the "does not support" message, this is handled the
+	 same as the AARCH64_RECORD_FAILURE case.  */
+      return -1;
+    }
+
+  if (val == AARCH64_RECORD_UNKNOWN)
+    return 1;
+
+  gdb_assert_not_reached ();
+}
+
+/* Convert to aarch64_record_result.  */
+
+static inline int
+to_aarch64_record_result (int val)
+{
+  if (val > 0)
+    return AARCH64_RECORD_UNKNOWN;
+
+  if (val < 0)
+    return AARCH64_RECORD_FAILURE;
+
+  return AARCH64_RECORD_SUCCESS;
+}
 
 struct aarch64_insn_decode_record
 {
@@ -5285,8 +5348,10 @@ aarch64_record_branch_except_sys (aarch64_insn_decode_record *aarch64_insn_r)
 
 	      regcache_raw_read_unsigned (aarch64_insn_r->regcache, 8,
 					  &svc_number);
-	      return tdep->aarch64_syscall_record (aarch64_insn_r->regcache,
-						   svc_number);
+	      int res
+		= tdep->aarch64_syscall_record (aarch64_insn_r->regcache,
+						svc_number);
+	      return to_aarch64_record_result (res);
 	    }
 	  else
 	    return AARCH64_RECORD_UNSUPPORTED;
@@ -5751,6 +5816,93 @@ aarch64_record_load_store (aarch64_insn_decode_record *aarch64_insn_r)
 	  aarch64_insn_r->reg_rec_count = 1;
 	}
     }
+  /* LRCPC3 instructions.  This covers ldiapp/stilp, ldapur/stlur (FP/SIMD),
+     ldapr/stlr.  */
+  else if ((insn_bits24_27 & 0x0b) == 0x09 && insn_bits28_29 == 0x01
+	   && insn_bits10_11 == 0x02 && !insn_bit21)
+    {
+      /* ldapur/stlur (FP/SIMD), ldapr/stlr.  We can differentiate between the
+	 2 types by checking the vector flag.  */
+      if (insn_bit23 || vector_flag)
+	{
+	  /* For the vector instruction, the offset comes from the imm9
+	     bitfield, whereas the other can only take possible values from the
+	     size bitfield.  */
+	  int16_t imm9_off = sbits (aarch64_insn_r->aarch64_insn, 12, 20);
+	  offset = vector_flag ? imm9_off : -(1 << size_bits);
+	  uint32_t regnum_offset = vector_flag ? AARCH64_V0_REGNUM : 0;
+	  if (ld_flag)
+	    {
+	      record_buf[0] = reg_rt + regnum_offset;
+	      aarch64_insn_r->reg_rec_count = 1;
+	      if (!vector_flag)
+		{
+		  /* The Rn register always has writeback in LRCPC3. This is
+		     not the case in LRCPC.  */
+		  record_buf[1] = reg_rn;
+		  aarch64_insn_r->reg_rec_count = 2;
+		}
+	    }
+	  else
+	    {
+	      regcache_raw_read_unsigned (aarch64_insn_r->regcache, reg_rn,
+					  &address);
+	      /* (vector_flag && insn_bit23) is the STLUR instruction with Q
+		 register.  */
+	      datasize = (vector_flag && insn_bit23) ? 128 : (8 << size_bits);
+	      /* LRCPC3 adds STLR with a pre-indexed offset. There is another
+		 STLR variant without offset but this has a different encoding.  */
+	      if (!vector_flag)
+		{
+		  record_buf[0] = reg_rn;
+		  aarch64_insn_r->reg_rec_count = 1;
+		}
+	      record_buf_mem[0] = datasize >> 3;
+	      record_buf_mem[1] = address + offset;
+	      aarch64_insn_r->mem_rec_count = 1;
+	    }
+	}
+      else
+	{
+	  /* ldiapp/stilp.  */
+	  uint8_t opc2 = bits (aarch64_insn_r->aarch64_insn, 12, 15);
+	  reg_rt2 = bits (aarch64_insn_r->aarch64_insn, 16, 20);
+	  if (ld_flag)
+	    {
+	      record_buf[0] = reg_rt;
+	      record_buf[1] = reg_rt2;
+	      aarch64_insn_r->reg_rec_count = 2;
+
+	      /* If the registers don't match and there's no offset then
+		 there's WB.  */
+	      if (reg_rn != reg_rt && reg_rn != reg_rt2 && opc2 == 0)
+		{
+		  record_buf[2] = reg_rn;
+		  aarch64_insn_r->reg_rec_count = 3;
+		}
+	    }
+	  else
+	    {
+	      datasize = 8 << size_bits;
+	      regcache_raw_read_unsigned (aarch64_insn_r->regcache, reg_rn,
+					  &address);
+	      offset = (opc2 == 0) ? (2 << size_bits) : 0;
+	      address -= offset;
+
+	      record_buf_mem[0] = datasize >> 3;
+	      record_buf_mem[1] = address;
+	      record_buf_mem[2] = datasize >> 3;
+	      record_buf_mem[3] = address + (datasize >> 3);
+	      aarch64_insn_r->mem_rec_count = 2;
+
+	      if (offset != 0)
+		{
+		  record_buf[0] = reg_rn;
+		  aarch64_insn_r->reg_rec_count = 1;
+		}
+	    }
+	}
+    }
   /* Load/store register (register offset) instructions.  */
   else if ((insn_bits24_27 & 0x0b) == 0x08 && insn_bits28_29 == 0x03
 	   && insn_bits10_11 == 0x02 && insn_bit21)
@@ -5766,6 +5918,11 @@ aarch64_record_load_store (aarch64_insn_decode_record *aarch64_insn_r)
       else
 	if (size_bits != 0x03)
 	  ld_flag = 0x01;
+	else if (size_bits == 0x3 && vector_flag == 0x0 && opc == 0x2)
+	  {
+	    /* PRFM (register) or RPRFM */
+	    return AARCH64_RECORD_SUCCESS;
+	  }
 	else
 	  return AARCH64_RECORD_UNKNOWN;
 
@@ -5796,7 +5953,7 @@ aarch64_record_load_store (aarch64_insn_decode_record *aarch64_insn_r)
 	  aarch64_insn_r->reg_rec_count = 1;
 	}
     }
-  /* Load/store register (immediate and unprivileged) instructions.  */
+  /* Load/store register (immediate and unprivileged) instructions and PRFUM.  */
   else if ((insn_bits24_27 & 0x0b) == 0x08 && insn_bits28_29 == 0x03
 	   && !insn_bit21)
     {
@@ -5815,7 +5972,11 @@ aarch64_record_load_store (aarch64_insn_decode_record *aarch64_insn_r)
 	if (size_bits != 0x03)
 	  ld_flag = 0x01;
 	else
-	  return AARCH64_RECORD_UNKNOWN;
+	  if (insn_bits10_11 == 0)
+	    /* PRFUM instruction.  */
+	    return AARCH64_RECORD_SUCCESS;
+      else
+	return AARCH64_RECORD_UNKNOWN;
 
       if (!ld_flag)
 	{
@@ -5851,6 +6012,19 @@ aarch64_record_load_store (aarch64_insn_decode_record *aarch64_insn_r)
   else if ((insn_bits24_27 & 1) == 1 && insn_bits28_29 == 1
 	   && insn_bits10_11 == 1 && !insn_bit21)
     return aarch64_record_memcopy_memset (aarch64_insn_r);
+  /* Large System Extension 128 (LSE128) instructions.  */
+  else if (vector_flag == 0 && insn_bits10_11 == 0 && insn_bit21
+	   && size_bits == 0 && !bit (aarch64_insn_r->aarch64_insn, 29)
+	   && bits (aarch64_insn_r->aarch64_insn, 24, 25) == 0x1)
+    {
+      regcache_raw_read_unsigned (aarch64_insn_r->regcache, reg_rn, &address);
+      record_buf_mem[0] = 128 >> 3;
+      record_buf_mem[1] = address;
+      aarch64_insn_r->mem_rec_count = 1;
+      record_buf[0] = reg_rt;
+      record_buf[1] = bits (aarch64_insn_r->aarch64_insn, 16, 20);
+      aarch64_insn_r->reg_rec_count = 2;
+    }
   /* Advanced SIMD load/store instructions.  */
   else
     return aarch64_record_asimd_load_store (aarch64_insn_r);
@@ -6120,14 +6294,12 @@ aarch64_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
 
   ret = aarch64_record_decode_insn_handler (&aarch64_record);
   if (ret == AARCH64_RECORD_UNSUPPORTED)
-    {
-      gdb_printf (gdb_stderr,
-		  _("Process record does not support instruction "
-		    "0x%0x at address %s.\n"),
-		  aarch64_record.aarch64_insn,
-		  paddress (gdbarch, insn_addr));
-      ret = -1;
-    }
+    gdb_printf (gdb_stderr,
+		_("Process record does not support instruction "
+		  "0x%0x at address %s.\n"),
+		aarch64_record.aarch64_insn,
+		paddress (gdbarch, insn_addr));
+  ret = from_aarch64_record_result (ret);
 
   if (0 == ret)
     {
@@ -6151,8 +6323,6 @@ aarch64_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
 	       aarch64_record.aarch64_mems[rec_no].len))
 	    ret = -1;
 
-      if (record_full_arch_list_add_end ())
-	ret = -1;
     }
 
   deallocate_reg_mem (&aarch64_record);

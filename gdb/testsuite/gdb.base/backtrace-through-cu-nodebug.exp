@@ -1,4 +1,4 @@
-# Copyright 2010-2025 Free Software Foundation, Inc.
+# Copyright 2010-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -52,10 +52,9 @@ proc prepare_test {has_cfi} {
 	return false
     }
 
-    clean_restart
-    gdb_load $binfile-$extension
+    clean_restart $::testfile-$extension
 
-    if ![runto callback] then {
+    if { ![runto callback] } {
 	fail "has_cfi=$has_cfi: Can't run to callback"
 	return false
     }

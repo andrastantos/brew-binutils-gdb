@@ -1,4 +1,4 @@
-#   Copyright 2005-2025 Free Software Foundation, Inc.
+#   Copyright 2005-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -38,10 +38,9 @@ if {[is_remote host]} {
 
 if {[prepare_for_testing "failed to prepare" $testfile $srcfile \
 	 [list debug "additional_flags=-DPI_TXT=\"$pi_txt\" -DCOPY1_TXT=\"$copy1_txt\""]]} {
-     return -1
+    return
 }
 
-global gdb_prompt
 
 #
 # This tests gdb checkpoint and restart.
@@ -290,8 +289,7 @@ gdb_test "restart 10" "has no checkpoints" "no more checkpoint 10"
 # Now let's try setting a large number of checkpoints (>600)
 #
 
-clean_restart
-gdb_load $binfile
+clean_restart $testfile
 
 runto_main
 gdb_breakpoint $break1_loc
@@ -357,8 +355,7 @@ gdb_test "kill" "" "kill all one with many checkpoints" \
 #
 
 with_test_prefix "delete checkpoint 0" {
-    clean_restart
-    gdb_load $binfile
+    clean_restart $testfile
     runto_main
 
     gdb_test "checkpoint" "Checkpoint 1: fork returned pid $decimal\\."

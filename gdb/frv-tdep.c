@@ -1,6 +1,6 @@
 /* Target-dependent code for the Fujitsu FR-V, for GDB, the GNU Debugger.
 
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -152,7 +152,7 @@ new_variant ()
 
   /* By default, don't supply any general-purpose or floating-point
      register names.  */
-  var->register_names 
+  var->register_names
     = (const char **) xmalloc ((frv_num_regs + frv_num_pseudo_regs)
 			       * sizeof (const char *));
   for (r = 0; r < frv_num_regs + frv_num_pseudo_regs; r++)
@@ -164,7 +164,7 @@ new_variant ()
   var->register_names[pc_regnum] = "pc";
   var->register_names[lr_regnum] = "lr";
   var->register_names[lcr_regnum] = "lcr";
-     
+
   var->register_names[psr_regnum] = "psr";
   var->register_names[ccr_regnum] = "ccr";
   var->register_names[cccr_regnum] = "cccr";
@@ -422,7 +422,7 @@ frv_register_sim_regno (struct gdbarch *gdbarch, int reg)
 
 constexpr gdb_byte frv_break_insn[] = {0xc0, 0x70, 0x00, 0x01};
 
-typedef BP_MANIPULATION (frv_break_insn) frv_breakpoint;
+using frv_breakpoint = BP_MANIPULATION (frv_break_insn);
 
 /* Define the maximum number of instructions which may be packed into a
    bundle (VLIW instruction).  */
@@ -794,7 +794,7 @@ frv_analyze_prologue (struct gdbarch *gdbarch, CORE_ADDR pc,
 	     sthi GRk, @(fp, s)
 	 P KKKKKK 1010001 000010 SSSSSSSSSSSS = 0x01442000
 	 0 000000 1111111 111111 000000000000 = 0x01fff000
-	     .    .   .    .   .    .   .   . 
+	     .    .   .    .   .    .   .   .
 	 And for 8-bit values, we use STB instructions.
 	     stbi GRk, @(fp, s)
 	 P KKKKKK 1010000 000010 SSSSSSSSSSSS = 0x01402000
@@ -986,7 +986,7 @@ frv_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
     {
       struct symtab_and_line sal;
 
-      sal = find_pc_line (func_addr, 0);
+      sal = find_sal_for_pc (func_addr, 0);
 
       if (sal.line != 0 && sal.end < func_end)
 	{
@@ -1022,7 +1022,7 @@ frv_skip_main_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
 
   /* In PIC code, GR15 may be loaded from some offset off of FP prior
      to the call instruction.
-     
+
      Skip over this instruction if present.  It won't be present in
      non-PIC code, and even in PIC code, it might not be present.
      (This is due to the fact that GR15, the FDPIC register, already
@@ -1071,9 +1071,9 @@ frv_skip_main_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
       call_dest = pc + 4 * displ;
       bound_minimal_symbol s = lookup_minimal_symbol_by_pc (call_dest);
 
-      if (s.minsym != NULL
-	  && s.minsym->linkage_name () != NULL
-	  && strcmp (s.minsym->linkage_name (), "__main") == 0)
+      if (s.minsym != nullptr
+	  && s.minsym->linkage_name () != nullptr
+	  && streq (s.minsym->linkage_name (), "__main"))
 	{
 	  pc += 4;
 	  return pc;
@@ -1088,12 +1088,11 @@ frv_frame_unwind_cache (const frame_info_ptr &this_frame,
 			 void **this_prologue_cache)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
-  struct frv_unwind_cache *info;
 
   if ((*this_prologue_cache))
     return (struct frv_unwind_cache *) (*this_prologue_cache);
 
-  info = FRAME_OBSTACK_ZALLOC (struct frv_unwind_cache);
+  auto *info = frame_obstack_zalloc<frv_unwind_cache> ();
   (*this_prologue_cache) = info;
   info->saved_regs = trad_frame_alloc_saved_regs (this_frame);
 

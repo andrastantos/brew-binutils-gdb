@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Free Software Foundation, Inc.
+# Copyright 2024-2026 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -82,6 +82,9 @@ if {[prepare_for_testing_full "build exec which loads the shared library" \
     return
 }
 
+require {expect_build_id_in_core_file $binfile2}
+require {expect_build_id_in_core_file $library_filename}
+
 if {![runto_main]} {
     return
 }
@@ -101,7 +104,7 @@ gdb_test_multiple "info proc mappings" "" {
 
 	if {[expr $ptr_address >= $low_addr] && [expr $ptr_address < $high_addr]} {
 	    set mapping_offset [expr $ptr_address - $low_addr]
-	    set ptr_offset [format 0x%x [expr $file_offset + $mapping_offset]]
+	    set ptr_offset [format 0x%lx [expr $file_offset + $mapping_offset]]
 	}
 
 	exp_continue
@@ -141,7 +144,7 @@ proc read_ptr_value { } {
 	-re -wrap "^${::hex}(?:\\s+<\[^>\]+>)?:\\s+($::hex)" {
 	    set value $expect_out(1,string)
 	}
-	-re -wrap "^${::hex}(?:\\s+<\[^>\]+>)?:\\s+Cannot access memory at address ${::hex}" {
+	-re -wrap "^${::hex}(?:\\s+<\[^>\]+>)?:\\s+<unavailable>" {
 	    set value "unavailable"
 	}
     }
@@ -175,7 +178,7 @@ gdb_continue_to_breakpoint "run to breakpoint"
 
 set library_base_address \
     [get_hexadecimal_valueof "library_base_address" "unknown"]
-set ptr_address [format 0x%x [expr $library_base_address + $ptr_offset]]
+set ptr_address [format 0x%lx [expr {$library_base_address + $ptr_offset}]]
 
 set ptr_value [read_ptr_value]
 gdb_assert { $ptr_value == $ptr_expected_value } \
@@ -275,7 +278,7 @@ load_core_file "load core file"
 
 set library_base_address [get_hexadecimal_valueof "library_base_address" \
 			      "unknown" "get library_base_address in core-file"]
-set ptr_address [format 0x%x [expr $library_base_address + $ptr_offset]]
+set ptr_address [format 0x%lx [expr {$library_base_address + $ptr_offset}]]
 
 set ptr_value [read_ptr_value]
 gdb_assert { $ptr_value == $ptr_expected_value } \
@@ -346,7 +349,7 @@ gdb_assert { $ptr_value eq "unavailable" } \
 # shared library from debuginfod and use that to provide the file backed
 # mapping.
 if {![allow_debuginfod_tests]} {
-    untested "skippig debuginfod parts of this test"
+    untested "skipping debuginfod parts of this test"
     return
 }
 
@@ -368,6 +371,7 @@ with_debuginfod_env $cache {
     clean_restart
     gdb_test_no_output "set debuginfod enabled on" \
 	"enabled debuginfod for initial test"
+    gdb_test_no_output "set progress-bars enabled off"
     gdb_load $binfile
 
     load_core_file "load corefile, download library from debuginfod" \

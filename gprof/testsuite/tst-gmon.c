@@ -1,5 +1,5 @@
 /* Test program for profiling information collection (_mcount/gprof).
-   Copyright (C) 2017-2025 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -45,6 +45,7 @@ f3 (int count)
     }
 }
 
+__attribute__ ((section (".text.main"))) /* See glibc bug 28153.  */
 int
 main (void)
 {

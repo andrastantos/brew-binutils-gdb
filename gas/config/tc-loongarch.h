@@ -1,5 +1,5 @@
 /* tc-loongarch.h -- Header file for tc-loongarch.c.
-   Copyright (C) 2021-2025 Free Software Foundation, Inc.
+   Copyright (C) 2021-2026 Free Software Foundation, Inc.
    Contributed by Loongson Ltd.
 
    This file is part of GAS.
@@ -108,7 +108,8 @@ extern bool loongarch_force_relocation_sub_same(struct fix *, asection *);
    FDE Code Alignment Factor (DWARF2_LINE_MIN_INSN_LENGTH) should be 1
    because DW_CFA_advance_loc need to be relocated in bytes
    when linker relaxation.  */
-#define DWARF2_CIE_DATA_ALIGNMENT     (-8)
+extern int loongarch_cie_data_alignment;
+#define DWARF2_CIE_DATA_ALIGNMENT loongarch_cie_data_alignment
 #define DWARF2_DEFAULT_RETURN_COLUMN  1	    /* FDE Return Address Register.  */
 
 #define tc_cfi_frame_initial_instructions	\
@@ -119,10 +120,6 @@ extern void loongarch_cfi_frame_initial_instructions (void);
 extern void tc_loongarch_parse_to_dw2regnum (expressionS *);
 
 extern int tc_loongarch_regname_to_dw2regnum (char *);
-
-#define tc_symbol_new_hook(sym) \
-  if (0 == strcmp (sym->bsym->name, FAKE_LABEL_NAME)) \
-    S_SET_OTHER (sym, STV_HIDDEN);
 
 extern void loongarch_pre_output_hook (void);
 #define md_pre_output_hook loongarch_pre_output_hook ()
@@ -147,5 +144,19 @@ struct reloc_info
 
 #define md_finish loongarch_md_finish
 extern void loongarch_md_finish (void);
+
+/* The target supports Object Attributes v1.  */
+#define TC_OBJ_ATTR_v1 1
+
+
+/* Define target fragment type.  */
+#define TC_FRAG_TYPE struct loongarch_frag_type
+struct loongarch_frag_type
+{
+  bool linker_relax;
+};
+
+#define TC_FRAG_INIT(FRAGP, MAX_BYTES) \
+  do { (FRAGP)->tc_frag_data.linker_relax = false; } while (0)
 
 #endif

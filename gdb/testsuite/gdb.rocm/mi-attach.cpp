@@ -1,4 +1,4 @@
-/* Copyright 2025 Free Software Foundation, Inc.
+/* Copyright 2025-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -35,4 +35,3 @@ main ()
   kern<<<1, 1>>> ();
   return hipDeviceSynchronize () != hipSuccess;
 }
-

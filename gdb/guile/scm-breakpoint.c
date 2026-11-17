@@ -1,6 +1,6 @@
 /* Scheme interface to breakpoints.
 
-   Copyright (C) 2008-2025 Free Software Foundation, Inc.
+   Copyright (C) 2008-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -42,7 +42,7 @@
    any side-effects.  This means that the smob needs to store everything
    that was passed to make-breakpoint.  */
 
-typedef struct gdbscm_breakpoint_object
+using breakpoint_smob = struct gdbscm_breakpoint_object
 {
   /* This always appears first.  */
   gdb_smob base;
@@ -90,7 +90,7 @@ typedef struct gdbscm_breakpoint_object
 
   /* A stop condition or #f.  */
   SCM stop;
-} breakpoint_smob;
+};
 
 static const char breakpoint_smob_name[] = "gdb:breakpoint";
 
@@ -815,13 +815,13 @@ gdbscm_set_breakpoint_task_x (SCM self, SCM newvalue)
   breakpoint_smob *bp_smob
     = bpscm_get_valid_breakpoint_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   long id;
-  int valid_id = 0;
 
   if (scm_is_signed_integer (newvalue, LONG_MIN, LONG_MAX))
     {
       id = scm_to_long (newvalue);
 
       gdbscm_gdb_exception exc {};
+      bool valid_id = false;
       try
 	{
 	  valid_id = valid_task_id (id);

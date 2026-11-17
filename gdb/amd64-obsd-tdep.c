@@ -1,6 +1,6 @@
 /* Target-dependent code for OpenBSD/amd64.
 
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -367,7 +367,7 @@ amd64obsd_trapframe_this_id (const frame_info_ptr &this_frame,
 {
   struct trad_frame_cache *cache =
     amd64obsd_trapframe_cache (this_frame, this_cache);
-  
+
   trad_frame_get_id (cache, this_id);
 }
 
@@ -396,10 +396,9 @@ amd64obsd_trapframe_sniffer (const struct frame_unwind *self,
     return 0;
 
   find_pc_partial_function (get_frame_pc (this_frame), &name, NULL, NULL);
-  return (name && ((strcmp (name, "calltrap") == 0)
-		   || (strcmp (name, "osyscall1") == 0)
-		   || (strcmp (name, "Xsyscall") == 0)
-		   || (startswith (name, "Xintr"))));
+  return (name != nullptr
+	  && (streq (name, "calltrap") || streq (name, "osyscall1")
+	      || streq (name, "Xsyscall") || startswith (name, "Xintr")));
 }
 
 static const struct frame_unwind_legacy amd64obsd_trapframe_unwind (

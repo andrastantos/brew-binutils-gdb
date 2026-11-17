@@ -1,6 +1,6 @@
 /* Find a variable's value in memory, for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -32,6 +32,7 @@
 #include "block.h"
 #include "objfiles.h"
 #include "language.h"
+#include "cli/cli-style.h"
 
 /* Basic byte-swapping routines.  All 'extract' functions return a
    host-format integer from a target-format integer at ADDR which is
@@ -65,14 +66,15 @@ value_of_register (int regnum, const frame_info_ptr &next_frame)
 /* See value.h.  */
 
 value *
-value_of_register_lazy (const frame_info_ptr &next_frame, int regnum)
+value_of_register_lazy (const frame_info_ptr &next_frame, int regnum,
+			struct type *type)
 {
   gdbarch *gdbarch = frame_unwind_arch (next_frame);
 
   gdb_assert (regnum < gdbarch_num_cooked_regs (gdbarch));
   gdb_assert (next_frame != nullptr);
 
-  return value::allocate_register_lazy (next_frame, regnum);
+  return value::allocate_register_lazy (next_frame, regnum, type);
 }
 
 /* Given a pointer of type TYPE in target form in BUF, return the
@@ -298,7 +300,8 @@ language_defn::read_var_value (struct symbol *var,
   if (sym_need == SYMBOL_NEEDS_FRAME)
     gdb_assert (frame != NULL);
   else if (sym_need == SYMBOL_NEEDS_REGISTERS && !target_has_registers ())
-    error (_("Cannot read `%s' without registers"), var->print_name ());
+    error (_("Cannot read `%ps' without registers"),
+	   styled_string (variable_name_style.style (), var->print_name ()));
 
   if (frame != NULL)
     frame = get_hosting_frame (var, var_block, frame);
@@ -335,7 +338,7 @@ language_defn::read_var_value (struct symbol *var,
 	if (overlay_debugging)
 	  {
 	    struct objfile *var_objfile = var->objfile ();
-	    addr = symbol_overlayed_address (var->value_address (),
+	    addr = symbol_overlaid_address (var->value_address (),
 					     var->obj_section (var_objfile));
 	  }
 	else
@@ -375,7 +378,7 @@ language_defn::read_var_value (struct symbol *var,
     case LOC_STATIC:
       if (overlay_debugging)
 	addr
-	  = symbol_overlayed_address (var->value_address (),
+	  = symbol_overlaid_address (var->value_address (),
 				      var->obj_section (var->objfile ()));
       else
 	addr = var->value_address ();
@@ -416,7 +419,7 @@ language_defn::read_var_value (struct symbol *var,
 
     case LOC_BLOCK:
       if (overlay_debugging)
-	addr = symbol_overlayed_address
+	addr = symbol_overlaid_address
 	  (var->value_block ()->entry_pc (),
 	   var->obj_section (var->objfile ()));
       else
@@ -480,7 +483,7 @@ language_defn::read_var_value (struct symbol *var,
 	else
 	  addr = bmsym.value_address ();
 	if (overlay_debugging)
-	  addr = symbol_overlayed_address (addr, obj_section);
+	  addr = symbol_overlaid_address (addr, obj_section);
 	/* Determine address of TLS variable. */
 	if (obj_section
 	    && (obj_section->the_bfd_section->flags & SEC_THREAD_LOCAL) != 0)
@@ -619,7 +622,7 @@ value_from_register (struct type *type, int regnum, const frame_info_ptr &frame)
 
   if (gdbarch_convert_register_p (gdbarch, regnum, type1))
     {
-      int optim, unavail, ok;
+      bool optim, unavail;
 
       /* The ISA/ABI need to something weird when obtaining the
 	 specified value from this register.  It might need to
@@ -630,9 +633,9 @@ value_from_register (struct type *type, int regnum, const frame_info_ptr &frame)
 	 including the location.  */
       v = value::allocate_register (get_next_frame_sentinel_okay (frame),
 				    regnum, type);
-      ok = gdbarch_register_to_value (gdbarch, frame, regnum, type1,
-				      v->contents_raw ().data (), &optim,
-				      &unavail);
+      bool ok = gdbarch_register_to_value (gdbarch, frame, regnum, type1,
+					   v->contents_raw ().data (), &optim,
+					   &unavail);
 
       if (!ok)
 	{

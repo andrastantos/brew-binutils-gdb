@@ -1,6 +1,6 @@
 /* build-id-related functions.
 
-   Copyright (C) 1991-2025 Free Software Foundation, Inc.
+   Copyright (C) 1991-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -42,8 +42,8 @@ build_id_bfd_get (bfd *abfd)
   if (abfd == nullptr)
     return nullptr;
 
-  if (!bfd_check_format (abfd, bfd_object)
-      && !bfd_check_format (abfd, bfd_core))
+  if (!gdb_bfd_check_format (abfd, bfd_object)
+      && !gdb_bfd_check_format (abfd, bfd_core))
     return NULL;
 
   if (abfd->build_id != NULL)

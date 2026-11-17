@@ -1,4 +1,4 @@
-# Copyright 2012-2025 Free Software Foundation, Inc.
+# Copyright 2012-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -70,7 +70,7 @@ proc run_trace_experiment { test_probe msg } {
     }
 
     gdb_test "continue" \
-	    "Continuing.*Breakpoint \[0-9\]+.*" \
+	    "Continuing.*Breakpoint ${::decimal}.*" \
 	    "collect $msg: run trace experiment"
     gdb_test_no_output "tstop" \
 	    "collect $msg: stop trace experiment"
@@ -85,7 +85,7 @@ proc gdb_collect_probe_arg { msg probe val_arg0 } {
     prepare_for_trace_test
 
     gdb_test "trace $probe" \
-	    "Tracepoint \[0-9\]+ at .*" \
+	    "Tracepoint ${::decimal} at .*" \
 	    "collect $msg: set tracepoint"
     gdb_trace_setactions "collect $msg: define actions" \
 	    "" \
@@ -95,13 +95,13 @@ proc gdb_collect_probe_arg { msg probe val_arg0 } {
     run_trace_experiment $msg $probe
 
     gdb_test "print \$_probe_arg0" \
-	    "\\$\[0-9\]+ = $val_arg0" \
+	    "${::valnum_re} = $val_arg0" \
 	    "collect $msg: collected probe arg0"
 }
 
 if {![compile_stap_bin "stap-probe-nosem"]} {
     # An appropriate failure message has already been output
-    return -1
+    return
 }
 
 clean_restart $executable
@@ -121,7 +121,7 @@ gdb_exit
 
 if {![compile_stap_bin "stap-probe-sem" "-DUSE_PROBES"]} {
     # An appropriate failure message has already been output
-    return -1
+    return
 }
 
 gdb_collect_probe_arg "probe args with semaphore" "-probe-stap two" "46"

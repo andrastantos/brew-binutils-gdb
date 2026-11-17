@@ -1,5 +1,5 @@
 /* Target operations for the remote server for GDB.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
 
@@ -218,9 +218,9 @@ public:
      otherwise.  */
   virtual bool stopped_by_watchpoint ();
 
-  /* Returns the address associated with the watchpoint that hit, if any;
-     returns 0 otherwise.  */
-  virtual CORE_ADDR stopped_data_address ();
+  /* Returns the list of addresses associated with the watchpoint(s)
+     that were hit, if any; returns an empty vector otherwise.  */
+  virtual std::vector<CORE_ADDR> stopped_data_addresses ();
 
   /* Return true if the read_offsets target op is supported.  */
   virtual bool supports_read_offsets ();
@@ -288,7 +288,7 @@ public:
 
   /* The target-specific routine to process monitor command.
      Returns 1 if handled, or 0 to perform default processing.  */
-  virtual int handle_monitor_command (char *mon);
+  virtual int handle_monitor_command (const char *mon);
 
   /* Returns the core given a thread, or -1 if not known.  */
   virtual int core_of_thread (ptid_t ptid);

@@ -1,5 +1,5 @@
 /* MI Command Set - file commands.
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
    Contributed by Cygnus Solutions (a Red Hat company).
 
    This file is part of GDB.
@@ -26,7 +26,7 @@
 #include "source.h"
 #include "solib.h"
 
-/* Return to the client the absolute path and line number of the 
+/* Return to the client the absolute path and line number of the
    current file being executed.  */
 
 void
@@ -34,7 +34,7 @@ mi_cmd_file_list_exec_source_file (const char *command,
 				   const char *const *argv, int argc)
 {
   struct ui_out *uiout = current_uiout;
-  
+
   if (!mi_valid_noargs ("-file-list-exec-source-file", argc, argv))
     error (_("-file-list-exec-source-file: Usage: No args"));
 
@@ -56,7 +56,7 @@ mi_cmd_file_list_exec_source_file (const char *command,
   uiout->field_string ("fullname", symtab_to_fullname (st.symtab));
 
   uiout->field_signed ("macro-info",
-		       st.symtab->compunit ()->macro_table () != NULL);
+		       st.symtab->compunit ().macro_table () != NULL);
 }
 
 /* Implement -file-list-exec-source-files command.  */
@@ -168,7 +168,7 @@ mi_cmd_file_list_shared_libraries (const char *command,
       if (pattern != nullptr && !re_exec (so.name.c_str ()))
 	continue;
 
-      ui_out_emit_tuple tuple_emitter (uiout, NULL);
+      ui_out_emit_tuple tuple_emitter (uiout);
       mi_output_solib_attribs (uiout, so);
     }
 }

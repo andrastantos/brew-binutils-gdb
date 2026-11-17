@@ -1,5 +1,5 @@
 /* symbols.h -
-   Copyright (C) 1987-2025 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -221,6 +221,7 @@ extern int symbol_resolving_p (const symbolS *);
 extern int symbol_section_p (const symbolS *);
 extern int symbol_equated_p (const symbolS *);
 extern int symbol_equated_reloc_p (const symbolS *);
+extern symbolS *symbol_equated_to (symbolS *, offsetT *);
 extern int symbol_constant_p (const symbolS *);
 extern int symbol_shadow_p (const symbolS *);
 extern symbolS *symbol_symbolS (symbolS *);

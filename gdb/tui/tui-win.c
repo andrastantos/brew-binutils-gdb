@@ -1,6 +1,6 @@
 /* TUI window generic functions.
 
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -45,7 +45,6 @@
 #include "tui/tui-win.h"
 
 #include "gdb_curses.h"
-#include <ctype.h>
 #include "readline/readline.h"
 #include <signal.h>
 #include <string_view>
@@ -57,8 +56,8 @@ static void tui_scroll_forward_command (const char *, int);
 static void tui_scroll_backward_command (const char *, int);
 static void tui_scroll_left_command (const char *, int);
 static void tui_scroll_right_command (const char *, int);
-static void parse_scrolling_args (const char *, 
-				  struct tui_win_info **, 
+static void parse_scrolling_args (const char *,
+				  struct tui_win_info **,
 				  int *);
 
 
@@ -146,7 +145,7 @@ static const char *tui_active_border_mode = "bold-standout";
 static void
 show_tui_active_border_mode (struct ui_file *file,
 			     int from_tty,
-			     struct cmd_list_element *c, 
+			     struct cmd_list_element *c,
 			     const char *value)
 {
   gdb_printf (file, _("\
@@ -156,9 +155,9 @@ The attribute mode to use for the active TUI window border is \"%s\".\n"),
 
 static const char *tui_border_mode = "normal";
 static void
-show_tui_border_mode (struct ui_file *file, 
+show_tui_border_mode (struct ui_file *file,
 		      int from_tty,
-		      struct cmd_list_element *c, 
+		      struct cmd_list_element *c,
 		      const char *value)
 {
   gdb_printf (file, _("\
@@ -168,9 +167,9 @@ The attribute mode to use for the TUI window borders is \"%s\".\n"),
 
 static const char *tui_border_kind = "acs";
 static void
-show_tui_border_kind (struct ui_file *file, 
+show_tui_border_kind (struct ui_file *file,
 		      int from_tty,
-		      struct cmd_list_element *c, 
+		      struct cmd_list_element *c,
 		      const char *value)
 {
   gdb_printf (file, _("The kind of border for TUI windows is \"%s\".\n"),
@@ -221,7 +220,7 @@ translate (const char *name, struct tui_translate *table)
 {
   while (table->name)
     {
-      if (name && strcmp (table->name, name) == 0)
+      if (name && streq (table->name, name))
 	return table->value;
       table++;
     }
@@ -236,7 +235,7 @@ translate_acs (const char *name, struct tui_translate *table, int acs_char)
 {
   /* The ACS characters are determined at run time by curses terminal
      management.  */
-  if (strcmp (name, "acs") == 0)
+  if (streq (name, "acs"))
     return acs_char;
 
   return translate (name, table);
@@ -500,7 +499,7 @@ tui_resize_all (void)
     {
 #ifdef HAVE_RESIZE_TERM
       resize_term (screenheight, screenwidth);
-#endif      
+#endif
       /* Turn keypad off while we resize.  */
       keypad (tui_cmd_win ()->handle.get (), FALSE);
       tui_update_gdb_sizes ();
@@ -770,7 +769,7 @@ tui_all_windows_info (const char *arg, int from_tty)
   for (tui_win_info *win_info : all_tui_windows ())
     if (win_info->is_visible ())
       {
-	ui_out_emit_tuple tuple_emitter (uiout, nullptr);
+	ui_out_emit_tuple tuple_emitter (uiout);
 
 	uiout->field_string ("name", win_info->name ());
 	uiout->field_signed ("lines", win_info->height);
@@ -1024,7 +1023,7 @@ tui_win_info::max_width () const
 }
 
 static void
-parse_scrolling_args (const char *arg, 
+parse_scrolling_args (const char *arg,
 		      struct tui_win_info **win_to_scroll,
 		      int *num_to_scroll)
 {
@@ -1041,7 +1040,7 @@ parse_scrolling_args (const char *arg,
       /* Process the number of lines to scroll.  */
       std::string copy = arg;
       buf_ptr = &copy[0];
-      if (isdigit (*buf_ptr))
+      if (c_isdigit (*buf_ptr))
 	{
 	  char *num_str;
 

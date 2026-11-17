@@ -1,6 +1,6 @@
 /* Dynamic architecture support for GDB, the GNU debugger.
 
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -31,6 +31,7 @@
 #include "gdbsupport/gdb-checked-static-cast.h"
 #include "registry.h"
 #include "solib.h"
+#include "find-memory-region.h"
 
 struct floatformat;
 struct ui_file;
@@ -83,9 +84,9 @@ using gdbarch_tdep_up = std::unique_ptr<gdbarch_tdep_base>;
    is used for diagnostic messages.  CB_DATA should have been passed
    unchanged through the iterator.  */
 
-typedef void (iterate_over_regset_sections_cb)
-  (const char *sect_name, int supply_size, int collect_size,
-   const struct regset *regset, const char *human_name, void *cb_data);
+using iterate_over_regset_sections_cb
+  = void (const char *sect_name, int supply_size, int collect_size,
+	  const struct regset *regset, const char *human_name, void *cb_data);
 
 /* For a function call, does the function return a value using a
    normal value return or a structure return - passing a hidden
@@ -121,14 +122,10 @@ enum class memtag_type
   allocation,
 };
 
-/* Callback types for 'read_core_file_mappings' gdbarch method.  */
-
-using read_core_file_mappings_pre_loop_ftype =
-  gdb::function_view<void (ULONGEST count)>;
+/* Callback type for 'read_core_file_mappings' gdbarch method.  */
 
 using read_core_file_mappings_loop_ftype =
-  gdb::function_view<void (int num,
-			   ULONGEST start,
+  gdb::function_view<void (ULONGEST start,
 			   ULONGEST end,
 			   ULONGEST file_ofs,
 			   const char *filename,
@@ -245,9 +242,9 @@ struct gdbarch_info
   const struct target_desc *target_desc = nullptr;
 };
 
-typedef struct gdbarch *(gdbarch_init_ftype) (struct gdbarch_info info, struct gdbarch_list *arches);
-typedef void (gdbarch_dump_tdep_ftype) (struct gdbarch *gdbarch, struct ui_file *file);
-typedef bool (gdbarch_supports_arch_info_ftype) (const struct bfd_arch_info *);
+using gdbarch_init_ftype = struct gdbarch * (struct gdbarch_info info, struct gdbarch_list *arches);
+using gdbarch_dump_tdep_ftype = void (struct gdbarch *gdbarch, struct ui_file *file);
+using gdbarch_supports_arch_info_ftype = bool (const struct bfd_arch_info *);
 
 extern void gdbarch_register (enum bfd_architecture architecture,
 			      gdbarch_init_ftype *init,

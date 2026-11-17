@@ -1,6 +1,6 @@
 /* CLI options framework, for GDB.
 
-   Copyright (C) 2017-2025 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -39,7 +39,7 @@ struct option_def
   /* The ctor is protected because you're supposed to construct using
      one of bool_option_def, etc. below.  */
 protected:
-  typedef void *(erased_get_var_address_ftype) ();
+  using erased_get_var_address_ftype = void * ();
 
   /* Construct an option.  NAME_ is the option's name.  VAR_TYPE_
      defines the option's type.  ERASED_GET_VAR_ADDRESS_ is a pointer

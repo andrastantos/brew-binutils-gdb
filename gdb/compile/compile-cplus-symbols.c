@@ -1,6 +1,6 @@
 /* Convert symbols from GDB to GCC
 
-   Copyright (C) 2014-2025 Free Software Foundation, Inc.
+   Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -48,7 +48,7 @@ convert_one_symbol (compile_cplus_instance *instance,
 {
   /* Squash compiler warning.  */
   gcc_type sym_type = 0;
-  const char *filename = sym.symbol->symtab ()->filename;
+  const char *filename = sym.symbol->symtab ()->filename ();
   unsigned int line = sym.symbol->line ();
 
   instance->error_symbol_once (sym.symbol);
@@ -143,7 +143,7 @@ convert_one_symbol (compile_cplus_instance *instance,
 
 	    if (symbol_read_needs_frame (sym.symbol))
 	      {
-		frame = get_selected_frame (nullptr);
+		frame = get_selected_frame ();
 		if (frame == nullptr)
 		  error (_("Symbol \"%s\" cannot be used because "
 			   "there is no selected frame"),

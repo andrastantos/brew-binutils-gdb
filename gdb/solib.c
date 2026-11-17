@@ -1,6 +1,6 @@
 /* Handle shared libraries for GDB, the GNU Debugger.
 
-   Copyright (C) 1990-2025 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,13 +38,13 @@
 #include "filenames.h"
 #include "exec.h"
 #include "observable.h"
-#include "readline/tilde.h"
 #include "solib.h"
 #include "interps.h"
 #include "filesystem.h"
 #include "gdb_bfd.h"
 #include "gdbsupport/filestuff.h"
 #include "gdbsupport/scoped_fd.h"
+#include "gdbsupport/pathstuff.h"
 #include "source.h"
 #include "cli/cli-style.h"
 
@@ -175,7 +175,7 @@ solib_find_1 (const char *in_pathname, int *fd, bool is_solib)
   */
 
   if (!IS_TARGET_ABSOLUTE_PATH (fskind, in_pathname) || sysroot == NULL)
-    temp_pathname.reset (xstrdup (in_pathname));
+    temp_pathname = make_unique_xstrdup (in_pathname);
   else
     {
       bool need_dir_separator;
@@ -198,7 +198,7 @@ solib_find_1 (const char *in_pathname, int *fd, bool is_solib)
 	There's no need to check for drive spec explicitly, as we only
 	get here if IN_PATHNAME is considered an absolute path.  */
       need_dir_separator = !(IS_DIR_SEPARATOR (in_pathname[0])
-			     || strcmp (TARGET_SYSROOT_PREFIX, sysroot) == 0);
+			     || streq (TARGET_SYSROOT_PREFIX, sysroot));
 
       /* Cat the prefixed pathname together.  */
       temp_pathname.reset (concat (sysroot,
@@ -320,11 +320,10 @@ solib_find_1 (const char *in_pathname, int *fd, bool is_solib)
 }
 
 /* Return the full pathname of the main executable, or NULL if not
-   found.  If FD is non-NULL, *FD is set to either -1 or an open file
-   handle for the main executable.  */
+   found.  */
 
 gdb::unique_xmalloc_ptr<char>
-exec_file_find (const char *in_pathname, int *fd)
+exec_file_find (const char *in_pathname)
 {
   gdb::unique_xmalloc_ptr<char> result;
   const char *fskind = effective_target_file_system_kind ();
@@ -334,7 +333,7 @@ exec_file_find (const char *in_pathname, int *fd)
 
   if (!gdb_sysroot.empty () && IS_TARGET_ABSOLUTE_PATH (fskind, in_pathname))
     {
-      result = solib_find_1 (in_pathname, fd, false);
+      result = solib_find_1 (in_pathname, nullptr, false);
 
       if (result == NULL && fskind == file_system_kind_dos_based)
 	{
@@ -344,7 +343,7 @@ exec_file_find (const char *in_pathname, int *fd)
 	  strcpy (new_pathname, in_pathname);
 	  strcat (new_pathname, ".exe");
 
-	  result = solib_find_1 (new_pathname, fd, false);
+	  result = solib_find_1 (new_pathname, nullptr, false);
 	}
     }
   else
@@ -358,9 +357,7 @@ exec_file_find (const char *in_pathname, int *fd)
 	 filename.  Not much more we can do...)  */
 
       if (!source_full_path_of (in_pathname, &result))
-	result.reset (xstrdup (in_pathname));
-      if (fd != NULL)
-	*fd = -1;
+	result = make_unique_xstrdup (in_pathname);
     }
 
   return result;
@@ -376,33 +373,6 @@ exec_file_find (const char *in_pathname, int *fd)
 gdb::unique_xmalloc_ptr<char>
 solib_find (const char *in_pathname, int *fd)
 {
-  const char *solib_symbols_extension
-    = gdbarch_solib_symbols_extension (current_inferior ()->arch ());
-
-  /* If solib_symbols_extension is set, replace the file's
-     extension.  */
-  if (solib_symbols_extension != NULL)
-    {
-      const char *p = in_pathname + strlen (in_pathname);
-
-      while (p > in_pathname && *p != '.')
-	p--;
-
-      if (*p == '.')
-	{
-	  char *new_pathname;
-
-	  new_pathname
-	    = (char *) alloca (p - in_pathname + 1
-			       + strlen (solib_symbols_extension) + 1);
-	  memcpy (new_pathname, in_pathname, p - in_pathname + 1);
-	  strcpy (new_pathname + (p - in_pathname) + 1,
-		  solib_symbols_extension);
-
-	  in_pathname = new_pathname;
-	}
-    }
-
   return solib_find_1 (in_pathname, fd, true);
 }
 
@@ -418,11 +388,9 @@ solib_bfd_fopen (const char *pathname, int fd)
   gdb_bfd_ref_ptr abfd (gdb_bfd_open (pathname, gnutarget, fd));
 
   if (abfd == NULL)
-    {
-      /* Arrange to free PATHNAME when the error is thrown.  */
-      error (_("Could not open `%s' as an executable file: %s"), pathname,
-	     bfd_errmsg (bfd_get_error ()));
-    }
+    error (_("Could not open `%ps' as an executable file: %s"),
+	   styled_string (file_name_style.style (), pathname),
+	   bfd_errmsg (bfd_get_error ()));
 
   return abfd;
 }
@@ -452,16 +420,19 @@ solib_bfd_open (const char *pathname)
   gdb_bfd_ref_ptr abfd (solib_bfd_fopen (found_pathname.get (), found_file));
 
   /* Check bfd format.  */
-  if (!bfd_check_format (abfd.get (), bfd_object))
-    error (_("`%s': not in executable format: %s"),
-	   bfd_get_filename (abfd.get ()), bfd_errmsg (bfd_get_error ()));
+  if (!gdb_bfd_check_format (abfd.get (), bfd_object))
+    error (_("`%ps': not in executable format: %s"),
+	   styled_string (file_name_style.style (),
+			  bfd_get_filename (abfd.get ())),
+	   bfd_errmsg (bfd_get_error ()));
 
   /* Check bfd arch.  */
   b = gdbarch_bfd_arch_info (current_inferior ()->arch ());
   if (!b->compatible (b, bfd_get_arch_info (abfd.get ())))
-    error (_("`%s': Shared library architecture %s is not compatible "
+    error (_("`%ps': Shared library architecture %s is not compatible "
 	     "with target architecture %s."),
-	   bfd_get_filename (abfd.get ()),
+	   styled_string (file_name_style.style (),
+			  bfd_get_filename (abfd.get ())),
 	   bfd_get_arch_info (abfd.get ())->printable_name, b->printable_name);
 
   return abfd;
@@ -480,8 +451,8 @@ solib_ops::iterate_over_objfiles_in_search_order
   (iterate_over_objfiles_in_search_order_cb_ftype cb,
    objfile *current_objfile) const
 {
-  for (objfile *objfile : m_pspace->objfiles ())
-    if (cb (objfile))
+  for (objfile &objfile : m_pspace->objfiles ())
+    if (cb (&objfile))
       return;
 }
 
@@ -500,7 +471,8 @@ solib_ops::iterate_over_objfiles_in_search_order
 static int
 solib_map_sections (solib &so)
 {
-  gdb::unique_xmalloc_ptr<char> filename (tilde_expand (so.name.c_str ()));
+  gdb::unique_xmalloc_ptr<char> filename
+    = gdb_rl_tilde_expand (so.name.c_str ());
   gdb_bfd_ref_ptr abfd (so.ops ().bfd_open (filename.get ()));
 
   /* If we have a core target then the core target might have some helpful
@@ -581,7 +553,7 @@ solib_map_sections (solib &so)
 	 range of the shared object, assume we want the location of
 	 the .text section.  */
       if (so.addr_low == 0 && so.addr_high == 0
-	  && strcmp (p.the_bfd_section->name, ".text") == 0)
+	  && streq (p.the_bfd_section->name, ".text"))
 	{
 	  so.addr_low = p.addr;
 	  so.addr_high = p.endaddr;
@@ -595,6 +567,22 @@ solib_map_sections (solib &so)
   current_program_space->add_target_sections (&so, so.sections);
 
   return 1;
+}
+
+/* See solib.h.  */
+
+solib::solib (lm_info_up lm_info, std::string original_name_,
+	      std::string name_, const solib_ops &ops)
+  : lm_info (std::move (lm_info)),
+    original_name (std::move (original_name_)),
+    name (std::move (name_)),
+    m_ops (&ops)
+{
+  if (should_normalize_slashes ())
+    {
+      normalize_slashes (&name[0]);
+      normalize_slashes (&original_name[0]);
+    }
 }
 
 /* See solib.h.  */
@@ -621,8 +609,7 @@ solib::clear ()
 
 lm_info::~lm_info () = default;
 
-/* Read in symbols for shared object SO.  If SYMFILE_VERBOSE is set in FLAGS,
-   be chatty about it.  Return true if any symbols were actually loaded.  */
+/* See solib.h.  */
 
 bool
 solib_read_symbols (solib &so, symfile_add_flags flags)
@@ -630,52 +617,50 @@ solib_read_symbols (solib &so, symfile_add_flags flags)
   if (so.symbols_loaded)
     {
       /* If needed, we've already warned in our caller.  */
+      return false;
     }
-  else if (so.abfd == NULL)
+
+  if (so.abfd == nullptr)
     {
-      /* We've already warned about this library, when trying to open
-	 it.  */
+      /* We've already warned about this library, when trying to open it.  */
+      return false;
     }
-  else
+
+  flags |= current_inferior ()->symfile_flags;
+
+  try
     {
-      flags |= current_inferior ()->symfile_flags;
+      /* Have we already loaded this shared object?  */
+      so.objfile = nullptr;
+      for (objfile &objfile : current_program_space->objfiles ())
+	if (objfile.addr_low == so.addr_low)
+	  {
+	    so.objfile = &objfile;
+	    break;
+	  }
 
-      try
+      if (so.objfile == nullptr)
 	{
-	  /* Have we already loaded this shared object?  */
-	  so.objfile = nullptr;
-	  for (objfile *objfile : current_program_space->objfiles ())
-	    if (objfile->addr_low == so.addr_low)
-	      {
-		so.objfile = objfile;
-		break;
-	      }
-
-	  if (so.objfile == NULL)
-	    {
-	      section_addr_info sap
-		= build_section_addr_info_from_section_table (so.sections);
-	      gdb_bfd_ref_ptr tmp_bfd = so.abfd;
-	      so.objfile
-		= symbol_file_add_from_bfd (tmp_bfd, so.name.c_str (),
-					    flags, &sap, OBJF_SHARED, nullptr);
-	      so.objfile->addr_low = so.addr_low;
-	    }
-
-	  so.symbols_loaded = true;
-	}
-      catch (const gdb_exception_error &e)
-	{
-	  exception_fprintf (gdb_stderr, e,
-			     _("Error while reading shared"
-			       " library symbols for %s:\n"),
-			     so.name.c_str ());
+	  section_addr_info sap
+	    = build_section_addr_info_from_section_table (so.sections);
+	  gdb_bfd_ref_ptr tmp_bfd = so.abfd;
+	  so.objfile = symbol_file_add_from_bfd (tmp_bfd, so.name.c_str (),
+						 flags, &sap, OBJF_SHARED,
+						 nullptr);
+	  so.objfile->addr_low = so.addr_low;
 	}
 
-      return true;
+      so.symbols_loaded = true;
+    }
+  catch (const gdb_exception_error &e)
+    {
+      exception_fprintf (gdb_stderr, e,
+			 _("Error while reading shared"
+			   " library symbols for %s:\n"),
+			 so.name.c_str ());
     }
 
-  return false;
+  return true;
 }
 
 /* Return true if KNOWN->objfile is used by any other solib object
@@ -1418,8 +1403,8 @@ reload_shared_libraries_1 (int from_tty)
       if (from_tty)
 	add_flags |= SYMFILE_VERBOSE;
 
-      gdb::unique_xmalloc_ptr<char> filename (
-	tilde_expand (so.original_name.c_str ()));
+      gdb::unique_xmalloc_ptr<char> filename
+	= gdb_rl_tilde_expand (so.original_name.c_str ());
 
       gdb_bfd_ref_ptr abfd = so.ops ().bfd_open (filename.get ());
       if (abfd != NULL)
@@ -1472,13 +1457,13 @@ reload_shared_libraries (const char *ignored, int from_tty,
 {
   reload_shared_libraries_1 (from_tty);
 
-  /* Creating inferior hooks here has two purposes.  First, if we reload 
+  /* Creating inferior hooks here has two purposes.  First, if we reload
      shared libraries then the address of solib breakpoint we've computed
      previously might be no longer valid.  For example, if we forgot to set
      solib-absolute-prefix and are setting it right now, then the previous
      breakpoint address is plain wrong.  Second, installing solib hooks
      also implicitly figures were ld.so is and loads symbols for it.
-     Absent this call, if we've just connected to a target and set 
+     Absent this call, if we've just connected to a target and set
      solib-absolute-prefix or solib-search-path, we'll lose all information
      about ld.so.  */
   if (target_has_execution ())
@@ -1715,7 +1700,7 @@ gdb_bfd_read_elf_soname (const char *filename)
     return {};
 
   /* Check that ABFD is an ET_DYN ELF file.  */
-  if (!bfd_check_format (abfd.get (), bfd_object)
+  if (!gdb_bfd_check_format (abfd.get (), bfd_object)
       || !(bfd_get_file_flags (abfd.get ()) & DYNAMIC))
     return {};
 

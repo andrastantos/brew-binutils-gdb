@@ -1,5 +1,5 @@
 /* Multi-thread control defs for remote server for GDB.
-   Copyright (C) 1993-2025 Free Software Foundation, Inc.
+   Copyright (C) 1993-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -87,7 +87,7 @@ struct thread_info : public intrusive_list_node<thread_info>
 
   /* Thread options GDB requested with QThreadOptions.  */
   gdb_thread_options thread_options = 0;
-  
+
 private:
   process_info *m_process;
   std::unique_ptr<struct regcache> m_regcache = nullptr;

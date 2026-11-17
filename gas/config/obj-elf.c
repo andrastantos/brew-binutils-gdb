@@ -1,5 +1,5 @@
 /* ELF object file format
-   Copyright (C) 1992-2025 Free Software Foundation, Inc.
+   Copyright (C) 1992-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -71,7 +71,6 @@ static void obj_elf_visibility (int);
 static void obj_elf_symver (int);
 static void obj_elf_subsection (int);
 static void obj_elf_popsection (int);
-static void obj_elf_gnu_attribute (int);
 static void obj_elf_tls_common (int);
 static void obj_elf_lcomm (int);
 static void obj_elf_struct (int);
@@ -116,7 +115,12 @@ static const pseudo_typeS elf_pseudo_table[] =
   {"vtable_entry", obj_elf_vtable_entry, 0},
 
   /* A GNU extension for object attributes.  */
+#ifdef TC_OBJ_ATTR
   {"gnu_attribute", obj_elf_gnu_attribute, 0},
+#if TC_OBJ_ATTR_v2
+  {"gnu_subsection", obj_elf_gnu_subsection, 0},
+#endif /* TC_OBJ_ATTR_v2 */
+#endif /* TC_OBJ_ATTR */
 
   /* These are used for dwarf2.  */
   { "file", dwarf2_directive_file, 0 },
@@ -271,7 +275,6 @@ elf_common_parse (int ignore ATTRIBUTE_UNUSED, symbolS *symbolP, addressT size)
 	      *input_line_pointer = '\0';
 	      as_bad (_("bad .common segment %s"), p);
 	      *input_line_pointer = c;
-	      ignore_rest_of_line ();
 	      return NULL;
 	    }
 	  /* ??? Don't ask me why these are always global.  */
@@ -400,21 +403,24 @@ static void
 obj_elf_visibility (int visibility)
 {
   int c;
-  symbolS *symbolP;
-  asymbol *bfdsym;
-  elf_symbol_type *elfsym;
 
   do
     {
-      symbolP = get_sym_from_input_line_and_check ();
-
-      bfdsym = symbol_get_bfdsym (symbolP);
-      elfsym = elf_symbol_from (bfdsym);
+      symbolS *symbolP = get_sym_from_input_line_and_check ();
+      const asymbol *bfdsym = symbol_get_bfdsym (symbolP);
+      elf_symbol_type *elfsym = elf_symbol_from (bfdsym);
+      int current = ELF_ST_VISIBILITY (elfsym->internal_elf_sym.st_other);
 
       gas_assert (elfsym);
 
-      elfsym->internal_elf_sym.st_other &= ~3;
-      elfsym->internal_elf_sym.st_other |= visibility;
+      if (!current || visibility <= current)
+	{
+	  elfsym->internal_elf_sym.st_other &= ~ELF_ST_VISIBILITY (~0);
+	  elfsym->internal_elf_sym.st_other |= visibility;
+	}
+      else
+	as_warn (_("visibility of `%s' is already `%s'"), S_GET_NAME (symbolP),
+		 current == STV_HIDDEN ? "hidden" : "internal");
 
       c = *input_line_pointer;
       if (c == ',')
@@ -581,7 +587,6 @@ change_section (const char *name,
   asection *old_sec;
   segT sec;
   flagword flags;
-  const struct elf_backend_data *bed;
   const struct bfd_elf_special_section *ssect;
 
   if (match_p == NULL)
@@ -627,7 +632,7 @@ change_section (const char *name,
 	group_section_insert (match_p, sec, &group_idx);
     }
 
-  bed = get_elf_backend_data (stdoutput);
+  elf_backend_data *bed = get_elf_backend_data (stdoutput);
   ssect = (*bed->get_sec_type_attr) (stdoutput, sec);
 
   if (ssect != NULL)
@@ -771,8 +776,6 @@ change_section (const char *name,
 
   if (old_sec == NULL)
     {
-      symbolS *secsym;
-
       if (type == SHT_NULL)
 	type = bfd_elf_get_default_section_type (flags);
       elf_section_type (sec) = type;
@@ -797,18 +800,7 @@ change_section (const char *name,
       elf_group_name (sec) = match_p->group_name;
 
       /* Add a symbol for this section to the symbol table.  */
-      secsym = symbol_find (name);
-      if (secsym != NULL)
-	{
-	  /* We could be repurposing an undefined symbol here: make sure we
-	     reset sy_value to look like other section symbols in order to avoid
-	     trying to incorrectly resolve this section symbol later on.  */
-	  static const expressionS exp = { .X_op = O_constant };
-	  symbol_set_value_expression (secsym, &exp);
-	  symbol_set_bfdsym (secsym, sec->symbol);
-	}
-      else
-	symbol_table_insert (section_symbol (sec));
+      symbol_table_insert (section_symbol (sec));
     }
   else
     {
@@ -1273,15 +1265,13 @@ obj_elf_section (int push)
 	      return;
 	    }
 
-	  const struct elf_backend_data *bed = get_elf_backend_data (stdoutput);
+	  elf_backend_data *bed = get_elf_backend_data (stdoutput);
+	  bool maybe_gnu = (bed->elf_osabi == ELFOSABI_NONE
+			    || bed->elf_osabi == ELFOSABI_GNU
+			    || bed->elf_osabi == ELFOSABI_FREEBSD);
 	  attr = obj_elf_parse_section_letters (beg, strlen (beg), push,
 						&is_clone, &inherit,
-						bed->elf_osabi == ELFOSABI_NONE
-						|| (bed->elf_osabi
-						    == ELFOSABI_GNU)
-						|| (bed->elf_osabi
-						    == ELFOSABI_FREEBSD)
-						? &gnu_attr : NULL,
+						maybe_gnu ? &gnu_attr : NULL,
 						&has_entsize);
 
 	  if (inherit > 0)
@@ -1961,7 +1951,8 @@ obj_elf_get_vtable_inherit (void)
 {
   char *cname, *pname;
   symbolS *csym, *psym;
-  char c, bad = 0;
+  char c;
+  bool bad = false;
 
   if (*input_line_pointer == '#')
     ++input_line_pointer;
@@ -1973,11 +1964,13 @@ obj_elf_get_vtable_inherit (void)
      the same child symbol.  Also, we can currently only do this if the
      child symbol is already exists and is placed in a fragment.  */
 
-  if (csym == NULL || symbol_get_frag (csym) == NULL)
+  if (csym == NULL
+      || symbol_get_frag (csym) == NULL
+      || symbol_get_value_expression (csym)->X_op != O_constant)
     {
       as_bad (_("expected `%s' to have already been set for .vtable_inherit"),
 	      cname);
-      bad = 1;
+      bad = true;
     }
 
   restore_line_pointer (c);
@@ -2015,7 +2008,6 @@ obj_elf_get_vtable_inherit (void)
   if (bad)
     return NULL;
 
-  gas_assert (symbol_get_value_expression (csym)->X_op == O_constant);
   return fix_new (symbol_get_frag (csym),
 		  symbol_get_value_expression (csym)->X_add_number,
 		  0, psym, 0, 0, BFD_RELOC_VTABLE_INHERIT);
@@ -2027,6 +2019,14 @@ obj_elf_get_vtable_inherit (void)
 void
 obj_elf_vtable_inherit (int ignore ATTRIBUTE_UNUSED)
 {
+  static bool warned = false;
+
+  if (!warned)
+    {
+      warned = true;
+      as_warn(".vtable_inherit has been deprecated");
+    }
+
   (void) obj_elf_get_vtable_inherit ();
 }
 
@@ -2069,200 +2069,15 @@ obj_elf_get_vtable_entry (void)
 void
 obj_elf_vtable_entry (int ignore ATTRIBUTE_UNUSED)
 {
+  static bool warned = false;
+
+  if (!warned)
+    {
+      warned = true;
+      as_warn("'.vtable_entry' has been deprecated");
+    }
+
   (void) obj_elf_get_vtable_entry ();
-}
-
-#define skip_whitespace(str)  do { if (is_whitespace (*(str))) ++(str); } while (0)
-
-static inline int
-skip_past_char (char ** str, char c)
-{
-  if (**str == c)
-    {
-      (*str)++;
-      return 0;
-    }
-  else
-    return -1;
-}
-#define skip_past_comma(str) skip_past_char (str, ',')
-
-/* A list of attributes that have been explicitly set by the assembly code.
-   VENDOR is the vendor id, BASE is the tag shifted right by the number
-   of bits in MASK, and bit N of MASK is set if tag BASE+N has been set.  */
-struct recorded_attribute_info {
-  struct recorded_attribute_info *next;
-  int vendor;
-  unsigned int base;
-  unsigned long mask;
-};
-static struct recorded_attribute_info *recorded_attributes;
-
-/* Record that we have seen an explicit specification of attribute TAG
-   for vendor VENDOR.  */
-
-static void
-record_attribute (int vendor, unsigned int tag)
-{
-  unsigned int base;
-  unsigned long mask;
-  struct recorded_attribute_info *rai;
-
-  base = tag / (8 * sizeof (rai->mask));
-  mask = 1UL << (tag % (8 * sizeof (rai->mask)));
-  for (rai = recorded_attributes; rai; rai = rai->next)
-    if (rai->vendor == vendor && rai->base == base)
-      {
-	rai->mask |= mask;
-	return;
-      }
-
-  rai = XNEW (struct recorded_attribute_info);
-  rai->next = recorded_attributes;
-  rai->vendor = vendor;
-  rai->base = base;
-  rai->mask = mask;
-  recorded_attributes = rai;
-}
-
-/* Return true if we have seen an explicit specification of attribute TAG
-   for vendor VENDOR.  */
-
-bool
-obj_elf_seen_attribute (int vendor, unsigned int tag)
-{
-  unsigned int base;
-  unsigned long mask;
-  struct recorded_attribute_info *rai;
-
-  base = tag / (8 * sizeof (rai->mask));
-  mask = 1UL << (tag % (8 * sizeof (rai->mask)));
-  for (rai = recorded_attributes; rai; rai = rai->next)
-    if (rai->vendor == vendor && rai->base == base)
-      return (rai->mask & mask) != 0;
-  return false;
-}
-
-/* Parse an attribute directive for VENDOR.
-   Returns the attribute number read, or zero on error.  */
-
-int
-obj_elf_vendor_attribute (int vendor)
-{
-  expressionS exp;
-  int type;
-  int tag;
-  unsigned int i = 0;
-  char *s = NULL;
-
-  /* Read the first number or name.  */
-  skip_whitespace (input_line_pointer);
-  s = input_line_pointer;
-  if (ISDIGIT (*input_line_pointer))
-    {
-      expression (& exp);
-      if (exp.X_op != O_constant)
-	goto bad;
-      tag = exp.X_add_number;
-    }
-  else
-    {
-      char *name;
-
-      /* A name may contain '_', but no other punctuation.  */
-      for (; ISALNUM (*input_line_pointer) || *input_line_pointer == '_';
-	   ++input_line_pointer)
-	i++;
-      if (i == 0)
-	goto bad;
-
-      name = xmemdup0 (s, i);
-
-#ifndef CONVERT_SYMBOLIC_ATTRIBUTE
-#define CONVERT_SYMBOLIC_ATTRIBUTE(a) -1
-#endif
-
-      tag = CONVERT_SYMBOLIC_ATTRIBUTE (name);
-      if (tag == -1)
-	{
-	  as_bad (_("Attribute name not recognised: %s"), name);
-	  ignore_rest_of_line ();
-	  free (name);
-	  return 0;
-	}
-      free (name);
-    }
-
-  type = _bfd_elf_obj_attrs_arg_type (stdoutput, vendor, tag);
-
-  if (skip_past_comma (&input_line_pointer) == -1)
-    goto bad;
-  if (type & 1)
-    {
-      expression (& exp);
-      if (exp.X_op != O_constant)
-	{
-	  as_bad (_("expected numeric constant"));
-	  ignore_rest_of_line ();
-	  return 0;
-	}
-      i = exp.X_add_number;
-    }
-  if ((type & 3) == 3
-      && skip_past_comma (&input_line_pointer) == -1)
-    {
-      as_bad (_("expected comma"));
-      ignore_rest_of_line ();
-      return 0;
-    }
-  if (type & 2)
-    {
-      int len;
-
-      skip_whitespace (input_line_pointer);
-      if (*input_line_pointer != '"')
-	goto bad_string;
-      s = demand_copy_C_string (&len);
-    }
-
-  record_attribute (vendor, tag);
-  bool ok = false;
-  switch (type & 3)
-    {
-    case 3:
-      ok = bfd_elf_add_obj_attr_int_string (stdoutput, vendor, tag, i, s);
-      break;
-    case 2:
-      ok = bfd_elf_add_obj_attr_string (stdoutput, vendor, tag, s);
-      break;
-    case 1:
-      ok = bfd_elf_add_obj_attr_int (stdoutput, vendor, tag, i);
-      break;
-    default:
-      abort ();
-    }
-  if (!ok)
-    as_fatal (_("error adding attribute: %s"),
-	      bfd_errmsg (bfd_get_error ()));
-
-  demand_empty_rest_of_line ();
-  return tag;
- bad_string:
-  as_bad (_("bad string constant"));
-  ignore_rest_of_line ();
-  return 0;
- bad:
-  as_bad (_("expected <tag> , <value>"));
-  ignore_rest_of_line ();
-  return 0;
-}
-
-/* Parse a .gnu_attribute directive.  */
-
-static void
-obj_elf_gnu_attribute (int ignored ATTRIBUTE_UNUSED)
-{
-  obj_elf_vendor_attribute (OBJ_ATTR_GNU);
 }
 
 void
@@ -2536,9 +2351,7 @@ obj_elf_type (int ignore ATTRIBUTE_UNUSED)
 	   || strcmp (type_name, "10") == 0
 	   || strcmp (type_name, "STT_GNU_IFUNC") == 0)
     {
-      const struct elf_backend_data *bed;
-
-      bed = get_elf_backend_data (stdoutput);
+      elf_backend_data *bed = get_elf_backend_data (stdoutput);
       if (bed->elf_osabi != ELFOSABI_NONE
 	  && bed->elf_osabi != ELFOSABI_GNU
 	  && bed->elf_osabi != ELFOSABI_FREEBSD)
@@ -2553,9 +2366,7 @@ obj_elf_type (int ignore ATTRIBUTE_UNUSED)
     }
   else if (strcmp (type_name, "gnu_unique_object") == 0)
     {
-      const struct elf_backend_data *bed;
-
-      bed = get_elf_backend_data (stdoutput);
+      elf_backend_data *bed = get_elf_backend_data (stdoutput);
       if (bed->elf_osabi != ELFOSABI_NONE
 	  && bed->elf_osabi != ELFOSABI_GNU)
 	as_bad (_("symbol type \"%s\" is supported only by GNU targets"),
@@ -2934,6 +2745,26 @@ elf_adjust_symtab (void)
 {
   unsigned int i;
 
+  if (!had_errors ())
+    for (symbolS *symp = symbol_rootP; symp; symp = symbol_next (symp))
+      if (!symbol_removed_p (symp)
+	  && S_IS_DEFINED (symp)
+	  && (bfd_keep_unused_section_symbols (stdoutput)
+	      || !symbol_section_p (symp)
+	      || symbol_used_in_reloc_p (symp)))
+	{
+	  const asymbol *bfdsym = symbol_get_bfdsym (symp);
+	  elf_symbol_type *elfsym = elf_symbol_from (bfdsym);
+
+	  /* Allow local symbol with non-protected visibility:
+	     https://sourceware.org/bugzilla/show_bug.cgi?id=34312 */
+	  if ((ELF_ST_VISIBILITY (elfsym->internal_elf_sym.st_other)
+	       == STV_PROTECTED)
+	      && !(bfdsym->flags & (BSF_GLOBAL | BSF_WEAK | BSF_GNU_UNIQUE)))
+	    as_warn (_("local symbol `%s' has protected visibility"),
+		     S_GET_NAME (symp));
+	}
+
   /* Make the SHT_GROUP sections that describe each section group.  We
      can't set up the section contents here yet, because elf section
      indices have yet to be calculated.  elf.c:set_group_contents does
@@ -3026,7 +2857,10 @@ elf_frob_file_before_adjust (void)
 	      char *p = strchr (sy_obj->versioned_name->name,
 				ELF_VER_CHR);
 
-	      if (sy_obj->rename)
+	      /* NB: Malformed versioned symbols may not have @@@.  */
+	      if (sy_obj->rename
+		  && p[1] == ELF_VER_CHR
+		  && p[2] == ELF_VER_CHR)
 		{
 		  /* The @@@ syntax is a special case. If the symbol is
 		     not defined, 2 `@'s will be removed from the
@@ -3195,28 +3029,39 @@ elf_begin (void)
   previous_subsection = 0;
   comment_section = NULL;
   memset (&groups, 0, sizeof (groups));
+
+#ifdef TC_OBJ_ATTR
+  /* Set the object attribute version for the output object to the default
+     value supported by the backend.  */
+  elf_obj_attr_version (stdoutput)
+    = get_elf_backend_data (stdoutput)->default_obj_attr_version;
+
+#if TC_OBJ_ATTR_v1
+  oav1_attr_info_init ();
+#endif /* TC_OBJ_ATTR_v1 */
+#endif /* TC_OBJ_ATTR */
 }
 
 void
 elf_end (void)
 {
+  if (!ENABLE_LEAK_CHECK)
+    return;
   while (section_stack)
     {
       struct section_stack *top = section_stack;
       section_stack = top->next;
       free (top);
     }
-  while (recorded_attributes)
-    {
-      struct recorded_attribute_info *rai = recorded_attributes;
-      recorded_attributes = rai->next;
-      free (rai);
-    }
   if (groups.indexes)
     {
       htab_delete (groups.indexes);
       free (groups.head);
     }
+
+#if TC_OBJ_ATTR_v1
+  oav1_attr_info_exit ();
+#endif /* TC_OBJ_ATTR_v1 */
 }
 
 #ifdef USE_EMULATIONS

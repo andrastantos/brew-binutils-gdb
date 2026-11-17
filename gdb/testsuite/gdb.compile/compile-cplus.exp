@@ -1,4 +1,4 @@
-# Copyright 2014-2025 Free Software Foundation, Inc.
+# Copyright 2014-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -39,8 +39,10 @@ if { $srcfile3 != "" } {
 }
 set srcfile4options "nodebug c++"
 lappend srcfilesoptions $srcfile4 $srcfile4options
-if { [eval build_executable_from_specs ${testfile}.exp $testfile {$options} ${srcfilesoptions}] } {
-    return -1
+
+if { [build_executable_from_specs $testfile.exp $testfile $options \
+	  {*}$srcfilesoptions] } {
+    return
 }
 
 clean_restart ${testfile}
@@ -52,15 +54,15 @@ clean_restart ${testfile}
 gdb_test_no_output "set language c++" \
     "Set language to C++"
 
-if ![runto_main] {
-    return -1
+if {![runto_main]} {
+    return
 }
 
 gdb_breakpoint [gdb_get_line_number "break-here"]
 gdb_continue_to_breakpoint "break-here" ".* break-here .*"
 
 if {[skip_compile_feature_untested "var = 0"]} {
-    return -1
+    return
 }
 
 #
@@ -108,7 +110,7 @@ gdb_test "p globalvar" " = 77000" "check static_local"
 gdb_test_no_output \
     "compile code static int staticvar = 5; intptr = &staticvar" \
     "do not keep jit in memory"
-gdb_test "p *intptr" "Cannot access memory at address 0x\[0-9a-f\]+" \
+gdb_test "p *intptr" "Cannot access memory at address ${::hex}" \
     "expect 5"
 
 gdb_test "compile code func_doesnotexist ();" "error: \'func_doesnotexist\' was not declared in this scope.*"
@@ -122,7 +124,7 @@ gdb_test "bt" \
 set test "p/x \$pc"
 set infcall_pc 0
 gdb_test_multiple $test $test {
-    -re " = (0x\[0-9a-f\]+)\r\n$gdb_prompt $" {
+    -re " = (${::hex})\r\n$gdb_prompt $" {
 	set infcall_pc $expect_out(1,string)
 	pass $test
     }

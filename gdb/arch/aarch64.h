@@ -1,6 +1,6 @@
 /* Common target-dependent functionality for AArch64.
 
-   Copyright (C) 2017-2025 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -34,6 +34,7 @@ struct aarch64_features
   uint64_t vq = 0;
   bool pauth = false;
   bool mte = false;
+  bool fpmr = false;
 
   /* A positive TLS value indicates the number of TLS registers available.  */
   uint8_t tls = 0;
@@ -68,7 +69,8 @@ inline bool operator==(const aarch64_features &lhs, const aarch64_features &rhs)
     && lhs.svq == rhs.svq
     && lhs.sme2 == rhs.sme2
     && lhs.gcs == rhs.gcs
-    && lhs.gcs_linux == rhs.gcs_linux;
+    && lhs.gcs_linux == rhs.gcs_linux
+    && lhs.fpmr == rhs.fpmr;
 }
 
 namespace std
@@ -94,6 +96,13 @@ namespace std
 
       /* SME2 feature.  */
       h = h << 1 | features.sme2;
+
+      /* GCS feature.  */
+      h = h << 1 | features.gcs;
+      h = h << 1 | features.gcs_linux;
+
+      /* FPMR feature.  */
+      h = h << 1 | features.fpmr;
       return h;
     }
   };
@@ -101,7 +110,7 @@ namespace std
 
 /* Create the aarch64 target description.  */
 
-target_desc *
+target_desc_up
   aarch64_create_target_description (const aarch64_features &features);
 
 /* Given a pointer value POINTER and a MASK of non-address bits, remove the
@@ -169,9 +178,6 @@ enum aarch64_regnum
    authentication support.  */
 #define AARCH64_PAUTH_DMASK_HIGH_REGNUM(pauth_reg_base) (pauth_reg_base + 2)
 #define AARCH64_PAUTH_CMASK_HIGH_REGNUM(pauth_reg_base) (pauth_reg_base + 3)
-
-/* This size is only meant for Linux, not bare metal.  QEMU exposes 4 masks.  */
-#define AARCH64_PAUTH_REGS_SIZE (16)
 
 #define AARCH64_X_REGS_NUM 31
 #define AARCH64_V_REGS_NUM 32

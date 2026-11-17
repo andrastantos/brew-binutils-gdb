@@ -1,4 +1,4 @@
-# Copyright 2025 Free Software Foundation, Inc.
+# Copyright 2025-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ if {![Term::enter_tui]} {
 }
 
 proc check_src_window { testname first_line } {
-    set last_line [expr $first_line + 12]
+    set last_line [expr {$first_line + 12}]
     Term::check_box_contents $testname 0 0 80 15 \
 	"^\\s+${first_line}\\s+.*\\s+${last_line}\\s+/\\* Line ${last_line}  \\*/\\s+$"
 

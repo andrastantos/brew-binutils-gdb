@@ -1,4 +1,5 @@
 source_sh ${srcdir}/emulparams/plt_unwind.sh
+source_sh ${srcdir}/emulparams/sframe-info.sh
 source_sh ${srcdir}/emulparams/extern_protected_data.sh
 source_sh ${srcdir}/emulparams/dynamic_undefined_weak.sh
 source_sh ${srcdir}/emulparams/reloc_overflow.sh
@@ -36,6 +37,7 @@ OTHER_PLT_SECTIONS="
 "
 OTHER_GOT_RELOC_SECTIONS="
   .rela.tls	${RELOCATING-0} : { *(.rela.tls) }"
+ALL_TEXT_AFTER_RO=yes
 
 if [ "x${host}" = "x${target}" ]; then
   case " $EMULATION_LIBPATH " in
@@ -44,8 +46,8 @@ if [ "x${host}" = "x${target}" ]; then
   esac
 fi
 
-# Linux/Solaris modify the default library search path to first include
-# a 64-bit specific directory.
+# Linux modifies the default library search path to first include a 64-bit
+# specific directory.
 case "$target" in
   x86_64*-linux*|i[3-7]86-*-linux-*)
     case "$EMULATION_NAME" in
@@ -54,8 +56,4 @@ case "$target" in
 	;;
     esac
     ;;
-  *-*-solaris2*)
-    LIBPATH_SUFFIX=/amd64
-    ELF_INTERPRETER_NAME=\"/lib/amd64/ld.so.1\"
-  ;;
 esac

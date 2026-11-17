@@ -1,5 +1,5 @@
 /* Cache of styled source file text
-   Copyright (C) 2018-2025 Free Software Foundation, Inc.
+   Copyright (C) 2018-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -110,9 +110,9 @@ source_cache::get_plain_source_lines (struct symtab *s,
     perror_with_name (symtab_to_filename_for_display (s));
 
   time_t mtime = 0;
-  if (s->compunit ()->objfile () != NULL
-      && s->compunit ()->objfile ()->obfd != NULL)
-    mtime = s->compunit ()->objfile ()->mtime;
+  if (s->compunit ().objfile () != NULL
+      && s->compunit ().objfile ()->obfd != NULL)
+    mtime = s->compunit ().objfile ()->mtime;
   else if (current_program_space->exec_bfd ())
     mtime = current_program_space->ebfd_mtime;
 

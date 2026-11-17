@@ -1,6 +1,6 @@
 /* Virtual tail call frames unwinder for GDB.
 
-   Copyright (C) 2010-2025 Free Software Foundation, Inc.
+   Copyright (C) 2010-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -131,10 +131,10 @@ cache_unref (struct tailcall_cache *cache)
     }
 }
 
-/* Return 1 if FI is a non-bottom (not the callee) tail call frame.  Otherwise
-   return 0.  */
+/* Return true if FI is a non-bottom (not the callee) tail call frame.
+   Otherwise return false.  */
 
-static int
+static bool
 frame_is_tailcall (const frame_info_ptr &fi)
 {
   return frame_unwinder_is (fi, &dwarf2_tailcall_frame_unwind);
@@ -352,7 +352,7 @@ tailcall_frame_sniffer (const struct frame_unwind *self,
    chain to create.  Keep TAILCALL_CACHEP NULL if it did not find any chain,
    initialize it otherwise.  No tail call chain is created if there are no
    unambiguous virtual tail call frames to report.
-   
+
    ENTRY_CFA_SP_OFFSETP is NULL if no special SP handling is possible,
    otherwise *ENTRY_CFA_SP_OFFSETP is the number of bytes to subtract from tail
    call frames frame base to get the SP value there - to simulate return

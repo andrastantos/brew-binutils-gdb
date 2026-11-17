@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-# Copyright (C) 2002-2025 Free Software Foundation, Inc.
+# Copyright (C) 2002-2026 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -440,6 +440,8 @@ ppc_add_stub_section (const char *stub_sec_name, asection *input_section)
 						: 5)))
     goto err_ret;
 
+  stub_sec->veneer = 1;
+
   output_section = input_section->output_section;
   os = lang_output_section_get (output_section);
 
@@ -561,7 +563,7 @@ gld${EMULATION_NAME}_after_allocation (void)
      been generated.  Otherwise the glink .eh_frame CIE won't be
      merged with other CIEs, and worse, the glink .eh_frame FDEs won't
      be listed in .eh_frame_hdr.  */
-  ret = bfd_elf_discard_info (link_info.output_bfd, &link_info);
+  ret = bfd_elf_discard_info (&link_info);
   if (ret < 0)
     {
       einfo (_("%X%P: .eh_frame/.stab edit: %E\n"));

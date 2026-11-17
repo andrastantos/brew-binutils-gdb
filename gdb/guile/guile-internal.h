@@ -1,6 +1,6 @@
 /* Internal header for GDB/Scheme code.
 
-   Copyright (C) 2014-2025 Free Software Foundation, Inc.
+   Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -30,25 +30,18 @@
 #include "objfiles.h"
 #include "top.h"
 
-/* For libguile v2.0.9 and SCM_DEBUG_TYPING_STRICTNESS == 1, SCM_UNPACK(x) is
-   defined as:
-
-     ((scm_t_bits) (0? (*(SCM*)0=(x)): x))
-
-   and for v2.0.10 it's defined as:
-
-     ((scm_t_bits) (0? (*(volatile SCM *)0=(x)): x))
-
-   The volatile was added to avoid a clang warning.
-
-   The latter form causes a Werror=volatile with C++20.
-   This was reported upstream (
-   https://debbugs.gnu.org/cgi/bugreport.cgi?bug=65333 ).
-
-   The former form causes a Werror=sequence-point with gcc 7-14.
-
-   Work around these problem by using SCM_DEBUG_TYPING_STRICTNESS == 0.  */
+/* GCC introduced C++20 support in GCC 8, using -std=c++2a (the name of the
+   C++20 standard before publishing) and __cplusplus 201709L.  In GCC 10,
+   -std=c++20 was added, but __cplusplus stayed at 201709L, and was only
+   changed to the standard 202002L in GCC 11.  Consequently, some C++20
+   features and restrictions need to be tested against the non-standard
+   201709L, otherwise the build with GCC 10 and -std=c++20 will break.  */
+#if __cplusplus >= 201709L
+/* Work around Werror=volatile in SCM_UNPACK for
+   SCM_DEBUG_TYPING_STRICTNESS == 1.  Reported upstream:
+   https://debbugs.gnu.org/cgi/bugreport.cgi?bug=65333 .  */
 #define SCM_DEBUG_TYPING_STRICTNESS 0
+#endif
 #include "libguile.h"
 
 struct block;
@@ -58,7 +51,7 @@ struct symbol;
 
 /* A function to pass to the safe-call routines to ignore things like
    memory errors.  */
-typedef int excp_matcher_func (SCM key);
+using excp_matcher_func = int (SCM key);
 
 /* Scheme variables to define during initialization.  */
 
@@ -155,18 +148,6 @@ struct scheme_integer_constant
   (scm_is_eq ((scm), SCM_BOOL_F) || scm_is_eq ((scm), SCM_BOOL_T))
 #define gdbscm_is_false(scm) scm_is_eq ((scm), SCM_BOOL_F)
 #define gdbscm_is_true(scm) (!gdbscm_is_false (scm))
-
-#ifndef HAVE_SCM_NEW_SMOB
-
-/* Guile <= 2.0.5 did not provide this function, so provide it here.  */
-
-static inline SCM
-scm_new_smob (scm_t_bits tc, scm_t_bits data)
-{
-  SCM_RETURN_NEWSMOB (tc, data);
-}
-
-#endif
 
 /* Function name that is passed around in case an error needs to be reported.
    __func is in C99, but we provide a wrapper "just in case",
@@ -297,7 +278,7 @@ struct objfile;
 
 /* A predicate that returns non-zero if an object is a particular kind
    of gsmob.  */
-typedef int (gsmob_pred_func) (SCM);
+using gsmob_pred_func = int (SCM);
 
 extern scm_t_bits gdbscm_make_smob_type (const char *name, size_t size);
 
@@ -613,7 +594,7 @@ extern struct value *vlscm_convert_value_from_scheme
   (const char *func_name, int obj_arg_pos, SCM obj, SCM *except_scmp,
    struct gdbarch *gdbarch, const struct language_defn *language);
 
-/* stript_lang methods */
+/* script_lang methods */
 
 extern objfile_script_sourcer_func gdbscm_source_objfile_script;
 extern objfile_script_executor_func gdbscm_execute_objfile_script;

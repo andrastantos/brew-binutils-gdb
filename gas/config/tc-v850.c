@@ -1,5 +1,5 @@
 /* tc-v850.c -- Assembler code for the NEC V850
-   Copyright (C) 1996-2025 Free Software Foundation, Inc.
+   Copyright (C) 1996-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -943,8 +943,13 @@ reg_name_search (const struct reg_name *regs,
       /* If the symbol is an alias for another name then use that.
 	 If the symbol is an alias for a number, then return the number.  */
       if (symbol_equated_p (symbolP))
-	name
-	  = S_GET_NAME (symbol_get_value_expression (symbolP)->X_add_symbol);
+	{
+	  offsetT off;
+	  symbolP = symbol_equated_to (symbolP, &off);
+	  if (symbolP == NULL || off != 0)
+	    return -1;
+	  name = S_GET_NAME (symbolP);
+	}
       else if (accept_numbers)
 	{
 	  int reg = S_GET_VALUE (symbolP);

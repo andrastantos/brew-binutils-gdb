@@ -1,5 +1,5 @@
 /* i387-specific utility functions, for the remote server for GDB.
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -336,7 +336,7 @@ i387_cache_to_xsave (struct regcache *regcache, void *buf)
     {
       int xmm0_regnum = find_regno (regcache->tdesc, "xmm0");
 
-      for (i = 0; i < num_xmm_registers; i++) 
+      for (i = 0; i < num_xmm_registers; i++)
 	{
 	  collect_register (regcache, i + xmm0_regnum, raw);
 	  p = fp->xmm_space + i * 16;
@@ -353,7 +353,7 @@ i387_cache_to_xsave (struct regcache *regcache, void *buf)
     {
       int ymm0h_regnum = find_regno (regcache->tdesc, "ymm0h");
 
-      for (i = 0; i < num_xmm_registers; i++) 
+      for (i = 0; i < num_xmm_registers; i++)
 	{
 	  collect_register (regcache, i + ymm0h_regnum, raw);
 	  p = fp->ymmh_space () + i * 16;

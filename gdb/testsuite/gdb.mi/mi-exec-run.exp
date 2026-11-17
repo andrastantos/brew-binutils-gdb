@@ -1,4 +1,4 @@
-# Copyright 2016-2025 Free Software Foundation, Inc.
+# Copyright 2016-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -35,8 +35,8 @@ set have_startup_shell [have_startup_shell]
 standard_testfile mi-start.c
 
 if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
-     untested "could not build mi-exec-run"
-     return -1
+    untested "could not build mi-exec-run"
+    return
 }
 
 # The test proper.  INFTTY_MODE determines whether "set inferior-tty"
@@ -59,7 +59,7 @@ proc test {inftty_mode mi_mode force_fail} {
 	lappend start_ops "separate-mi-tty"
     }
 
-    if [mi_gdb_start $start_ops] {
+    if {[mi_gdb_start $start_ops]} {
 	return
     }
 

@@ -1,5 +1,5 @@
 /* This file is tc-msp430.h
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    Contributed by Dmitry Diky <diwil@mail.ru>
 
@@ -173,5 +173,8 @@ extern bool msp430_allow_local_subtract (expressionS *, expressionS *, segT);
 #define TC_LINKRELAX_FIXUP(seg) ((seg->flags & SEC_CODE) || (seg->flags & SEC_DEBUGGING))
 
 #define DWARF2_ADDR_SIZE(bfd) 4
+
+/* The target supports Object Attributes v1.  */
+#define TC_OBJ_ATTR_v1 1
 
 #endif /* TC_MSP430 */

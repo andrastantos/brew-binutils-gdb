@@ -1,6 +1,6 @@
 /* MI Command Set - output generating routines.
 
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -167,7 +167,8 @@ mi_ui_out::do_text (const char *string)
 }
 
 void
-mi_ui_out::do_message (const ui_file_style &style,
+mi_ui_out::do_message (ui_file_style &current_style,
+		       const ui_file_style &style,
 		       const char *format, va_list args)
 {
 }

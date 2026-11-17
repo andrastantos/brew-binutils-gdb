@@ -110,6 +110,12 @@
    the CoreFoundation framework. */
 #undef HAVE_CFPREFERENCESCOPYAPPVALUE
 
+/* Define if cfsetispeed/cfsetospeed accept arbitrary baud rates. */
+#undef HAVE_CFSETSPEED_ARBITRARY
+
+/* Define to 1 if you have the `clearenv' function. */
+#undef HAVE_CLEARENV
+
 /* Define if compiling support to gdb compile. */
 #undef HAVE_COMPILE
 
@@ -238,14 +244,14 @@
 /* Define if Guile interpreter is being linked in. */
 #undef HAVE_GUILE
 
-/* Define if Guile supports manual finalization. */
-#undef HAVE_GUILE_MANUAL_FINALIZATION
-
 /* Define if you have the iconv() function and it works. */
 #undef HAVE_ICONV
 
 /* Define to 1 if you have the `iconvlist' function. */
 #undef HAVE_ICONVLIST
+
+/* Define to 1 if you have the `init_extended_pair' function. */
+#undef HAVE_INIT_EXTENDED_PAIR
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
@@ -262,8 +268,8 @@
 /* Define if your <locale.h> file defines LC_MESSAGES. */
 #undef HAVE_LC_MESSAGES
 
-/* Define if you have the babeltrace library. */
-#undef HAVE_LIBBABELTRACE
+/* Define to 1 if you have the `atomic' library (-latomic). */
+#undef HAVE_LIBATOMIC
 
 /* Define if libbacktrace is being used. */
 #undef HAVE_LIBBACKTRACE
@@ -421,9 +427,6 @@
 /* Define to 1 if you have the `sbrk' function. */
 #undef HAVE_SBRK
 
-/* Define to 1 if you have the `scm_new_smob' function. */
-#undef HAVE_SCM_NEW_SMOB
-
 /* Define to 1 if you have the `setlocale' function. */
 #undef HAVE_SETLOCALE
 
@@ -516,6 +519,9 @@
 
 /* Define to 1 if `st_blocks' is a member of `struct stat'. */
 #undef HAVE_STRUCT_STAT_ST_BLOCKS
+
+/* Define to 1 if `c_ospeed' is a member of `struct termios'. */
+#undef HAVE_STRUCT_TERMIOS_C_OSPEED
 
 /* Define to 1 if `td_pcb' is a member of `struct thread'. */
 #undef HAVE_STRUCT_THREAD_TD_PCB
@@ -648,9 +654,6 @@
    */
 #undef LT_OBJDIR
 
-/* defined if mdebug format was requested. */
-#undef MDEBUG_FORMAT_AVAILABLE
-
 /* Name of this package. */
 #undef PACKAGE
 
@@ -709,6 +712,9 @@
 
 /* Define if the python directory should be relocated when GDB is moved. */
 #undef PYTHON_PATH_RELOCATABLE
+
+/* Define if GDB should be built against the Python limited C API. */
+#undef Py_LIMITED_API
 
 /* Relocated directory for source files. */
 #undef RELOC_SRCDIR

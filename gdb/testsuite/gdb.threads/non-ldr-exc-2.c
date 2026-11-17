@@ -1,6 +1,6 @@
 /* This testcase is part of GDB, the GNU debugger.
 
-   Copyright 2009-2025 Free Software Foundation, Inc.
+   Copyright 2009-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,6 +26,8 @@ static const char *image;
 static volatile pthread_t main_thread;
 static char *argv1 = "go away";
 
+static volatile int wait_for_exit = 1;
+
 static void *
 thread_execler (void *arg)
 {
@@ -33,6 +35,9 @@ thread_execler (void *arg)
 
   i = pthread_join (main_thread, NULL);
   assert (i == 0);
+
+  while (wait_for_exit)
+    usleep (100 * 1000);
 
   /* Exec ourselves again.  */
   if (execl (image, image, argv1, NULL) == -1) /* break-here */

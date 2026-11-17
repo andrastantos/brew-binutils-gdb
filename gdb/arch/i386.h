@@ -1,4 +1,4 @@
-/* Copyright (C) 2017-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,8 +25,7 @@
    true, create target descriptions for Linux.  If SEGMENTS is true, then
    include the "org.gnu.gdb.i386.segments" feature registers.  */
 
-target_desc *i386_create_target_description (uint64_t xstate_bv,
-					     bool is_linux,
-					     bool segments);
+target_desc_up i386_create_target_description (uint64_t xstate_bv,
+					       bool is_linux, bool segments);
 
 #endif /* GDB_ARCH_I386_H */

@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux Super-H.
 
-   Copyright (C) 2005-2025 Free Software Foundation, Inc.
+   Copyright (C) 2005-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -141,7 +141,7 @@ sh_linux_rt_sigreturn_init (const struct tramp_frame *self,
 /* Instruction patterns.  */
 #define SH_MOVW     0x9305
 #define SH_TRAP     0xc300
-#define SH_OR_R0_R0 0x200b       
+#define SH_OR_R0_R0 0x200b
 
 /* SH sigreturn syscall numbers.  */
 #define SH_NR_SIGRETURN 0x0077

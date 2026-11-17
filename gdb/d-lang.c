@@ -1,6 +1,6 @@
 /* D language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 2005-2025 Free Software Foundation, Inc.
+   Copyright (C) 2005-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -233,13 +233,8 @@ build_d_types (struct gdbarch *gdbarch)
     = init_float_type (alloc, gdbarch_long_double_bit (gdbarch),
 		       "real", gdbarch_long_double_format (gdbarch));
 
-  builtin_d_type->builtin_byte->set_instance_flags
-    (builtin_d_type->builtin_byte->instance_flags ()
-     | TYPE_INSTANCE_FLAG_NOTTEXT);
-
-  builtin_d_type->builtin_ubyte->set_instance_flags
-    (builtin_d_type->builtin_ubyte->instance_flags ()
-     | TYPE_INSTANCE_FLAG_NOTTEXT);
+  builtin_d_type->builtin_byte->set_nottext (true);
+  builtin_d_type->builtin_ubyte->set_nottext (true);
 
   /* Imaginary and complex types.  */
   builtin_d_type->builtin_ifloat

@@ -1,5 +1,5 @@
 /* nl_types.h for DJGPP.
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
    Written by Eli Zaretskii.
 
    This file is part of GDB.
@@ -20,6 +20,6 @@
 #ifndef GDB_CONFIG_DJGPP_NL_TYPES_H
 #define GDB_CONFIG_DJGPP_NL_TYPES_H
 
-typedef int nl_item;
+using nl_item = int;
 
 #endif /* GDB_CONFIG_DJGPP_NL_TYPES_H */

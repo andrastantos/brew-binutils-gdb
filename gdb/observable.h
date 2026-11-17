@@ -1,6 +1,6 @@
 /* Observers
 
-   Copyright (C) 2016-2025 Free Software Foundation, Inc.
+   Copyright (C) 2016-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -112,7 +112,7 @@ extern observable<program_space *, const solib &/* solib */,
 		  bool /* still_in_use */, bool /* silent */> solib_unloaded;
 
 /* The symbol file specified by OBJFILE has been loaded.  */
-extern observable<struct objfile */* objfile */> new_objfile;
+extern observable<struct objfile &/* objfile */> new_objfile;
 
 /*  All objfiles from PSPACE were removed.  */
 extern observable<program_space */* pspace */> all_objfiles_removed;
@@ -259,6 +259,12 @@ extern observable <program_space */* pspace */> new_program_space;
 extern observable <program_space */* pspace */> free_program_space;
 
 extern observable<bool /* enabled */> tui_enabled;
+
+/* The core file loaded into the program space inferior INF has changed.
+   The process of changing has completed, i.e. when unloading, the unload
+   is now complete.  When loading a new core file, the load is complete,
+   shared libraries have been loaded, registers and threads read in, etc.  */
+extern observable<inferior */* inf */> core_file_changed;
 
 } /* namespace observers */
 

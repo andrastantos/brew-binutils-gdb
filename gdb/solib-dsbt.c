@@ -1,5 +1,5 @@
 /* Handle TIC6X (DSBT) shared libraries for GDB, the GNU Debugger.
-   Copyright (C) 2010-2025 Free Software Foundation, Inc.
+   Copyright (C) 2010-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,6 +27,7 @@
 #include "solib-dsbt.h"
 #include "elf/common.h"
 #include "cli/cli-cmds.h"
+#include "gdbcore.h"
 
 #define GOT_MODULE_OFFSET 4
 
@@ -41,9 +42,9 @@ enum { TIC6X_PTR_SIZE = 4 };
 /* External versions; the size and alignment of the fields should be
    the same as those on the target.  When loaded, the placement of
    the bits in each field will be the same as on the target.  */
-typedef gdb_byte ext_Elf32_Half[2];
-typedef gdb_byte ext_Elf32_Addr[4];
-typedef gdb_byte ext_Elf32_Word[4];
+using ext_Elf32_Half = gdb_byte[2];
+using ext_Elf32_Addr = gdb_byte[4];
+using ext_Elf32_Word = gdb_byte[4];
 
 struct ext_elf32_dsbt_loadseg
 {
@@ -98,7 +99,7 @@ struct int_elf32_dsbt_loadmap
 
 /* External link_map and elf32_dsbt_loadaddr struct definitions.  */
 
-typedef gdb_byte ext_ptr[4];
+using ext_ptr = gdb_byte[4];
 
 struct ext_elf32_dsbt_loadaddr
 {
@@ -144,13 +145,19 @@ make_dsbt_solib_ops (program_space *pspace)
 
 struct lm_info_dsbt final : public lm_info
 {
+  explicit lm_info_dsbt (int_elf32_dsbt_loadmap *map)
+    : map (map)
+  {}
+
+  DISABLE_COPY_AND_ASSIGN (lm_info_dsbt);
+
   ~lm_info_dsbt ()
   {
     xfree (this->map);
   }
 
   /* The loadmap, digested into an easier to use form.  */
-  int_elf32_dsbt_loadmap *map = NULL;
+  int_elf32_dsbt_loadmap *map;
 };
 
 /* Per pspace dsbt specific data.  */
@@ -191,11 +198,7 @@ static const registry<program_space>::key<dsbt_info> solib_dsbt_pspace_data;
 static dsbt_info *
 get_dsbt_info (program_space *pspace)
 {
-  dsbt_info *info = solib_dsbt_pspace_data.get (pspace);
-  if (info != nullptr)
-    return info;
-
-  return solib_dsbt_pspace_data.emplace (pspace);
+  return &solib_dsbt_pspace_data.try_emplace (pspace);
 }
 
 
@@ -543,7 +546,7 @@ dsbt_solib_ops::current_sos () const
      solib_create_inferior_hook.   (See post_create_inferior in
      infcmd.c.)  */
   if (info->main_executable_lm_info == 0
-      && current_program_space->core_bfd () != nullptr)
+      && get_inferior_core_bfd (current_inferior ()) != nullptr)
     dsbt_relocate_main_executable ();
 
   /* Locate the address of the first link map struct.  */
@@ -604,9 +607,6 @@ dsbt_solib_ops::current_sos () const
 	      break;
 	    }
 
-	  auto &sop = sos.emplace_back (*this);
-	  auto li = std::make_unique<lm_info_dsbt> ();
-	  li->map = loadmap;
 	  /* Fetch the name.  */
 	  addr = extract_unsigned_integer (lm_buf.l_name,
 					   sizeof (lm_buf.l_name),
@@ -621,12 +621,12 @@ dsbt_solib_ops::current_sos () const
 	      if (solib_dsbt_debug)
 		gdb_printf (gdb_stdlog, "current_sos: name = %s\n",
 			    name_buf.get ());
-
-	      sop.name = name_buf.get ();
-	      sop.original_name = sop.name;
 	    }
 
-	  sop.lm_info = std::move (li);
+	  sos.emplace_back (std::make_unique<lm_info_dsbt> (loadmap),
+			    name_buf != nullptr ? name_buf.get () : "",
+			    name_buf != nullptr ? name_buf.get () : "",
+			    *this);
 	}
       else
 	{
@@ -756,7 +756,7 @@ enable_break (void)
 	      (tmp_bfd.get (),
 	       [] (const asymbol *sym)
 	       {
-		 return strcmp (sym->name, "_dl_debug_state") == 0;
+		 return streq (sym->name, "_dl_debug_state");
 	       }));
 
       if (addr != 0)
@@ -809,11 +809,10 @@ dsbt_relocate_main_executable (void)
   ldm = info->exec_loadmap;
 
   delete info->main_executable_lm_info;
-  info->main_executable_lm_info = new lm_info_dsbt;
-  info->main_executable_lm_info->map = ldm;
+  info->main_executable_lm_info = new lm_info_dsbt (ldm);
 
   objfile *objf = current_program_space->symfile_object_file;
-  section_offsets new_offsets (objf->section_offsets.size ());
+  std::vector<CORE_ADDR> new_offsets (objf->section_offsets.size ());
   changed = 0;
 
   for (obj_section &osect : objf->sections ())

@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright (C) 2006-2025 Free Software Foundation, Inc.
+#   Copyright (C) 2006-2026 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -235,14 +235,14 @@ spu_elf_load_ovl_mgr (void)
 		    if (!lang_output_section_find (oname))
 		      {
 			lang_output_section_statement_type *os = NULL;
-			char *p = strchr (oname + 1, '.');
+			const char *p = strchr (oname + 1, '.');
 			if (p != NULL)
 			  {
 			    size_t len = p - oname;
-			    p = memcpy (xmalloc (len + 1), oname, len);
-			    p[len] = '\0';
-			    os = lang_output_section_find (p);
-			    free (p);
+			    char *np = memcpy (xmalloc (len + 1), oname, len);
+			    np[len] = '\0';
+			    os = lang_output_section_find (np);
+			    free (np);
 			  }
 			if (os != NULL)
 			  oname = os->name;

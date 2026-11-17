@@ -1,5 +1,5 @@
 /* Interface to C preprocessor macro tables for GDB.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Red Hat, Inc.
 
    This file is part of GDB.
@@ -291,7 +291,7 @@ struct macro_definition
   struct macro_table *table;
 
   /* What kind of macro it is.  */
-  ENUM_BITFIELD (macro_kind) kind : 1;
+  macro_kind kind : 1;
 
   /* If `kind' is `macro_function_like', the number of arguments it
      takes, and their names.  The names, and the array of pointers to
@@ -335,10 +335,10 @@ struct macro_source_file *macro_definition_location
    is the name of the macro, and DEFINITION is the definition.  SOURCE
    is the file at the start of the include path, and LINE is the line
    number of the SOURCE file where the macro was defined.  */
-typedef void (macro_callback_fn) (const char *name,
-				  const struct macro_definition *definition,
-				  struct macro_source_file *source,
-				  int line);
+using macro_callback_fn = void (const char *name,
+				const struct macro_definition *definition,
+				struct macro_source_file *source,
+				int line);
 
 /* Call the callable FN for each macro in the macro table TABLE.  */
 void macro_for_each (struct macro_table *table,

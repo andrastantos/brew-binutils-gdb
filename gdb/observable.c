@@ -1,6 +1,6 @@
 /* GDB Notifications to Observers.
 
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -76,6 +76,7 @@ DEFINE_OBSERVABLE (target_post_wait);
 DEFINE_OBSERVABLE (new_program_space);
 DEFINE_OBSERVABLE (free_program_space);
 DEFINE_OBSERVABLE (tui_enabled);
+DEFINE_OBSERVABLE (core_file_changed);
 
 } /* namespace observers */
 } /* namespace gdb */

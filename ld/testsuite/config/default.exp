@@ -1,5 +1,5 @@
 # Basic expect script for LD Regression Tests
-#   Copyright (C) 1993-2025 Free Software Foundation, Inc.
+#   Copyright (C) 1993-2026 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -183,7 +183,7 @@ if {! [info exists env(CCC_OVERRIDE_OPTIONS)]} {
 # installed, but to the O32 ABI in the build tree, because of some
 # specs-file hacks.  Make sure we use an ABI that is compatible with
 # the one we expect.
-if {[istarget mips64*-*-linux*] &&
+if {[istarget mips64*-*-linux*] && ![istarget *abi64] &&
     (![board_info [target_info name] exists multilib_flags] ||
      ![string match "*-mabi" [board_info [target_info name] multilib_flags]])
    } {
@@ -399,6 +399,14 @@ if { ![info exists NO_MEMORY_SEAL_LDFLAGS] } then {
     }
 }
 
+if { ![info exists NO_ROSEGMENT_LDFLAGS] } then {
+    if { [check_rosegment_support] } then {
+	set NO_ROSEGMENT_LDFLAGS "--no-rosegment"
+    } else {
+	set NO_ROSEGMENT_LDFLAGS {}
+    }
+}
+
 # Set LD_CLASS to "64bit" for a 64-bit *host* linker.
 if { ![info exists LD_CLASS] } then {
     set REAL_LD [findfile $base_dir/.libs/ld-new .libs/ld-new $LD [transform ld]]
@@ -458,10 +466,17 @@ if { ![info exists NOPIE_CFLAGS] || ![info exists NOPIE_LDFLAGS] } then {
 
 if { ![info exists DIRECT_EXTERN_ACCESS_CFLAGS] } then {
     set DIRECT_EXTERN_ACCESS_CFLAGS ""
-    if [compiler_supports "-mdirect-extern-access"] {
-	set DIRECT_EXTERN_ACCESS_CFLAGS "-mdirect-extern-access"
-    } elseif [compiler_supports "-fdirect-access-external-data"] {
-	set DIRECT_EXTERN_ACCESS_CFLAGS "-fdirect-access-external-data"
+    set NO_DIRECT_EXTERN_ACCESS_CFLAGS ""
+    # Exclude LoongArch since -mdirect-extern-access on LoongArch works
+    # only without dynamic linker.
+    if { ![istarget loongarch*-*-*] } {
+	if [compiler_supports "-mdirect-extern-access"] {
+	    set DIRECT_EXTERN_ACCESS_CFLAGS "-mdirect-extern-access"
+	    set NO_DIRECT_EXTERN_ACCESS_CFLAGS "-mno-direct-extern-access"
+	} elseif [compiler_supports "-fdirect-access-external-data"] {
+	    set DIRECT_EXTERN_ACCESS_CFLAGS "-fdirect-access-external-data"
+	    set NO_DIRECT_EXTERN_ACCESS_CFLAGS "-fno-direct-access-external-data"
+	}
     }
 }
 
@@ -534,6 +549,22 @@ if { [istarget alpha*-*-*vms*] } {
 	append LDFLAGS " -Ltmpdir"
 	unset i missing_libs
     }
+    unset f src
+}
+
+# Provide dummy milli.a that hppa64-hpux-ld always loads
+if { [istarget hppa*64-*-hpux*] } {
+    verbose -log "creating dummy milli.a archive"
+    remote_exec host "mkdir -p tmpdir/hppa"
+    set src tmpdir/hppa/empty.s
+    set f [open $src "w"]
+    close $f
+    if [is_remote host] {
+	set src [remote_download host $src]
+    }
+    ld_assemble $as $src tmpdir/hppa/empty.o
+    ar_simple_create $ar {} tmpdir/hppa/milli.a tmpdir/hppa/empty.o
+    append LDFLAGS " -Ltmpdir/hppa"
     unset f src
 }
 

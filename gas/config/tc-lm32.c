@@ -1,5 +1,5 @@
 /* tc-lm32.c - Lattice Mico32 assembler.
-   Copyright (C) 2008-2025 Free Software Foundation, Inc.
+   Copyright (C) 2008-2026 Free Software Foundation, Inc.
    Contributed by Jon Beniston <jon@beniston.com>
 
    This file is part of GAS, the GNU Assembler.
@@ -318,9 +318,9 @@ md_cgen_lookup_reloc (const CGEN_INSN *insn ATTRIBUTE_UNUSED,
     case LM32_OPERAND_GOT16:
       return BFD_RELOC_LM32_16_GOT;
     case LM32_OPERAND_GOTOFFHI16:
-      return BFD_RELOC_LM32_GOTOFF_HI16;
+      return BFD_RELOC_HI16_GOTOFF;
     case LM32_OPERAND_GOTOFFLO16:
-      return BFD_RELOC_LM32_GOTOFF_LO16;
+      return BFD_RELOC_LO16_GOTOFF;
     case LM32_OPERAND_GP16:
       return BFD_RELOC_GPREL16;
     case LM32_OPERAND_LO16:

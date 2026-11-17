@@ -1,6 +1,6 @@
 /* This testcase is part of GDB, the GNU debugger.
 
-   Copyright 2017-2025 Free Software Foundation, Inc.
+   Copyright 2017-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -84,7 +84,7 @@ read_size8twice (void)
 
   /* Setting a breakpoint on an instruction after an instruction triggering a
      watchpoint makes it ambiguous which one will be reported.
-     Insert a dummy instruction inbetween to make sure the watchpoint gets
+     Insert a dummy instruction in between to make sure the watchpoint gets
      reported.  */
   volatile_dummy = 1;
 

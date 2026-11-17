@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Free Software Foundation, Inc.
+# Copyright (C) 2025-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# Check the the output of gdb.execute can be styled or not depending
+# Check the output of gdb.execute can be styled or not depending
 # on the value of the third argument passed to gdb.execute.
 
 require allow_python_tests
@@ -60,8 +60,7 @@ proc test_gdb_execute_styling {} {
     # Two possible outputs, BASIC_RE, the unstyled output text, or
     # STYLED_RE, the same things, but with styling applied.
     set text "\"version\" style"
-    set styled_text \
-	[style "\"" version][style "version" version][style "\" style" version]
+    set styled_text [style $text version]
     set basic_re "The $text foreground color is: \[^\r\n\]+"
     set styled_re "The $styled_text foreground color is: \[^\r\n\]+"
 

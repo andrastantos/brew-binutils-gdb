@@ -1,4 +1,4 @@
-# Copyright 2017-2025 Free Software Foundation, Inc.
+# Copyright 2017-2026 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,21 +21,19 @@ require allow_fork_tests
 standard_testfile
 
 if {[build_executable "failed to build" $testfile $srcfile {debug}]} {
-    return -1
+    return
 }
 
 # The test proper.
 
 proc do_test {} {
-    global binfile
     global gdb_prompt
 
-    clean_restart
-    gdb_load $binfile
+    clean_restart $::testfile
 
     gdb_test "set follow-fork-mode child" ".*"
 
-    if ![runto "daemon_main"] {
+    if {![runto "daemon_main"]} {
 	return
     }
 

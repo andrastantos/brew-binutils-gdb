@@ -1,4 +1,4 @@
-/* Copyright (C) 2020-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -741,8 +741,8 @@ template <typename T>
 int get_phdr_phnum_from_proc_auxv (const pid_t pid,
 				   CORE_ADDR *phdr_memaddr, int *num_phdr)
 {
-  typedef typename std::conditional<sizeof(T) == sizeof(int64_t),
-				    Aux64Info, Aux32Info>::type auxv_type;
+  using auxv_type = typename std::conditional<sizeof(T) == sizeof(int64_t),
+					      Aux64Info, Aux32Info>::type;
   const size_t auxv_size = sizeof (auxv_type);
   const size_t auxv_buf_size = 128 * sizeof (auxv_type);
 
@@ -776,8 +776,8 @@ int get_phdr_phnum_from_proc_auxv (const pid_t pid,
 
   if (*phdr_memaddr == 0 || *num_phdr == 0)
     {
-      warning ("Unexpected missing AT_PHDR and/or AT_PHNUM: "
-	       "phdr_memaddr = %s, phdr_num = %d",
+      warning (_("Unexpected missing AT_PHDR and/or AT_PHNUM: "
+		 "phdr_memaddr = %s, phdr_num = %d"),
 	       core_addr_to_string (*phdr_memaddr), *num_phdr);
       return 2;
     }
@@ -791,8 +791,8 @@ template <typename T>
 static CORE_ADDR
 get_dynamic (const pid_t pid)
 {
-  typedef typename std::conditional<sizeof(T) == sizeof(int64_t),
-				    Elf64_Phdr, Elf32_Phdr>::type phdr_type;
+  using phdr_type = typename std::conditional<sizeof(T) == sizeof(int64_t),
+					      Elf64_Phdr, Elf32_Phdr>::type;
   const int phdr_size = sizeof (phdr_type);
 
   CORE_ADDR phdr_memaddr;
@@ -853,8 +853,8 @@ template <typename T>
 static CORE_ADDR
 get_r_debug (const pid_t pid)
 {
-  typedef typename std::conditional<sizeof(T) == sizeof(int64_t),
-				    Elf64_Dyn, Elf32_Dyn>::type dyn_type;
+  using dyn_type = typename std::conditional<sizeof(T) == sizeof(int64_t),
+					     Elf64_Dyn, Elf32_Dyn>::type;
   const int dyn_size = sizeof (dyn_type);
   unsigned char buf[sizeof (dyn_type)];  /* The larger of the two.  */
   CORE_ADDR map = -1;
@@ -1029,7 +1029,7 @@ netbsd_qxfer_libraries_svr4 (const pid_t pid, const char *annex,
 	{
 	  CORE_ADDR map_offset = r_debug + lmo->r_map_offset;
 	  if (read_one_ptr (pid, map_offset, &lm_addr, ptr_size) != 0)
-	    warning ("unable to read r_map from %s",
+	    warning (_("unable to read r_map from %s"),
 		     core_addr_to_string (map_offset));
 	}
     }
@@ -1050,7 +1050,7 @@ netbsd_qxfer_libraries_svr4 (const pid_t pid, const char *annex,
     {
       if (lm_prev != l_prev)
 	{
-	  warning ("Corrupted shared library list: 0x%lx != 0x%lx",
+	  warning (_("Corrupted shared library list: 0x%lx != 0x%lx"),
 		   (long) lm_prev, (long) l_prev);
 	  break;
 	}
@@ -1134,13 +1134,13 @@ elf_64_file_p (const char *file)
     perror_with_name (("read"));
   gdb::close (fd);
   if (ret != sizeof (header))
-    error ("Cannot read ELF file header: %s", file);
+    error (_("Cannot read ELF file header: %s"), file);
 
   if (header.e_ident[EI_MAG0] != ELFMAG0
       || header.e_ident[EI_MAG1] != ELFMAG1
       || header.e_ident[EI_MAG2] != ELFMAG2
       || header.e_ident[EI_MAG3] != ELFMAG3)
-    error ("Unrecognized ELF file header: %s", file);
+    error (_("Unrecognized ELF file header: %s"), file);
 
   return header.e_ident[EI_CLASS] == ELFCLASS64;
 }

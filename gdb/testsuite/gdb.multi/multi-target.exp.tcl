@@ -1,4 +1,4 @@
-# Copyright 2017-2025 Free Software Foundation, Inc.
+# Copyright 2017-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@ standard_testfile multi-target.c
 # Keep a list of (inferior ID, spawn ID).
 set server_spawn_ids [list]
 
-proc connect_target_extended_remote {binfile num} {
+proc connect_target_extended_remote {num} {
     set res [gdbserver_start "--multi" ""]
     global server_spawn_ids server_spawn_id
     lappend server_spawn_ids $num $server_spawn_id
@@ -49,11 +49,11 @@ proc add_inferior {num target binfile {gcorefile ""}} {
     }
 
     if {$target == "extended-remote"} {
-	if {[connect_target_extended_remote $binfile $num]} {
+	if {[connect_target_extended_remote $num]} {
 	    return 0
 	}
     }
-    if ![runto "all_started"] then {
+    if { ![runto "all_started"] } {
 	return 0
     }
     delete_breakpoints
@@ -67,7 +67,7 @@ proc prepare_core {} {
 
     clean_restart ${::testfile}
 
-    if ![runto all_started] then {
+    if { ![runto all_started] } {
 	return -1
     }
 
@@ -123,13 +123,13 @@ proc setup {non-stop {multi_process ""}} {
 
     gdb_test_no_output "set non-stop ${non-stop}"
 
-    if {${multi_process} ne ""} then {
+    if {${multi_process} ne ""} {
 	gdb_test \
 	    "set remote multiprocess-feature-packet $multi_process" \
 	    "Support for the 'multiprocess-feature' packet on future remote targets is set to \"${multi_process}\"."
     }
 
-    if ![runto all_started] then {
+    if { ![runto all_started] } {
 	return 0
     }
 

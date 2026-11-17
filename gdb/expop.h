@@ -1,6 +1,6 @@
 /* Definitions for expressions in GDB
 
-   Copyright (C) 2020-2025 Free Software Foundation, Inc.
+   Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -275,6 +275,12 @@ check_objfile (enum_flags<T> val, struct objfile *objfile)
   return false;
 }
 
+static inline bool
+check_objfile (type_instance_flags val, struct objfile *objfile)
+{
+  return false;
+}
+
 template<typename T>
 static inline bool
 check_objfile (const std::vector<T> &collection, struct objfile *objfile)
@@ -306,6 +312,25 @@ dump_for_expression (struct ui_file *stream, int depth,
     gdb_printf (stream, _("%*snullptr\n"), depth, "");
   else
     op->dump (stream, depth);
+}
+
+/* If evaluating with noside == EVAL_AVOID_SIDE_EFFECTS, we are essentially
+   interested in the type of ARG.  However, if ARG is of reference type,
+   this would give us a memory value that would cause a failure if GDB
+   attempts to access the contents.  Convert to the target type to avoid
+   such problems.  */
+
+static value *
+convert_reference_to_target_type (value *arg, enum noside noside)
+{
+  struct type *type = check_typedef (arg->type ());
+  if (noside == EVAL_AVOID_SIDE_EFFECTS && TYPE_IS_REFERENCE (type))
+    {
+      struct type *target_type = check_typedef (type->target_type ());
+      return value::zero (target_type, not_lval);
+    }
+
+  return arg;
 }
 
 extern void dump_for_expression (struct ui_file *stream, int depth,
@@ -546,7 +571,7 @@ private:
 /* A floating-point constant.  The constant is encoded in the target
    format.  */
 
-typedef std::array<gdb_byte, 16> float_data;
+using float_data = std::array<gdb_byte, 16>;
 
 /* An operation that holds a floating-point constant of a given
    type.
@@ -953,7 +978,7 @@ public:
     struct value *val
       = std::get<0> (m_storage)->evaluate (nullptr, exp, noside);
 
-    if (value_logical_not (val))
+    if (noside != EVAL_AVOID_SIDE_EFFECTS && value_logical_not (val))
       return std::get<2> (m_storage)->evaluate (nullptr, exp, noside);
     return std::get<1> (m_storage)->evaluate (nullptr, exp, noside);
   }
@@ -1187,6 +1212,10 @@ public:
       = std::get<0> (m_storage)->evaluate_with_coercion (exp, noside);
     value *rhs
       = std::get<1> (m_storage)->evaluate_with_coercion (exp, noside);
+
+    lhs = convert_reference_to_target_type (lhs, noside);
+    rhs = convert_reference_to_target_type (rhs, noside);
+
     return eval_op_add (expect_type, exp, noside, lhs, rhs);
   }
 
@@ -1223,6 +1252,10 @@ public:
       = std::get<0> (m_storage)->evaluate_with_coercion (exp, noside);
     value *rhs
       = std::get<1> (m_storage)->evaluate_with_coercion (exp, noside);
+
+    lhs = convert_reference_to_target_type (lhs, noside);
+    rhs = convert_reference_to_target_type (rhs, noside);
+
     return eval_op_sub (expect_type, exp, noside, lhs, rhs);
   }
 
@@ -1244,10 +1277,10 @@ protected:
   }
 };
 
-typedef struct value *binary_ftype (struct type *expect_type,
-				    struct expression *exp,
-				    enum noside noside, enum exp_opcode op,
-				    struct value *arg1, struct value *arg2);
+using binary_ftype = struct value * (struct type *expect_type,
+				     struct expression *exp,
+				     enum noside noside, enum exp_opcode op,
+				     struct value *arg1, struct value *arg2);
 
 template<enum exp_opcode OP, binary_ftype FUNC>
 class binop_operation
@@ -1265,6 +1298,10 @@ public:
       = std::get<0> (m_storage)->evaluate (nullptr, exp, noside);
     value *rhs
       = std::get<1> (m_storage)->evaluate (nullptr, exp, noside);
+
+    lhs = convert_reference_to_target_type (lhs, noside);
+    rhs = convert_reference_to_target_type (rhs, noside);
+
     return FUNC (expect_type, exp, noside, OP, lhs, rhs);
   }
 
@@ -1340,6 +1377,10 @@ public:
     value *rhs
       = std::get<1> (this->m_storage)->evaluate (lhs->type (), exp,
 						 noside);
+
+    lhs = convert_reference_to_target_type (lhs, noside);
+    rhs = convert_reference_to_target_type (rhs, noside);
+
     return FUNC (expect_type, exp, noside, OP, lhs, rhs);
   }
 };
@@ -1415,10 +1456,10 @@ protected:
     override;
 };
 
-typedef struct value *unary_ftype (struct type *expect_type,
-				   struct expression *exp,
-				   enum noside noside, enum exp_opcode op,
-				   struct value *arg1);
+using unary_ftype = struct value * (struct type *expect_type,
+				    struct expression *exp,
+				    enum noside noside, enum exp_opcode op,
+				    struct value *arg1);
 
 /* Base class for unary operations.  */
 template<enum exp_opcode OP, unary_ftype FUNC>
@@ -1434,6 +1475,7 @@ public:
 		   enum noside noside) override
   {
     value *val = std::get<0> (m_storage)->evaluate (nullptr, exp, noside);
+    val = convert_reference_to_target_type (val, noside);
     return FUNC (expect_type, exp, noside, OP, val);
   }
 
@@ -2058,7 +2100,7 @@ protected:
     override;
 };
 
-typedef value *cxx_cast_ftype (struct type *, value *);
+using cxx_cast_ftype = value * (struct type *, value *);
 
 /* This implements dynamic_cast and reinterpret_cast.  static_cast and
    const_cast are handled by the ordinary case operations.  */

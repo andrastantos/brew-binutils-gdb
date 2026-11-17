@@ -1,6 +1,6 @@
 /* Displaced stepping related things.
 
-   Copyright (C) 2020-2025 Free Software Foundation, Inc.
+   Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -61,7 +61,7 @@ displaced_step_prepare_status_str (displaced_step_prepare_status status)
     return "OK";
 
   case DISPLACED_STEP_PREPARE_STATUS_CANT:
-    return "CANT";
+    return "CANT"; /* codespell:ignore cant.  */
 
   case DISPLACED_STEP_PREPARE_STATUS_UNAVAILABLE:
     return "UNAVAILABLE";

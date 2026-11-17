@@ -1,5 +1,5 @@
 /* Helper routines for C++ support in GDB.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
    Namespace support contributed by David Carlton.
@@ -81,7 +81,7 @@ extern gdb::unique_xmalloc_ptr<char> cp_canonicalize_string
 extern gdb::unique_xmalloc_ptr<char> cp_canonicalize_string_no_typedefs
   (const char *string);
 
-typedef const char *(canonicalization_ftype) (struct type *, void *);
+using canonicalization_ftype = const char * (struct type *, void *);
 
 extern gdb::unique_xmalloc_ptr<char> cp_canonicalize_string_full
   (const char *string, canonicalization_ftype *finder, void *data);
@@ -160,9 +160,6 @@ extern struct block_symbol
 			   const char *nested_name,
 			   const struct block *block,
 			   const domain_search_flags domain);
-
-struct type *cp_lookup_transparent_type (const char *name,
-					 domain_search_flags flags);
 
 /* See description in cp-namespace.c.  */
 

@@ -1,5 +1,5 @@
 /* dwarf2dbg.c - DWARF2 debug support
-   Copyright (C) 1999-2025 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
    Contributed by David Mosberger-Tang <davidm@hpl.hp.com>
 
    This file is part of GAS, the GNU Assembler.
@@ -1199,8 +1199,11 @@ dwarf2_directive_filename (void)
 
   filename = demand_copy_C_string (&filename_len);
   if (filename == NULL)
-    /* demand_copy_C_string will have already generated an error message.  */
-    return NULL;
+    {
+      /* demand_copy_C_string will have already generated an error.  */
+      ignore_rest_of_line ();
+      return NULL;
+    }
 
   /* For DWARF-5 support we also accept:
      .file <NUM> ["<dir>"] "<file>" [md5 <NUM>]  */
@@ -1212,7 +1215,10 @@ dwarf2_directive_filename (void)
 	  dirname = filename;
 	  filename = demand_copy_C_string (&filename_len);
 	  if (filename == NULL)
-	    return NULL;
+	    {
+	      ignore_rest_of_line ();
+	      return NULL;
+	    }
 	  SKIP_WHITESPACE ();
 	}
 
@@ -3058,9 +3064,14 @@ out_debug_str (segT str_seg, symbolS **name_sym, symbolS **comp_dir_sym,
 #endif
       free (dirname);
     }
-  len = strlen (files[first_file].filename) + 1;
-  p = frag_more (len);
-  memcpy (p, files[first_file].filename, len);
+  if (files[first_file].filename)
+    {
+      len = strlen (files[first_file].filename) + 1;
+      p = frag_more (len);
+      memcpy (p, files[first_file].filename, len);
+    }
+  else
+    frag_append_1_char (0);
 
   /* DW_AT_comp_dir */
   *comp_dir_sym = symbol_temp_new_now_octets ();

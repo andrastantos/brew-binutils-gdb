@@ -1,6 +1,6 @@
 /* GDB target debugging macros
 
-   Copyright (C) 2014-2025 Free Software Foundation, Inc.
+   Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -171,12 +171,8 @@ target_debug_print_const_std_vector_target_section_p
 { return host_address_to_string (vec->data ()); }
 
 static std::string
-target_debug_print_void_p (void *p)
-{ return host_address_to_string (p); }
-
-static std::string
 target_debug_print_find_memory_region_ftype (find_memory_region_ftype func)
-{ return host_address_to_string (func); }
+{ return "<function_view>"; }
 
 static std::string
 target_debug_print_bfd_p (bfd *bfd)
@@ -184,6 +180,10 @@ target_debug_print_bfd_p (bfd *bfd)
 
 static std::string
 target_debug_print_std_vector_mem_region (const std::vector<mem_region> &vec)
+{ return host_address_to_string (vec.data ()); }
+
+static std::string
+target_debug_print_std_vector_CORE_ADDR (const std::vector<CORE_ADDR> &vec)
 { return host_address_to_string (vec.data ()); }
 
 static std::string

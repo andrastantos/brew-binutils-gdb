@@ -2,7 +2,7 @@
    Written by Fred Fish <fnf@cygnus.com>
    Rewritten by Jim Blandy <jimb@cygnus.com>
 
-   Copyright (C) 1999-2025 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -133,7 +133,7 @@
    Mind you, looking at the wall clock, the same GDB debugging GDB
    showed only marginal speed up (0.780 vs 0.773s).  Seems GDB is too
    busy doing something else :-(
-  
+
 */
 
 namespace gdb {

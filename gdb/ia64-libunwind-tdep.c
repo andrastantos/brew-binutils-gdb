@@ -1,6 +1,6 @@
 /* Frame unwinder for ia64 frames using the libunwind library.
 
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
    Written by Jeff Johnston, contributed by Red Hat Inc.
 
@@ -58,32 +58,32 @@ static int libunwind_initialized;
 static const registry<gdbarch>::key<libunwind_descr> libunwind_descr_handle;
 
 /* Required function pointers from libunwind.  */
-typedef int (unw_get_reg_p_ftype) (unw_cursor_t *, unw_regnum_t, unw_word_t *);
+using unw_get_reg_p_ftype = int (unw_cursor_t *, unw_regnum_t, unw_word_t *);
 static unw_get_reg_p_ftype *unw_get_reg_p;
-typedef int (unw_get_fpreg_p_ftype) (unw_cursor_t *, unw_regnum_t,
-				     unw_fpreg_t *);
+using unw_get_fpreg_p_ftype = int (unw_cursor_t *, unw_regnum_t,
+				   unw_fpreg_t *);
 static unw_get_fpreg_p_ftype *unw_get_fpreg_p;
-typedef int (unw_get_saveloc_p_ftype) (unw_cursor_t *, unw_regnum_t,
-				       unw_save_loc_t *);
+using unw_get_saveloc_p_ftype = int (unw_cursor_t *, unw_regnum_t,
+				     unw_save_loc_t *);
 static unw_get_saveloc_p_ftype *unw_get_saveloc_p;
-typedef int (unw_is_signal_frame_p_ftype) (unw_cursor_t *);
+using unw_is_signal_frame_p_ftype = int (unw_cursor_t *);
 static unw_is_signal_frame_p_ftype *unw_is_signal_frame_p;
-typedef int (unw_step_p_ftype) (unw_cursor_t *);
+using unw_step_p_ftype = int (unw_cursor_t *);
 static unw_step_p_ftype *unw_step_p;
-typedef int (unw_init_remote_p_ftype) (unw_cursor_t *, unw_addr_space_t,
-				       void *);
+using unw_init_remote_p_ftype = int (unw_cursor_t *, unw_addr_space_t,
+				     void *);
 static unw_init_remote_p_ftype *unw_init_remote_p;
-typedef unw_addr_space_t (unw_create_addr_space_p_ftype) (unw_accessors_t *,
-							  int);
+using unw_create_addr_space_p_ftype
+  = unw_addr_space_t (unw_accessors_t *, int);
 static unw_create_addr_space_p_ftype *unw_create_addr_space_p;
-typedef void (unw_destroy_addr_space_p_ftype) (unw_addr_space_t);
+using unw_destroy_addr_space_p_ftype = void (unw_addr_space_t);
 static unw_destroy_addr_space_p_ftype *unw_destroy_addr_space_p;
-typedef int (unw_search_unwind_table_p_ftype) (unw_addr_space_t, unw_word_t,
-					       unw_dyn_info_t *,
-					       unw_proc_info_t *, int, void *);
+using unw_search_unwind_table_p_ftype
+  = int (unw_addr_space_t, unw_word_t, unw_dyn_info_t *,
+	 unw_proc_info_t *, int, void *);
 static unw_search_unwind_table_p_ftype *unw_search_unwind_table_p;
-typedef unw_word_t (unw_find_dyn_list_p_ftype) (unw_addr_space_t,
-						unw_dyn_info_t *, void *);
+using unw_find_dyn_list_p_ftype = unw_word_t (unw_addr_space_t,
+					      unw_dyn_info_t *, void *);
 static unw_find_dyn_list_p_ftype *unw_find_dyn_list_p;
 
 
@@ -126,10 +126,7 @@ static const char *find_dyn_list_name = STRINGIFY(UNW_OBJ(find_dyn_list));
 static struct libunwind_descr *
 libunwind_descr (struct gdbarch *gdbarch)
 {
-  struct libunwind_descr *result = libunwind_descr_handle.get (gdbarch);
-  if (result == nullptr)
-    result = libunwind_descr_handle.emplace (gdbarch);
-  return result;
+  return &libunwind_descr_handle.try_emplace (gdbarch);
 }
 
 void
@@ -158,7 +155,6 @@ libunwind_frame_cache (const frame_info_ptr &this_frame, void **this_cache)
   unw_addr_space_t as;
   unw_word_t fp;
   unw_regnum_t uw_sp_regnum;
-  struct libunwind_frame_cache *cache;
   struct libunwind_descr *descr;
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
   int ret;
@@ -167,7 +163,7 @@ libunwind_frame_cache (const frame_info_ptr &this_frame, void **this_cache)
     return (struct libunwind_frame_cache *) *this_cache;
 
   /* Allocate a new cache.  */
-  cache = FRAME_OBSTACK_ZALLOC (struct libunwind_frame_cache);
+  auto *cache = frame_obstack_zalloc<libunwind_frame_cache> ();
 
   cache->func_addr = get_frame_func (this_frame);
   if (cache->func_addr == 0)
@@ -185,7 +181,7 @@ libunwind_frame_cache (const frame_info_ptr &this_frame, void **this_cache)
     cache->func_addr = get_frame_pc (this_frame);
 
   /* Get a libunwind cursor to the previous frame.
-  
+
      We do this by initializing a cursor.  Libunwind treats a new cursor
      as the top of stack and will get the current register set via the
      libunwind register accessor.  Now, we provide the platform-specific
@@ -277,8 +273,8 @@ libunwind_frame_sniffer (const struct frame_unwind *self,
       return 0;
     }
 
- 
-  /* Check to see if we have libunwind info by checking if we are in a 
+
+  /* Check to see if we have libunwind info by checking if we are in a
      signal frame.  If it doesn't return an error, we have libunwind info
      and can use libunwind.  */
   ret = unw_is_signal_frame_p (&cursor);
@@ -318,7 +314,7 @@ libunwind_frame_prev_register (const frame_info_ptr &this_frame,
 
   if (cache == NULL)
     return frame_unwind_got_constant (this_frame, regnum, 0);
-  
+
   /* Convert from gdb register number to libunwind register number.  */
   descr = libunwind_descr (get_frame_arch (this_frame));
   uw_regnum = descr->gdb2uw (regnum);
@@ -369,10 +365,10 @@ libunwind_frame_prev_register (const frame_info_ptr &this_frame,
     }
 
   return val;
-} 
+}
 
 /* The following is a glue routine to call the libunwind unwind table
-   search function to get unwind information for a specified ip address.  */ 
+   search function to get unwind information for a specified ip address.  */
 int
 libunwind_search_unwind_table (void *as, long ip, void *di,
 			       void *pi, int need_unwind_info, void *args)
@@ -486,7 +482,7 @@ libunwind_get_reg_special (struct gdbarch *gdbarch, readable_regcache *regcache,
 
   return 0;
 }
-  
+
 static int
 libunwind_load (void)
 {
@@ -564,7 +560,7 @@ libunwind_load (void)
     = (unw_find_dyn_list_p_ftype *) dlsym (handle, find_dyn_list_name);
   if (unw_find_dyn_list_p == NULL)
     return 0;
-   
+
   return 1;
 }
 

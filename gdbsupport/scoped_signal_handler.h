@@ -1,6 +1,6 @@
 /* RAII class to install a separate handler for a given signal
 
-   Copyright (C) 2024-2025 Free Software Foundation, Inc.
+   Copyright (C) 2024-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,8 +21,6 @@
 #define GDBSUPPORT_SCOPED_SIGNAL_HANDLER_H
 
 #include <signal.h>
-
-#undef HAVE_SIGACTION
 
 /* RAII class to set a signal handler for a scope, that will take care of
    unsetting the handler when the scope is left.

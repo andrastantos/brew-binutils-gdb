@@ -1,5 +1,5 @@
 /* Data structures associated with breakpoints in GDB.
-   Copyright (C) 1992-2025 Free Software Foundation, Inc.
+   Copyright (C) 1992-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -154,7 +154,7 @@ enum bptype
        dynamic libraries.  */
     bp_shlib_event,
 
-    /* Some multi-threaded systems can arrange for a location in the 
+    /* Some multi-threaded systems can arrange for a location in the
        inferior to be executed when certain thread-related events occur
        (such as thread creation or thread death).
 
@@ -167,10 +167,10 @@ enum bptype
     /* On the same principal, an overlay manager can arrange to call a
        magic location in the inferior whenever there is an interesting
        change in overlay status.  GDB can update its overlay tables
-       and fiddle with breakpoints in overlays when this breakpoint 
+       and fiddle with breakpoints in overlays when this breakpoint
        is hit.  */
 
-    bp_overlay_event, 
+    bp_overlay_event,
 
     /* Master copies of longjmp breakpoints.  These are always installed
        as soon as an objfile containing longjmp is loaded, but they are
@@ -241,7 +241,7 @@ enum enable_state
 enum bpdisp
   {
     disp_del,			/* Delete it */
-    disp_del_at_next_stop,	/* Delete at next stop, 
+    disp_del_at_next_stop,	/* Delete at next stop,
 				   whether hit or not */
     disp_disable,		/* Disable it */
     disp_donttouch		/* Leave it alone */
@@ -393,7 +393,7 @@ public:
 
   /* Is this particular location enabled.  */
   bool enabled = false;
-  
+
   /* Is this particular location disabled because the condition
      expression is invalid at this location.  For a location to be
      reported as enabled, the ENABLED field above has to be true *and*
@@ -406,8 +406,7 @@ public:
   /* True if this is a permanent breakpoint.  There is a breakpoint
      instruction hard-wired into the target's code.  Don't try to
      write another breakpoint instruction on top of it, or restore its
-     value.  Step over it using the architecture's
-     gdbarch_skip_permanent_breakpoint method.  */
+     value.  Step over it.  */
   bool permanent = false;
 
   /* True if this is not the first breakpoint in the list
@@ -538,8 +537,8 @@ struct bp_location_ref_policy
 };
 
 /* A gdb::ref_ptr that has been specialized for bp_location.  */
-typedef gdb::ref_ptr<bp_location, bp_location_ref_policy>
-     bp_location_ref_ptr;
+using bp_location_ref_ptr
+  = gdb::ref_ptr<bp_location, bp_location_ref_policy>;
 
 /* The possible return values for print_bpstat, print_it_normal,
    print_it_done, print_it_noop.  */
@@ -602,7 +601,7 @@ enum watchpoint_triggered
   watch_triggered_unknown,
 
   /* This hardware watchpoint definitely did trigger.  */
-  watch_triggered_yes  
+  watch_triggered_yes
 };
 
 /* Some targets (e.g., embedded PowerPC) need two debug registers to set
@@ -1085,6 +1084,10 @@ struct watchpoint : public breakpoint
 
 extern bool is_breakpoint (const struct breakpoint *bpt);
 
+/* Return true if BPT is of any hardware watchpoint kind.  */
+
+extern bool is_hardware_watchpoint (const struct breakpoint *bpt);
+
 /* Return true if BPT is of any watchpoint kind, hardware or
    software.  */
 
@@ -1532,7 +1535,7 @@ struct breakpoint_deleter
   }
 };
 
-typedef std::unique_ptr<struct breakpoint, breakpoint_deleter> breakpoint_up;
+using breakpoint_up = std::unique_ptr<struct breakpoint, breakpoint_deleter>;
 
 extern breakpoint_up set_momentary_breakpoint
   (struct gdbarch *, struct symtab_and_line, struct frame_id, enum bptype);
@@ -1805,7 +1808,7 @@ extern void disable_breakpoint (struct breakpoint *);
 
 extern void enable_breakpoint (struct breakpoint *);
 
-extern void breakpoint_set_commands (struct breakpoint *b, 
+extern void breakpoint_set_commands (struct breakpoint *b,
 				     counted_command_line &&commands);
 
 extern void breakpoint_set_silent (struct breakpoint *b, int silent);

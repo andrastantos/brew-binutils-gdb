@@ -1,6 +1,6 @@
 /* Everything about syscall catchpoints, for GDB.
 
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include <ctype.h>
 #include "breakpoint.h"
 #include "inferior.h"
 #include "cli/cli-utils.h"
@@ -83,13 +82,7 @@ static const registry<inferior>::key<catch_syscall_inferior_data>
 static struct catch_syscall_inferior_data *
 get_catch_syscall_inferior_data (struct inferior *inf)
 {
-  struct catch_syscall_inferior_data *inf_data;
-
-  inf_data = catch_syscall_inferior_data.get (inf);
-  if (inf_data == NULL)
-    inf_data = catch_syscall_inferior_data.emplace (inf);
-
-  return inf_data;
+  return &catch_syscall_inferior_data.try_emplace (inf);
 }
 
 /* Implement the "insert" method for syscall catchpoints.  */
@@ -369,7 +362,7 @@ catch_syscall_split_args (const char *arg)
       /* Skip whitespace.  */
       arg = skip_spaces (arg);
 
-      for (i = 0; i < 127 && arg[i] && !isspace (arg[i]); ++i)
+      for (i = 0; i < 127 && arg[i] && !c_isspace (arg[i]); ++i)
 	cur_name[i] = arg[i];
       cur_name[i] = '\0';
       arg += i;
@@ -414,7 +407,7 @@ catch_syscall_split_args (const char *arg)
 /* Implement the "catch syscall" command.  */
 
 static void
-catch_syscall_command_1 (const char *arg, int from_tty, 
+catch_syscall_command_1 (const char *arg, int from_tty,
 			 struct cmd_list_element *command)
 {
   int tempflag;

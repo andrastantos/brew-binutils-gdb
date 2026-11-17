@@ -1,5 +1,5 @@
 /* Support for the generic parts of most COFF variants, for BFD.
-   Copyright (C) 1990-2025 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -360,6 +360,10 @@ CODE_FRAGMENT
 #include "coffswap.h"
 #endif
 
+#ifdef COFF_WITH_PE_BIGOBJ
+extern const bfd_target TARGET_SYM_BIG;
+#endif
+
 #define STRING_SIZE_SIZE 4
 
 #define DOT_DEBUG	".debug"
@@ -370,6 +374,12 @@ CODE_FRAGMENT
 
 #if defined(COFF_WITH_PE) || defined(COFF_GO32_EXE) || defined(COFF_GO32)
 # define COFF_WITH_EXTENDED_RELOC_COUNTER
+#endif
+
+#if defined(COFF_WITH_PE) && !defined(COFF_IMAGE_WITH_PE)
+# define COFF_DEFAULT_MAX_NSCNS (IMAGE_SYM_SECTION_MAX + 1)
+#else
+# define COFF_DEFAULT_MAX_NSCNS 32768
 #endif
 
 #if defined (COFF_LONG_SECTION_NAMES)
@@ -1347,6 +1357,11 @@ styp_to_sec_flags (bfd *abfd,
 	  || startswith (name, ".sdata")))
     sec_flags |= SEC_SMALL_DATA;
 
+  /* As there is no internal representation of the "discardable" flag,
+     reflect it by keeping SEC_ALLOC clear.  */
+  if (internal_s->s_flags & IMAGE_SCN_MEM_DISCARDABLE)
+    sec_flags &= ~SEC_ALLOC;
+
 #if defined (COFF_LONG_SECTION_NAMES) && defined (COFF_SUPPORT_GNU_LINKONCE)
   /* As a GNU extension, if the name begins with .gnu.linkonce, we
      only link a single copy of the section.  This is used to support
@@ -1427,7 +1442,7 @@ CODE_FRAGMENT
 .    (bfd *, void *, void *);
 .
 .  unsigned int (*_bfd_coff_swap_scnhdr_out)
-.    (bfd *, void *, void *);
+.    (bfd *, void *, void *, const asection *);
 .
 .  unsigned int _bfd_filhsz;
 .  unsigned int _bfd_aoutsz;
@@ -1555,8 +1570,8 @@ INTERNAL
 .#define bfd_coff_swap_sym_out(abfd, i,o) \
 .  ((coff_backend_info (abfd)->_bfd_coff_swap_sym_out) (abfd, i, o))
 .
-.#define bfd_coff_swap_scnhdr_out(abfd, i,o) \
-.  ((coff_backend_info (abfd)->_bfd_coff_swap_scnhdr_out) (abfd, i, o))
+.#define bfd_coff_swap_scnhdr_out(abfd, i, o, sec) \
+.  ((coff_backend_info (abfd)->_bfd_coff_swap_scnhdr_out) (abfd, i, o, sec))
 .
 .#define bfd_coff_swap_filehdr_out(abfd, i,o) \
 .  ((coff_backend_info (abfd)->_bfd_coff_swap_filehdr_out) (abfd, i, o))
@@ -3149,6 +3164,16 @@ coff_compute_section_file_positions (bfd * abfd)
 
   if (target_index >= bfd_coff_max_nscns (abfd))
     {
+#if defined(COFF_WITH_PE_BIGOBJ) && !defined(COFF_IMAGE_WITH_PE)
+      if (abfd->xvec != &TARGET_SYM_BIG)
+	{
+	  /* Regular PE/COFF uses 16-bit section numbers in symbols.
+	     Promote oversized objects to the matching bigobj target
+	     before any headers or symbols are finalized.  */
+	  abfd->xvec = &TARGET_SYM_BIG;
+	  return coff_compute_section_file_positions (abfd);
+	}
+#endif
       bfd_set_error (bfd_error_file_too_big);
       _bfd_error_handler
 	/* xgettext:c-format */
@@ -3806,7 +3831,7 @@ coff_write_object_contents (bfd * abfd)
 	  SCNHDR buff;
 	  bfd_size_type amt = bfd_coff_scnhsz (abfd);
 
-	  if (bfd_coff_swap_scnhdr_out (abfd, &section, &buff) == 0
+	  if (bfd_coff_swap_scnhdr_out (abfd, &section, &buff, current) == 0
 	      || bfd_write (& buff, amt, abfd) != amt)
 	    return false;
 	}
@@ -3932,7 +3957,7 @@ coff_write_object_contents (bfd * abfd)
 	  scnhdr.s_nlnno = current->target_index;
 	  scnhdr.s_flags = STYP_OVRFLO;
 	  amt = bfd_coff_scnhsz (abfd);
-	  if (bfd_coff_swap_scnhdr_out (abfd, &scnhdr, &buff) == 0
+	  if (bfd_coff_swap_scnhdr_out (abfd, &scnhdr, &buff, current) == 0
 	      || bfd_write (& buff, amt, abfd) != amt)
 	    return false;
 	}
@@ -5290,7 +5315,6 @@ coff_slurp_reloc_table (bfd * abfd, sec_ptr asect, asymbol ** symbols)
       cache_ptr = reloc_cache + idx;
       src = native_relocs + idx * (size_t) bfd_coff_relsz (abfd);
 
-      dst.r_offset = 0;
       bfd_coff_swap_reloc_in (abfd, src, &dst);
 
 #ifdef RELOC_PROCESSING
@@ -5340,7 +5364,7 @@ coff_slurp_reloc_table (bfd * abfd, sec_ptr asect, asymbol ** symbols)
       RTYPE2HOWTO (cache_ptr, &dst);
 #endif	/* RELOC_PROCESSING */
 
-      if (cache_ptr->howto == NULL)
+      if (cache_ptr->howto == NULL || cache_ptr->howto->name == NULL)
 	{
 	  _bfd_error_handler
 	    /* xgettext:c-format */
@@ -5426,8 +5450,8 @@ coff_canonicalize_reloc (bfd * abfd,
   return section->reloc_count;
 }
 
-#ifndef coff_set_reloc
-#define coff_set_reloc _bfd_generic_set_reloc
+#ifndef coff_finalize_section_relocs
+#define coff_finalize_section_relocs _bfd_generic_finalize_section_relocs
 #endif
 
 #ifndef coff_reloc16_estimate
@@ -5596,7 +5620,7 @@ static const bfd_coff_backend_data bfd_coff_std_swap_table ATTRIBUTE_UNUSED =
 #else
   2,
 #endif
-  32768,
+  COFF_DEFAULT_MAX_NSCNS,
   coff_SWAP_filehdr_in, coff_SWAP_aouthdr_in, coff_SWAP_scnhdr_in,
   coff_SWAP_reloc_in, coff_bad_format_hook, coff_set_arch_mach_hook,
   coff_mkobject_hook, styp_to_sec_flags, coff_set_alignment_hook,
@@ -5637,7 +5661,7 @@ static const bfd_coff_backend_data ticoff0_swap_table =
 #else
   2,
 #endif
-  32768,
+  COFF_DEFAULT_MAX_NSCNS,
   coff_SWAP_filehdr_in, coff_SWAP_aouthdr_in, coff_SWAP_scnhdr_in,
   coff_swap_reloc_v0_in, ticoff0_bad_format_hook, coff_set_arch_mach_hook,
   coff_mkobject_hook, styp_to_sec_flags, coff_set_alignment_hook,
@@ -5679,7 +5703,7 @@ static const bfd_coff_backend_data ticoff1_swap_table =
 #else
   2,
 #endif
-  32768,
+  COFF_DEFAULT_MAX_NSCNS,
   coff_SWAP_filehdr_in, coff_SWAP_aouthdr_in, coff_SWAP_scnhdr_in,
   coff_SWAP_reloc_in, ticoff1_bad_format_hook, coff_set_arch_mach_hook,
   coff_mkobject_hook, styp_to_sec_flags, coff_set_alignment_hook,
@@ -6012,15 +6036,11 @@ static const bfd_coff_backend_data bigobj_swap_table =
 #endif
 
 #ifndef coff_bfd_gc_sections
-#define coff_bfd_gc_sections		    bfd_coff_gc_sections
+#define coff_bfd_gc_sections		    _bfd_coff_gc_sections
 #endif
 
 #ifndef coff_bfd_lookup_section_flags
 #define coff_bfd_lookup_section_flags	    bfd_generic_lookup_section_flags
-#endif
-
-#ifndef coff_bfd_merge_sections
-#define coff_bfd_merge_sections		    bfd_generic_merge_sections
 #endif
 
 #ifndef coff_bfd_is_group_section
@@ -6028,7 +6048,7 @@ static const bfd_coff_backend_data bigobj_swap_table =
 #endif
 
 #ifndef coff_bfd_group_name
-#define coff_bfd_group_name		    bfd_coff_group_name
+#define coff_bfd_group_name		    _bfd_coff_group_name
 #endif
 
 #ifndef coff_bfd_discard_group
@@ -6052,6 +6072,13 @@ static const bfd_coff_backend_data bigobj_swap_table =
 #define coff_bfd_define_start_stop	    bfd_generic_define_start_stop
 #endif
 
+#ifdef COFF_WITH_PE
+#define PE_EXTRA_S_FLAGS (SEC_CODE | SEC_DATA | SEC_READONLY | SEC_LINK_ONCE \
+			  | SEC_LINK_DUPLICATES)
+#else
+#define PE_EXTRA_S_FLAGS 0
+#endif
+
 #define CREATE_BIG_COFF_TARGET_VEC(VAR, NAME, EXTRA_O_FLAGS, EXTRA_S_FLAGS, UNDER, ALTERNATIVE, SWAP_TABLE)	\
 const bfd_target VAR =							\
 {									\
@@ -6063,12 +6090,14 @@ const bfd_target VAR =							\
   (HAS_RELOC | EXEC_P | HAS_LINENO | HAS_DEBUG |			\
    HAS_SYMS | HAS_LOCALS | WP_TEXT | EXTRA_O_FLAGS),			\
   /* section flags */							\
-  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | EXTRA_S_FLAGS),\
+  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | EXTRA_S_FLAGS  \
+   | PE_EXTRA_S_FLAGS),                                                 \
   UNDER,			/* Leading symbol underscore.  */	\
   '/',				/* AR_pad_char.  */			\
   15,				/* AR_max_namelen.  */			\
   0,				/* match priority.  */			\
   TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */ \
+  TARGET_MERGE_SECTIONS,						\
 									\
   /* Data conversion functions.  */					\
   bfd_getb64, bfd_getb_signed_64, bfd_putb64,				\
@@ -6125,12 +6154,14 @@ const bfd_target VAR =							\
   (HAS_RELOC | EXEC_P | HAS_LINENO | HAS_DEBUG |			\
    HAS_SYMS | HAS_LOCALS | WP_TEXT | EXTRA_O_FLAGS),			\
   /* section flags */							\
-  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | EXTRA_S_FLAGS),\
+  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | EXTRA_S_FLAGS  \
+   | PE_EXTRA_S_FLAGS),                                                 \
   UNDER,			/* Leading symbol underscore.  */	\
   '/',				/* AR_pad_char.  */			\
   15,				/* AR_max_namelen.  */			\
   0,				/* match priority.  */			\
   TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */ \
+  TARGET_MERGE_SECTIONS,						\
 									\
   /* Data conversion functions.  */					\
   bfd_getl64, bfd_getl_signed_64, bfd_putl64,				\
@@ -6187,12 +6218,14 @@ const bfd_target VAR =							\
   (HAS_RELOC | EXEC_P | HAS_LINENO | HAS_DEBUG |			\
    HAS_SYMS | HAS_LOCALS | WP_TEXT | EXTRA_O_FLAGS),			\
 	/* section flags */						\
-  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | EXTRA_S_FLAGS),\
+  (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC | EXTRA_S_FLAGS  \
+   | PE_EXTRA_S_FLAGS),                                                 \
   UNDER,			/* Leading symbol underscore.  */	\
   '/',				/* AR_pad_char.  */			\
   15,				/* AR_max_namelen.  */			\
   0,				/* match priority.  */			\
   TARGET_KEEP_UNUSED_SECTION_SYMBOLS, /* keep unused section symbols.  */ \
+  TARGET_MERGE_SECTIONS,						\
 									\
   /* Data conversion functions.  */					\
   bfd_getl64, bfd_getl_signed_64, bfd_putl64,				\

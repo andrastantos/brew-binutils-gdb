@@ -1,6 +1,6 @@
 /* GDB hooks for TUI.
 
-   Copyright (C) 2001-2025 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,7 +38,7 @@
 #include "tui/tui-wingeneral.h"
 
 static void
-tui_new_objfile_hook (struct objfile* objfile)
+tui_new_objfile_hook (struct objfile &objfile)
 {
   if (tui_active)
     tui_display_main ();
@@ -59,7 +59,7 @@ tui_register_changed (const frame_info_ptr &frame, int regno)
      And even if the frames differ a register change made in one can still show
      up in the other.  So we always use the selected frame here, and ignore
      FRAME.  */
-  fi = get_selected_frame (NULL);
+  fi = get_selected_frame ();
   tui_data_win ()->check_register_values (fi);
 }
 
@@ -114,7 +114,7 @@ tui_refresh_frame_and_register_information ()
       frame_info_ptr fi;
       if (has_stack_frames ())
 	{
-	  fi = get_selected_frame (NULL);
+	  fi = get_selected_frame ();
 
 	  /* Display the frame position (even if there is no symbols or
 	     the PC is not known).  */
@@ -142,7 +142,7 @@ tui_refresh_frame_and_register_information ()
 static void
 tui_dummy_print_frame_info_listing_hook (struct symtab *s,
 					 int line,
-					 int stopline, 
+					 int stopline,
 					 int noerror)
 {
 }
@@ -167,7 +167,26 @@ tui_inferior_exit (struct inferior *inf)
 static void
 tui_before_prompt (const char *current_gdb_prompt)
 {
-  tui_refresh_frame_and_register_information ();
+  /* If TUI_DEFER_RERENDER is true then the window content will not
+     yet have been filled in, do so now.  This is only expected to
+     happen during the switches into TUI mode as it means the CMD
+     window will exist by the time all the other windows have their
+     content filled in.  If filling in one of the other windows
+     triggers a secondary prompt (e.g. debuginfod prompt) then the CMD
+     window will be available to display the prompt.  */
+  if (tui_defer_rerender)
+    {
+      target_terminal::scoped_restore_terminal_state term_state;
+      target_terminal::ours_for_output ();
+
+      tui_defer_rerender = false;
+      for (tui_win_info *window : tui_windows)
+	if (window->is_visible ())
+	  window->rerender ();
+    }
+  else
+    tui_refresh_frame_and_register_information ();
+
   from_stack = false;
   from_source_symtab = false;
 }

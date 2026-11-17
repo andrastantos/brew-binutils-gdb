@@ -1,6 +1,6 @@
 /* TUI display registers in window.
 
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -90,14 +90,14 @@ struct tui_data_window : public tui_win_info
     return m_current_group;
   }
 
+  void rerender () override;
+
 protected:
 
   void do_scroll_vertical (int num_to_scroll) override;
   void do_scroll_horizontal (int num_to_scroll) override
   {
   }
-
-  void rerender () override;
 
 private:
 

@@ -1,5 +1,5 @@
 /* tc-ia64.c -- Assembler for the HP/Intel IA-64 architecture.
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
    Contributed by David Mosberger-Tang <davidm@hpl.hp.com>
 
    This file is part of GAS, the GNU Assembler.
@@ -4990,6 +4990,11 @@ dot_pred_rel (int type)
 	{
 	  int len;
 	  char *form = demand_copy_C_string (&len);
+	  if (form == NULL)
+	    {
+	      ignore_rest_of_line ();
+	      return;
+	    }
 
 	  if (strcmp (form, "mutex") == 0)
 	    type = 'm';
@@ -5367,7 +5372,7 @@ declare_register_set (const char *prefix,
 		      unsigned int num_regs,
 		      unsigned int base_regnum)
 {
-  char name[8];
+  char name[16];
   unsigned int i;
 
   for (i = 0; i < num_regs; ++i)

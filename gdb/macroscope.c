@@ -1,5 +1,5 @@
 /* Functions for deciding which macros are currently in scope.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Red Hat, Inc.
 
    This file is part of GDB.
@@ -44,14 +44,15 @@ sal_macro_scope (struct symtab_and_line sal)
   if (sal.symtab == NULL)
     return result;
 
-  cust = sal.symtab->compunit ();
+  cust = &sal.symtab->compunit ();
   if (cust->macro_table () == NULL)
     return result;
 
   macro_scope ms;
 
   main_file = macro_main (cust->macro_table ());
-  inclusion = macro_lookup_inclusion (main_file, sal.symtab->filename_for_id);
+  inclusion = macro_lookup_inclusion (main_file,
+				      sal.symtab->filename_for_id ());
 
   if (inclusion)
     {
@@ -102,7 +103,7 @@ default_macro_scope ()
   /* If there's a selected frame, use its PC.  */
   frame = deprecated_safe_get_selected_frame ();
   if (frame && (pc = get_frame_pc_if_available (frame)))
-    sal = find_pc_line (*pc, 0);
+    sal = find_sal_for_pc (*pc, 0);
 
   /* Fall back to the current listing position.  */
   else

@@ -1,6 +1,6 @@
 /* Target-dependent code for DICOS running on x86-64's, for GDB.
 
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,8 +38,7 @@ amd64_dicos_osabi_sniffer (bfd *abfd)
 
   /* On amd64-DICOS, the Load Module's "header" section is 72
      bytes.  */
-  if (strcmp (target_name, "elf64-x86-64") == 0
-      && dicos_load_module_p (abfd, 72))
+  if (streq (target_name, "elf64-x86-64") && dicos_load_module_p (abfd, 72))
     return GDB_OSABI_DICOS;
 
   return GDB_OSABI_UNKNOWN;

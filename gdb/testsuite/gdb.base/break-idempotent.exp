@@ -1,4 +1,4 @@
-# Copyright 2014-2025 Free Software Foundation, Inc.
+# Copyright 2014-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -96,7 +96,7 @@ proc set_breakpoint { break_command } {
 	    -re "Could not insert hardware watchpoint.*$gdb_prompt $" {
 		unsupported $test
 	    }
-	    -re "atchpoint \[0-9\]+: global\r\n$gdb_prompt $" {
+	    -re "atchpoint ${::decimal}: global\r\n$gdb_prompt $" {
 		pass $test
 	    }
 	}
@@ -165,7 +165,7 @@ foreach_with_prefix pie { "nopie" "pie" } {
 	continue
     }
 
-    if [is_remote host] {
+    if {[is_remote host]} {
 	set arg [remote_download host $binfile]
 	if { $arg == "" } {
 	    untested "download failed"

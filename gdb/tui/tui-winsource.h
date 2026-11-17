@@ -1,6 +1,6 @@
 /* TUI display source/assembly window.
 
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -103,8 +103,6 @@ protected:
   /* Erase the content and display STRING.  */
   void do_erase_source_content (const char *string);
 
-  void rerender () override;
-
   virtual bool set_contents (struct gdbarch *gdbarch,
 			     const struct symtab_and_line &sal) = 0;
 
@@ -137,6 +135,8 @@ protected:
   int m_max_length;
 
 public:
+
+  void rerender () override;
 
   /* Refill the source window's source cache and update it.  If this
      is a disassembly window, then just update it.  */
@@ -268,14 +268,14 @@ struct tui_source_window_iterator
 {
 public:
 
-  typedef std::vector<tui_win_info *>::iterator inner_iterator;
+  using inner_iterator = std::vector<tui_win_info *>::iterator;
 
-  typedef tui_source_window_iterator self_type;
-  typedef struct tui_source_window_base *value_type;
-  typedef struct tui_source_window_base *&reference;
-  typedef struct tui_source_window_base **pointer;
-  typedef std::forward_iterator_tag iterator_category;
-  typedef int difference_type;
+  using self_type = tui_source_window_iterator;
+  using value_type = struct tui_source_window_base *;
+  using reference = struct tui_source_window_base *&;
+  using pointer = struct tui_source_window_base **;
+  using iterator_category = std::forward_iterator_tag;
+  using difference_type = int;
 
   explicit tui_source_window_iterator (const inner_iterator &it,
 				       const inner_iterator &end)

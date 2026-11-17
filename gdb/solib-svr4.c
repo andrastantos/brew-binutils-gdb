@@ -1,6 +1,6 @@
 /* Handle SVR4 shared libraries for GDB, the GNU Debugger.
 
-   Copyright (C) 1990-2025 Free Software Foundation, Inc.
+   Copyright (C) 1990-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -124,7 +124,7 @@ get_lm_info_svr4 (const solib &solib)
 static bool
 svr4_same_name (const char *gdb_so_name, const char *inferior_so_name)
 {
-  if (strcmp (gdb_so_name, inferior_so_name) == 0)
+  if (streq (gdb_so_name, inferior_so_name))
     return 1;
 
   /* On Solaris, when starting inferior we think that dynamic linker is
@@ -133,18 +133,18 @@ svr4_same_name (const char *gdb_so_name, const char *inferior_so_name)
      sometimes they have identical content, but are not linked to each
      other.  We don't restrict this check for Solaris, but the chances
      of running into this situation elsewhere are very low.  */
-  if (strcmp (gdb_so_name, "/usr/lib/ld.so.1") == 0
-      && strcmp (inferior_so_name, "/lib/ld.so.1") == 0)
+  if (streq (gdb_so_name, "/usr/lib/ld.so.1")
+      && streq (inferior_so_name, "/lib/ld.so.1"))
     return 1;
 
   /* Similarly, we observed the same issue with amd64 and sparcv9, but with
      different locations.  */
-  if (strcmp (gdb_so_name, "/usr/lib/amd64/ld.so.1") == 0
-      && strcmp (inferior_so_name, "/lib/amd64/ld.so.1") == 0)
+  if (streq (gdb_so_name, "/usr/lib/amd64/ld.so.1")
+      && streq (inferior_so_name, "/lib/amd64/ld.so.1"))
     return 1;
 
-  if (strcmp (gdb_so_name, "/usr/lib/sparcv9/ld.so.1") == 0
-      && strcmp (inferior_so_name, "/lib/sparcv9/ld.so.1") == 0)
+  if (streq (gdb_so_name, "/usr/lib/sparcv9/ld.so.1")
+      && streq (inferior_so_name, "/lib/sparcv9/ld.so.1"))
     return 1;
 
   return 0;
@@ -468,12 +468,7 @@ svr4_solib_ops::free_probes_table (svr4_info *info) const
 static struct svr4_info *
 get_svr4_info (program_space *pspace)
 {
-  struct svr4_info *info = solib_svr4_pspace_data.get (pspace);
-
-  if (info == NULL)
-    info = solib_svr4_pspace_data.emplace (pspace);
-
-  return info;
+  return &solib_svr4_pspace_data.try_emplace (pspace);
 }
 
 /* Local function prototypes */
@@ -1069,13 +1064,8 @@ svr4_solib_ops::solibs_from_svr4_sos (const std::vector<svr4_so> &sos) const
   owning_intrusive_list<solib> dst;
 
   for (const svr4_so &so : sos)
-    {
-      auto &newobj = dst.emplace_back (*this);
-
-      newobj.name = so.name;
-      newobj.original_name = so.name;
-      newobj.lm_info = std::make_unique<lm_info_svr4> (*so.lm_info);
-    }
+    dst.emplace_back (std::make_unique<lm_info_svr4> (*so.lm_info), so.name,
+		      so.name, *this);
 
   return dst;
 }
@@ -1146,7 +1136,7 @@ svr4_library_list_start_list (struct gdb_xml_parser *parser,
     = (const char *) xml_find_attribute (attributes, "version")->value.get ();
   struct gdb_xml_value *main_lm = xml_find_attribute (attributes, "main-lm");
 
-  if (strcmp (version, "1.0") != 0)
+  if (!streq (version, "1.0"))
     gdb_xml_error (parser,
 		   _("SVR4 Library list has unsupported version \"%s\""),
 		   version);
@@ -1275,11 +1265,8 @@ svr4_solib_ops::default_sos (svr4_info *info) const
   li->l_addr_p = 1;
 
   owning_intrusive_list<solib> sos;
-  auto &newobj = sos.emplace_back (*this);
-
-  newobj.lm_info = std::move (li);
-  newobj.name = info->debug_loader_name;
-  newobj.original_name = newobj.name;
+  sos.emplace_back (std::move (li), info->debug_loader_name,
+		    info->debug_loader_name, *this);
 
   return sos;
 }
@@ -1620,8 +1607,7 @@ svr4_fetch_objfile_link_map (struct objfile *objfile)
 static bool
 is_thread_local_section (struct bfd_section *bfd_sect)
 {
-  return ((strcmp (bfd_sect->name, ".tdata") == 0
-	   || strcmp (bfd_sect->name, ".tbss") == 0)
+  return ((streq (bfd_sect->name, ".tdata") || streq (bfd_sect->name, ".tbss"))
 	  && bfd_sect->size != 0);
 }
 
@@ -1828,7 +1814,7 @@ match_main (const char *soname)
 
   for (mainp = main_name_list; *mainp != NULL; mainp++)
     {
-      if (strcmp (soname, *mainp) == 0)
+      if (streq (soname, *mainp))
 	return (1);
     }
 
@@ -2535,8 +2521,6 @@ svr4_solib_ops::enable_break (svr4_info *info, int from_tty) const
      mean r_brk has already been relocated.  Assume the dynamic linker
      is the object containing r_brk.  */
 
-  solib_add (NULL, from_tty, auto_solib_add);
-
   CORE_ADDR sym_addr = 0;
   CORE_ADDR default_debug_base = this->default_debug_base (info);
 
@@ -2742,7 +2726,7 @@ svr4_solib_ops::enable_break (svr4_info *info, int from_tty) const
 	       (tmp_bfd.get (),
 		[=] (const asymbol *sym)
 		{
-		  return (strcmp (sym->name, *bkpt_namep) == 0
+		  return (streq (sym->name, *bkpt_namep)
 			  && ((sym->section->flags & (SEC_CODE | SEC_DATA))
 			      != 0));
 		}));
@@ -3299,8 +3283,8 @@ svr4_relocate_main_executable (void)
   objfile *objf = current_program_space->symfile_object_file;
   if (objf)
     {
-      section_offsets new_offsets (objf->section_offsets.size (),
-				   displacement);
+      std::vector<CORE_ADDR> new_offsets (objf->section_offsets.size (),
+					  displacement);
       objfile_relocate (objf, new_offsets);
     }
   else if (current_program_space->exec_bfd ())
@@ -3348,6 +3332,11 @@ svr4_solib_ops::create_inferior_hook (int from_tty) const
 
   /* Relocate the main executable if necessary.  */
   svr4_relocate_main_executable ();
+
+  /* Read the initial library list at this point.  Even if the target
+     is not being executed (e.g. loading a core file), we can load the
+     symbols from our sos.  */
+  solib_add (nullptr, from_tty, auto_solib_add);
 
   /* No point setting a breakpoint in the dynamic linker if we can't
      hit it (e.g., a core file, or a trace file).  */
@@ -3639,9 +3628,6 @@ find_debug_base_for_solib (const solib *solib)
   /* This is always called for solibs with an associated objfile.  */
   gdb_assert (solib->objfile != nullptr);
 
-  svr4_info *info = get_svr4_info (solib->objfile->pspace ());
-  gdb_assert (info != nullptr);
-
   auto &lm_info = get_lm_info_svr4 (*solib);
 
   return lm_info.debug_base;
@@ -3695,9 +3681,9 @@ svr4_solib_ops::iterate_over_objfiles_in_search_order
   if (debug_base == 0)
     debug_base = default_debug_base;
 
-  for (objfile *objfile : m_pspace->objfiles ())
+  for (objfile &objfile : m_pspace->objfiles ())
     {
-      if (checked_current_objfile && objfile == current_objfile)
+      if (checked_current_objfile && &objfile == current_objfile)
 	continue;
 
       /* Try to determine the namespace into which objfile was loaded.
@@ -3705,7 +3691,7 @@ svr4_solib_ops::iterate_over_objfiles_in_search_order
 	 If we fail, e.g. for manually added symbol files or for the main
 	 executable, we assume that they were added to the initial
 	 namespace.  */
-      const solib *solib = find_solib_for_objfile (objfile);
+      const solib *solib = find_solib_for_objfile (&objfile);
       CORE_ADDR solib_base = find_debug_base_for_solib (solib);
       if (solib_base == 0)
 	solib_base = default_debug_base;
@@ -3714,7 +3700,7 @@ svr4_solib_ops::iterate_over_objfiles_in_search_order
       if (solib_base != debug_base)
 	continue;
 
-      if (cb (objfile))
+      if (cb (&objfile))
 	return;
     }
 }
@@ -3766,7 +3752,7 @@ svr4_solib_ops::get_solibs_in_ns (int nsid) const
      faster, and to be able to remove SOs from the map, to avoid
      returning the dynamic linker multiple times.  */
   CORE_ADDR debug_base = info->namespace_id[nsid];
-  std::unordered_map<std::string, const lm_info_svr4 *> namespace_solibs;
+  gdb::unordered_string_map<const lm_info_svr4 *> namespace_solibs;
   for (svr4_so &so : info->solib_lists[debug_base])
     namespace_solibs[so.name] = so.lm_info.get ();
 

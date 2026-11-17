@@ -1,6 +1,6 @@
 /* DWARF 2 low-level section code
 
-   Copyright (C) 1994-2025 Free Software Foundation, Inc.
+   Copyright (C) 1994-2026 Free Software Foundation, Inc.
 
    Adapted by Gary Funck (gary@intrepid.com), Intrepid Technology,
    Inc.  with support from Florida State University (under contract
@@ -27,10 +27,12 @@
 #ifndef GDB_DWARF2_SECTION_H
 #define GDB_DWARF2_SECTION_H
 
+#include "gdbsupport/unordered_map.h"
+
 /* A descriptor for dwarf sections.
 
    S.ASECTION, SIZE are typically initialized when the objfile is first
-   scanned.  BUFFER, READIN are filled in later when the section is read.
+   scanned.  BUFFER, READ_IN are filled in later when the section is read.
    If the section contained compressed data then SIZE is updated to record
    the uncompressed size of the section.
 
@@ -100,7 +102,7 @@ struct dwarf2_section_info
        section.  */
     struct dwarf2_section_info *containing_section;
   } s;
-  /* Pointer to section data, only valid if readin.  */
+  /* Pointer to section data, only valid if read_in.  */
   const gdb_byte *buffer;
   /* The size of the section, real or virtual.  */
   bfd_size_type size;
@@ -108,7 +110,7 @@ struct dwarf2_section_info
      Only valid if is_virtual.  */
   bfd_size_type virtual_offset;
   /* True if we have tried to read this section.  */
-  bool readin;
+  bool read_in;
   /* True if this is a virtual section, False otherwise.
      This specifies which of s.section and s.containing_section to use.  */
   bool is_virtual;
@@ -120,8 +122,32 @@ using dwarf2_section_info_up = std::unique_ptr<dwarf2_section_info>;
 
 struct section_and_offset
 {
+  friend bool operator== (const section_and_offset &lhs,
+			  const section_and_offset &rhs) noexcept
+  { return lhs.section == rhs.section && lhs.offset == rhs.offset; }
+
   const dwarf2_section_info *section;
   sect_offset offset;
 };
+
+/* Hash function for section_and_offset.  */
+
+struct section_and_offset_hash
+{
+  template <typename T>
+  using hash = ankerl::unordered_dense::hash<T>;
+  using is_avalanching = void;
+
+  std::uint64_t operator() (const section_and_offset &sao) const noexcept
+  {
+    return (hash<const dwarf2_section_info *> () (sao.section)
+	    + hash<sect_offset> () (sao.offset));
+  }
+};
+
+template<typename Value>
+using unordered_section_and_offset_map
+  = gdb::unordered_map<section_and_offset, Value,
+		       section_and_offset_hash>;
 
 #endif /* GDB_DWARF2_SECTION_H */

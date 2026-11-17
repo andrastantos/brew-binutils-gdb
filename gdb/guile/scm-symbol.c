@@ -1,6 +1,6 @@
 /* Scheme interface to symbols.
 
-   Copyright (C) 2008-2025 Free Software Foundation, Inc.
+   Copyright (C) 2008-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -136,7 +136,7 @@ syscm_get_symbol_map (struct symbol *symbol)
       struct syscm_gdbarch_data *data = syscm_gdbarch_data_key.get (gdbarch);
       if (data == nullptr)
 	{
-	  data = syscm_gdbarch_data_key.emplace (gdbarch);
+	  data = &syscm_gdbarch_data_key.emplace (gdbarch);
 	  data->htab
 	    = gdbscm_create_eqable_gsmob_ptr_map (syscm_hash_symbol_smob,
 						  syscm_eq_symbol_smob);
@@ -537,7 +537,7 @@ gdbscm_symbol_value (SCM self, SCM rest)
 	  if (frame_info == NULL)
 	    error (_("Invalid frame"));
 	}
-      
+
       if (symbol_read_needs_frame (symbol) && frame_info == NULL)
 	error (_("Symbol requires a frame to compute its value"));
 

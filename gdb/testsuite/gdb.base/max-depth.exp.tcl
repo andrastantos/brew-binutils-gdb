@@ -1,4 +1,4 @@
-# Copyright 2019-2025 Free Software Foundation, Inc.
+# Copyright 2019-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@ proc compile_and_run_tests { lang } {
     }
 
     # Advance to main.
-    if { ![runto_main] } then {
+    if { ![runto_main] } {
 	return 0
     }
 

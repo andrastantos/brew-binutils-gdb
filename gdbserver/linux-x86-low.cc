@@ -1,6 +1,6 @@
 /* GNU/Linux/x86-64 specific low level interface, for the remote server
    for GDB.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -52,6 +52,8 @@
 #include "nat/x86-linux.h"
 #include "nat/x86-linux-dregs.h"
 #include "nat/x86-linux-tdesc.h"
+
+#include <asm/ldt.h>
 
 #ifdef __x86_64__
 static target_desc_up tdesc_amd64_linux_no_xml;
@@ -132,6 +134,10 @@ public:
 
   int get_ipa_tdesc_idx () override;
 
+  /* Override these to provide access to i386 TLS state.  */
+  void fetch_registers (regcache *regcache, int regno) override;
+  void store_registers (regcache *regcache, int regno) override;
+
 protected:
 
   void low_arch_setup () override;
@@ -158,7 +164,7 @@ protected:
 
   bool low_stopped_by_watchpoint () override;
 
-  CORE_ADDR low_stopped_data_address () override;
+  std::vector<CORE_ADDR> low_stopped_data_addresses () override;
 
   /* collect_ptrace_register/supply_ptrace_register are not needed in the
      native i386 case (no registers smaller than an xfer unit), and are not
@@ -211,7 +217,7 @@ struct arch_process_info
 /* Mapping between the general-purpose registers in `struct user'
    format and GDB's register array layout.
    Note that the transfer layout uses 64-bit regs.  */
-static /*const*/ int i386_regmap[] = 
+static /*const*/ int i386_regmap[] =
 {
   RAX * 8, RCX * 8, RDX * 8, RBX * 8,
   RSP * 8, RBP * 8, RSI * 8, RDI * 8,
@@ -264,7 +270,7 @@ static const int x86_64_regmap[] =
 
 /* Mapping between the general-purpose registers in `struct user'
    format and GDB's register array layout.  */
-static /*const*/ int i386_regmap[] = 
+static /*const*/ int i386_regmap[] =
 {
   EAX * 4, ECX * 4, EDX * 4, EBX * 4,
   UESP * 4, EBP * 4, ESI * 4, EDI * 4,
@@ -573,6 +579,105 @@ static struct regset_info x86_regsets[] =
   NULL_REGSET
 };
 
+/* Fetch TLS area data from the kernel and copy it into REGCACHE.  REGNO
+   indicates which TLS area register is wanted, or -1 for all of them.
+
+   If anything goes wrong then this function will return without updating
+   REGCACHE.  */
+
+static void
+fetch_tls_area_register (regcache *regcache, int regno)
+{
+  int tid = current_thread->id.lwp ();
+
+  /* Fetch all the TLS area data from the kernel.  */
+  user_desc tls_ud[3];
+  if (!i386_ptrace_get_tls_data (tid, tls_ud))
+    {
+      warning (_("failed to read TLS GDT entries for register read"));
+      return;
+    }
+
+  /* Now copy the values from TLS_UD back into the register cache.  */
+  int tls_regno[3] = {
+    find_regno (regcache->tdesc, "i386_tls_gdt_0"),
+    find_regno (regcache->tdesc, "i386_tls_gdt_1"),
+    find_regno (regcache->tdesc, "i386_tls_gdt_2")
+  };
+
+  for (int i = 0; i < std::size (tls_regno); ++i)
+    supply_register (regcache, tls_regno[i], &tls_ud[i]);
+}
+
+/* See class declaration above.  */
+
+void
+x86_target::fetch_registers (regcache *regcache, int regno)
+{
+  linux_process_target::fetch_registers (regcache, regno);
+
+#ifdef __x86_64__
+  if (!is_64bit_tdesc (current_thread))
+#endif
+    {
+      fetch_tls_area_register (regcache, regno);
+    }
+}
+
+/* Copy TLS area data from REGCACHE back to the kernel.  REGNO indicates
+   which TLS area register should be copied, or -1 for all of them.  If
+   anything goes wrong then return immediately; some of the register may
+   have been written back to the kernel in this case.  */
+
+static void
+store_tls_area_registers (regcache *regcache, int regno)
+{
+  int tid = current_thread->id.lwp ();
+
+  /* Read current TLS area data from the kernel into TLS_UD.  We then
+     overwrite this with values from REGCACHE, and finally, copy the
+     updated values back to the kernel.  */
+  user_desc tls_ud[3];
+  if (!i386_ptrace_get_tls_data (tid, tls_ud))
+    {
+      warning (_("failed to read TLS GDT entries for register store"));
+      return;
+    }
+
+  int tls_regno[] = {
+    find_regno (regcache->tdesc, "i386_tls_gdt_0"),
+    find_regno (regcache->tdesc, "i386_tls_gdt_1"),
+    find_regno (regcache->tdesc, "i386_tls_gdt_2")
+  };
+
+  /* Now copy data from REGCACHE over the top of the values written
+     into TLS_UD.  */
+  for (int i = 0; i < std::size (tls_regno); ++i)
+    collect_register (regcache, tls_regno[i], &tls_ud[i]);
+
+  /* And write the contents of TLS_UD back to the kernel.  We ignore the
+     return value from this call; if anything went wrong then there's
+     nothing we can do about it.  */
+  if (!i386_ptrace_set_tls_data (tid, tls_ud))
+    warning (_("failed to write updated TLS GDT entries for register store"));
+
+}
+
+/* See class declaration above.  */
+
+void
+x86_target::store_registers (regcache *regcache, int regno)
+{
+  linux_process_target::store_registers (regcache, regno);
+
+#ifdef __x86_64__
+  if (!is_64bit_tdesc (current_thread))
+#endif
+    {
+      store_tls_area_registers (regcache, regno);
+    }
+}
+
 bool
 x86_target::low_supports_breakpoints ()
 {
@@ -727,15 +832,15 @@ x86_target::low_stopped_by_watchpoint ()
   return x86_dr_stopped_by_watchpoint (&proc->priv->arch_private->debug_reg_state);
 }
 
-CORE_ADDR
-x86_target::low_stopped_data_address ()
+std::vector<CORE_ADDR>
+x86_target::low_stopped_data_addresses ()
 {
   struct process_info *proc = current_process ();
   CORE_ADDR addr;
   if (x86_dr_stopped_data_address (&proc->priv->arch_private->debug_reg_state,
 				   &addr))
-    return addr;
-  return 0;
+    return { addr };
+  return {};
 }
 
 /* Called when a new process is created.  */
@@ -979,7 +1084,7 @@ x86_target::process_qsupported (gdb::array_view<const char * const> features)
 	       p != NULL;
 	       p = strtok_r (NULL, ",", &saveptr))
 	    {
-	      if (strcmp (p, "i386") == 0)
+	      if (streq (p, "i386"))
 		{
 		  use_xml = 1;
 		  break;
@@ -1558,7 +1663,7 @@ x86_target::get_min_fast_tracepoint_insn_len ()
 	     mention that something has gone awry.  */
 	  if (!warned_about_fast_tracepoints)
 	    {
-	      warning ("4-byte fast tracepoints not available; %s", errbuf);
+	      warning (_("4-byte fast tracepoints not available; %s"), errbuf);
 	      warned_about_fast_tracepoints = 1;
 	    }
 	  return 5;

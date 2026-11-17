@@ -1,5 +1,5 @@
 /* tc-frv.c -- Assembler for the Fujitsu FRV.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -1399,8 +1399,8 @@ frv_force_relocation (fixS *fix)
     case BFD_RELOC_FRV_FUNCDESC_GOTOFFHI:
     case BFD_RELOC_FRV_FUNCDESC_GOTOFFLO:
     case BFD_RELOC_FRV_GOTOFF12:
-    case BFD_RELOC_FRV_GOTOFFHI:
-    case BFD_RELOC_FRV_GOTOFFLO:
+    case BFD_RELOC_HI16_GOTOFF:
+    case BFD_RELOC_LO16_GOTOFF:
     case BFD_RELOC_FRV_GETTLSOFF:
     case BFD_RELOC_FRV_TLSDESC_VALUE:
     case BFD_RELOC_FRV_GOTTLSDESC12:
@@ -1455,8 +1455,8 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg)
       case BFD_RELOC_FRV_FUNCDESC_GOTOFFHI:
       case BFD_RELOC_FRV_FUNCDESC_GOTOFFLO:
       case BFD_RELOC_FRV_GOTOFF12:
-      case BFD_RELOC_FRV_GOTOFFHI:
-      case BFD_RELOC_FRV_GOTOFFLO:
+      case BFD_RELOC_HI16_GOTOFF:
+      case BFD_RELOC_LO16_GOTOFF:
       case BFD_RELOC_FRV_GETTLSOFF:
       case BFD_RELOC_FRV_TLSDESC_VALUE:
       case BFD_RELOC_FRV_GOTTLSDESC12:

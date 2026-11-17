@@ -1,5 +1,5 @@
 /* RISC-V disassembler
-   Copyright (C) 2011-2025 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
    Contributed by Andrew Waterman (andrew@sifive.com).
    Based on MIPS target.
@@ -107,10 +107,26 @@ parse_riscv_dis_option_without_args (const char *option,
   return true;
 }
 
+static bool
+riscv_vtype_altfmt_supported (struct riscv_private_data *pd)
+{
+  return (pd->all_ext
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvfbfa")
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvfofp8min")
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvfqwbdota8f")
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvfqwdota8f")
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvfwbdota16bf")
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvfwdota16bf")
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvqwbdota8i")
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvqwbdota16i")
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvqwdota8i")
+	  || riscv_subset_supports (&pd->riscv_rps_dis, "zvqwdota16i"));
+}
+
 /* Parse RISC-V disassembler option (possibly with arguments).  */
 
 static void
-parse_riscv_dis_option (const char *option, struct disassemble_info *info)
+parse_riscv_dis_option (char *option, struct disassemble_info *info)
 {
   char *equal, *value;
 
@@ -440,6 +456,17 @@ print_insn_args (const char *oparg, insn_t l, bfd_vma pc, disassemble_info *info
 	      print (info->stream, dis_style_register, "%s",
 		     riscv_vecr_names_numeric[EXTRACT_OPERAND (VS2, l)]);
 	      break;
+	    case 'q':
+	      {
+		unsigned int vs2 = EXTRACT_OPERAND (VS2, l);
+		print (info->stream, dis_style_register, "%s",
+		       riscv_vecr_names_numeric[vs2 & 0x18]);
+	      }
+	      break;
+	    case 'r':
+	      print (info->stream, dis_style_immediate, "%u",
+		     (unsigned int) (EXTRACT_OPERAND (VS2, l) & 0x7) * 8);
+	      break;
 	    case '0':
 	      print (info->stream, dis_style_register, "%s",
 		     riscv_vecr_names_numeric[0]);
@@ -453,17 +480,27 @@ print_insn_args (const char *oparg, insn_t l, bfd_vma pc, disassemble_info *info
 		unsigned int imm_vsew = EXTRACT_OPERAND (VSEW, imm);
 		unsigned int imm_vta = EXTRACT_OPERAND (VTA, imm);
 		unsigned int imm_vma = EXTRACT_OPERAND (VMA, imm);
-		unsigned int imm_vtype_res = (imm >> 8);
+		unsigned int imm_vtype_altfmt
+		  = EXTRACT_OPERAND (VTYPE_ALTFMT, imm);
+		bool imm_vtype_altfmt_supported
+		  = (imm_vtype_altfmt
+		     && riscv_vtype_altfmt_supported (pd));
+		unsigned int imm_vtype_res = (imm >> 9);
 
 		if (imm_vsew < ARRAY_SIZE (riscv_vsew)
 		    && imm_vlmul < ARRAY_SIZE (riscv_vlmul)
 		    && imm_vta < ARRAY_SIZE (riscv_vta)
 		    && imm_vma < ARRAY_SIZE (riscv_vma)
 		    && !imm_vtype_res
+		    && (imm_vtype_altfmt == 0
+			|| (imm_vtype_altfmt_supported
+			    && imm_vsew < ARRAY_SIZE (riscv_vsew_altfmt)))
 		    && riscv_vsew[imm_vsew] != NULL
 		    && riscv_vlmul[imm_vlmul] != NULL)
 		  print (info->stream, dis_style_text, "%s,%s,%s,%s",
-			 riscv_vsew[imm_vsew],
+			 imm_vtype_altfmt
+			 ? riscv_vsew_altfmt[imm_vsew]
+			 : riscv_vsew[imm_vsew],
 			 riscv_vlmul[imm_vlmul], riscv_vta[imm_vta],
 			 riscv_vma[imm_vma]);
 		else
@@ -536,6 +573,11 @@ print_insn_args (const char *oparg, insn_t l, bfd_vma pc, disassemble_info *info
 	  break;
 
 	case 'm':
+	  if (EXTRACT_OPERAND (RM, l) == OP_MASK_RM)
+	    break;
+	  print (info->stream, dis_style_text, ",");
+	  /* Fall through. */
+	case 'M':
 	  arg_print (info, EXTRACT_OPERAND (RM, l),
 		     riscv_rm, ARRAY_SIZE (riscv_rm));
 	  break;
@@ -917,6 +959,79 @@ print_insn_args (const char *oparg, insn_t l, bfd_vma pc, disassemble_info *info
 		  goto undefined_modifier;
 		}
 	      break;
+	    case 'p': /* Vendor-specific (SpacemiT) operands.  */
+	      switch (*++oparg)
+		{
+		case 'V':
+		  switch (*++oparg)
+		    {
+		    case 'd':
+		      {
+			unsigned vd = EXTRACT_OPERAND (SPACEMIT_IME_VD, l) * 2;
+			print (info->stream, dis_style_register, "%s",
+			       riscv_vecr_names_numeric[vd]);
+		      }
+		      break;
+		    case 's':
+		      {
+			unsigned vs = EXTRACT_OPERAND (SPACEMIT_IME_VS1, l) * 2;
+			print (info->stream, dis_style_register, "%s",
+			       riscv_vecr_names_numeric[vs]);
+		      }
+		      break;
+		    case 'm':
+		      {
+			unsigned vm = EXTRACT_OPERAND (SPACEMIT_IME_VMASK, l);
+			print (info->stream, dis_style_register, "%s",
+			       riscv_vecr_names_numeric[vm]);
+		      }
+		      break;
+		    default:
+		      goto undefined_modifier;
+		    }
+		  break;
+		case 'n': /* Xpn/Xpb: uimm2 stride, encoded across bits 7,15.  */
+		case 'b':
+		  {
+		    unsigned sp = ((l >> 7) & 1) | (((l >> 15) & 1) << 1);
+		    print (info->stream, dis_style_immediate, "%u", sp);
+		  }
+		  break;
+		case 'u': /* XpuN@S: N-bit unsigned immediate at bit S.  */
+		  {
+		    long n = strtol (oparg + 1, (char **)&oparg, 10);
+		    if (*oparg != '@')
+		      goto undefined_modifier;
+		    long s = strtol (oparg + 1, (char **)&oparg, 10);
+		    oparg--;
+		    unsigned val = (l >> s) & ((1U << n) - 1);
+		    print (info->stream, dis_style_immediate, "%u", val);
+		  }
+		  break;
+		case 'w':
+		  /* Xpw: optional data-width suffix, i8 only.  WI==3 (i8)
+		     is the default and is omitted from the output.  */
+		  {
+		    unsigned wi = EXTRACT_OPERAND (SPACEMIT_IME_WI, l);
+		    if (wi != 3)
+		      goto undefined_modifier;
+		  }
+		  break;
+		case 'x':
+		  /* Xpx: optional data-width suffix, i4 or i8.  WI==3 (i8)
+		     is the default and is omitted from the output.  */
+		  {
+		    unsigned wi = EXTRACT_OPERAND (SPACEMIT_IME_WI, l);
+		    if (wi == 2)
+		      print (info->stream, dis_style_text, ",i4");
+		    else if (wi != 3)
+		      goto undefined_modifier;
+		  }
+		  break;
+		default:
+		  goto undefined_modifier;
+		}
+	      break;
 	    default:
 	      goto undefined_modifier;
 	    }
@@ -1018,10 +1133,48 @@ riscv_disassemble_insn (bfd_vma memaddr,
 	      && (op->xlen_requirement != pd->xlen))
 	    continue;
 	  /* Is this instruction supported by the current architecture?  */
-	  if (!pd->all_ext
-	      && !riscv_multi_subset_supports (&pd->riscv_rps_dis,
-					       op->insn_class))
-	    continue;
+	  if (!pd->all_ext)
+	    {
+	      if (!riscv_multi_subset_supports (&pd->riscv_rps_dis,
+						op->insn_class))
+		continue;
+
+	      if (pd->xlen == 32
+		  && riscv_subset_supports (&pd->riscv_rps_dis, "zdinx"))
+		{
+		  if ((op->pinfo & INSN_RV32_EVEN_D)
+		      && (word & (1u << OP_SH_RD)))
+		    continue;
+		  if ((op->pinfo & INSN_RV32_EVEN_S)
+		      && (word & (1u << OP_SH_RS1)))
+		    continue;
+		  if ((op->pinfo & INSN_RV32_EVEN_T)
+		      && (word & (1u << OP_SH_RS2)))
+		    continue;
+		  if ((op->pinfo & INSN_RV32_EVEN_R)
+		      && (word & (1u << OP_SH_RS3)))
+		    continue;
+		}
+
+	      if (pd->xlen <= 64
+		  && riscv_subset_supports (&pd->riscv_rps_dis, "zqinx"))
+		{
+		  unsigned int mask = pd->xlen == 32 ? 3 : 1;
+
+		  if ((op->pinfo & INSN_RV64_EVEN_D)
+		      && (word & (mask << OP_SH_RD)))
+		    continue;
+		  if ((op->pinfo & INSN_RV64_EVEN_S)
+		      && (word & (mask << OP_SH_RS1)))
+		    continue;
+		  if ((op->pinfo & INSN_RV64_EVEN_T)
+		      && (word & (mask << OP_SH_RS2)))
+		    continue;
+		  if ((op->pinfo & INSN_RV64_EVEN_R)
+		      && (word & (mask << OP_SH_RS3)))
+		    continue;
+		}
+	    }
 
 	  /* It's a match.  */
 	  (*info->fprintf_styled_func) (info->stream, dis_style_mnemonic,
@@ -1140,7 +1293,7 @@ riscv_update_map_state (int n,
 
       /* ISA mapping string may be numbered, suffixed with '.n'. Do not
 	 consider this as part of the ISA string.  */
-      char *suffix = strchr (name, '.');
+      const char *suffix = strchr (name, '.');
       if (suffix)
 	{
 	  int suffix_index = (int)(suffix - name);

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Free Software Foundation, Inc.
+# Copyright 2024-2026 Free Software Foundation, Inc.
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 3 of the License, or
@@ -46,7 +46,7 @@ proc gdb_test_with_xfail { cmd re cond} {
 	    pass $gdb_test_name
 	}
 	-re -wrap "The inferior has not yet allocated storage for thread-local variables.*" {
-	    if [ uplevel 1 [list expr $cond]] {
+	    if {[ uplevel 1 [list expr $cond]]} {
 		xfail $gdb_test_name
 	    } else {
 		fail $gdb_test_name
@@ -56,17 +56,16 @@ proc gdb_test_with_xfail { cmd re cond} {
 }
 
 proc do_tests {force_internal_tls} {
-    clean_restart
-    gdb_load $::binfile
-    if ![runto_main] {
+    clean_restart $::testfile
+    if {![runto main -temporary]} {
 	return
     }
 
-    if $force_internal_tls {
+    if {$force_internal_tls} {
 	gdb_test_no_output "maint set force-internal-tls-address-lookup on"
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-1"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-1"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-1"
 
     with_test_prefix "before assignments" {
@@ -101,7 +100,7 @@ proc do_tests {force_internal_tls} {
 	}
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-2"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-2"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-2"
 
     with_test_prefix "at main-breakpoint-2" {
@@ -118,7 +117,7 @@ proc do_tests {force_internal_tls} {
 	}
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-3"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-3"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-3"
 
     # At this point lib2 and lib3 have been unloaded.  Also, TLS vars
@@ -138,7 +137,7 @@ proc do_tests {force_internal_tls} {
 	}
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-4"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-4"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-4"
 
     # lib3 has been loaded again; lib2 is the only one not loaded.
@@ -158,7 +157,7 @@ proc do_tests {force_internal_tls} {
 	}
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-5"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-5"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-5"
 
     # lib2 and lib3 are loaded; lib1 and lib4 are not.
@@ -178,7 +177,7 @@ proc do_tests {force_internal_tls} {
 	}
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-6"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-6"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-6"
 
     # lib1, lib3 and lib4 are loaded; lib2 is not loaded.
@@ -198,7 +197,7 @@ proc do_tests {force_internal_tls} {
 	}
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-7"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-7"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-7"
 
     # lib2 and lib3 are loaded; lib1 and lib4 are not.
@@ -218,7 +217,7 @@ proc do_tests {force_internal_tls} {
 	}
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-8"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-8"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-8"
 
     # lib1, lib2, lib3, and lib4 are all loaded.
@@ -237,7 +236,7 @@ proc do_tests {force_internal_tls} {
 	}
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-9"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-9"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-9"
 
     # lib2 is loaded; lib1, lib3, and lib4 are not.
@@ -256,7 +255,7 @@ proc do_tests {force_internal_tls} {
 	}
     }
 
-    gdb_breakpoint [gdb_get_line_number "main-breakpoint-10"]
+    gdb_breakpoint [gdb_get_line_number "main-breakpoint-10"] -temporary
     gdb_continue_to_breakpoint "main-breakpoint-10"
 
     # lib3 and lib4 are loaded; lib1 and lib2 are not.
@@ -285,12 +284,11 @@ proc do_tests {force_internal_tls} {
     }
 
     # Finish test early if no core file was made.
-    if !$core_supported {
+    if {!$core_supported} {
 	return
     }
 
-    clean_restart
-    gdb_load $::binfile
+    clean_restart $::testfile
 
     set core_loaded [gdb_core_cmd $corefile "load corefile"]
     if { $core_loaded == -1 } {
@@ -298,7 +296,7 @@ proc do_tests {force_internal_tls} {
     }
 
     with_test_prefix "core file" {
-	if $force_internal_tls {
+	if {$force_internal_tls} {
 	    gdb_test_no_output "maint set force-internal-tls-address-lookup on"
 	}
 
@@ -320,29 +318,29 @@ proc do_tests {force_internal_tls} {
 # Build shared objects for dlopen:
 if { [gdb_compile_shlib $libsrc $lib1obj [list debug additional_flags=-DN=1]] != "" } {
     untested "failed to compile shared object"
-    return -1
+    return
 }
 if { [gdb_compile_shlib $libsrc $lib2obj [list debug additional_flags=-DN=2]] != "" } {
     untested "failed to compile shared object"
-    return -1
+    return
 }
 if { [gdb_compile_shlib $libsrc $lib3obj [list debug additional_flags=-DN=3]] != "" } {
     untested "failed to compile shared object"
-    return -1
+    return
 }
 if { [gdb_compile_shlib $libsrc $lib4obj [list debug additional_flags=-DN=4]] != "" } {
     untested "failed to compile shared object"
-    return -1
+    return
 }
 
 # Build shared objects to link against main program:
 if { [gdb_compile_shlib $libsrc $lib10obj [list debug additional_flags=-DN=10]] != "" } {
     untested "failed to compile shared object"
-    return -1
+    return
 }
 if { [gdb_compile_shlib $libsrc $lib11obj [list debug additional_flags=-DN=11]] != "" } {
     untested "failed to compile shared object"
-    return -1
+    return
 }
 
 # Use gdb_compile_pthreads to build and link the main program for

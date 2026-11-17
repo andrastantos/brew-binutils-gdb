@@ -1,7 +1,7 @@
 /* Internal format of COFF object file data structures, for GNU BFD.
    This file is part of BFD, the Binary File Descriptor library.
 
-   Copyright (C) 1999-2025 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -158,10 +158,6 @@ typedef struct _CODEVIEW_INFO
 /* Default image base for NT.  */
 #define NT_EXE_IMAGE_BASE 0x400000
 #define NT_DLL_IMAGE_BASE 0x10000000
-
-/* Default image base for BeOS. */
-#define BEOS_EXE_IMAGE_BASE 0x80000000
-#define BEOS_DLL_IMAGE_BASE 0x10000000
 
 /* Extra stuff in a PE aouthdr */
 
@@ -684,10 +680,11 @@ struct internal_reloc
 {
   bfd_vma r_vaddr;		/* Virtual address of reference */
   long r_symndx;		/* Index into symbol table	*/
-  unsigned short r_type;	/* Relocation type		*/
-  unsigned char r_size;		/* Used by RS/6000 and ECOFF	*/
-  unsigned char r_extern;	/* Used by ECOFF		*/
   unsigned long r_offset;	/* Used by Alpha ECOFF, SPARC, others */
+  unsigned int r_type:16;	/* Relocation type		*/
+  unsigned int r_size:8;	/* Used by RS/6000 and ECOFF	*/
+  unsigned int r_extern:1;	/* Used by ECOFF		*/
+  unsigned int r_ignore:1;	/* Control _bfd_coff_generic_relocate_section */
 };
 
 #define IMAGE_REL_BASED_ABSOLUTE		0

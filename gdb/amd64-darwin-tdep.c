@@ -1,5 +1,5 @@
 /* Darwin support for GDB, the GNU debugger.
-   Copyright (C) 1997-2025 Free Software Foundation, Inc.
+   Copyright (C) 1997-2026 Free Software Foundation, Inc.
 
    Contributed by Apple Computer, Inc.
 
@@ -68,7 +68,7 @@ int amd64_darwin_thread_state_reg_offset[] =
   20 * 8			/* %gs */
 };
 
-const int amd64_darwin_thread_state_num_regs = 
+const int amd64_darwin_thread_state_num_regs =
   ARRAY_SIZE (amd64_darwin_thread_state_reg_offset);
 
 /* Assuming THIS_FRAME is a Darwin sigtramp routine, return the

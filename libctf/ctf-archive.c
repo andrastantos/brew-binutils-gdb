@@ -1,5 +1,5 @@
 /* CTF archive files.
-   Copyright (C) 2019-2025 Free Software Foundation, Inc.
+   Copyright (C) 2019-2026 Free Software Foundation, Inc.
 
    This file is part of libctf.
 
@@ -389,14 +389,19 @@ ctf_arc_symsect_endianness (ctf_archive_t *arc, int little_endian)
 /* Get the CTF preamble from data in a buffer, which may be either an archive or
    a CTF dict.  If multiple dicts are present in an archive, the preamble comes
    from an arbitrary dict.  The preamble is a pointer into the ctfsect passed
-   in.  */
+   in.  Returns NULL if this cannot be a CTF archive or dict at all.  */
 
 const ctf_preamble_t *
 ctf_arc_bufpreamble (const ctf_sect_t *ctfsect)
 {
-  if (ctfsect->cts_data != NULL
-      && ctfsect->cts_size > sizeof (uint64_t)
-      && (le64toh ((*(uint64_t *) ctfsect->cts_data)) == CTFA_MAGIC))
+  if (ctfsect->cts_data == NULL
+      || ctfsect->cts_size < sizeof (uint64_t)
+      || (le64toh ((*(uint64_t *) ctfsect->cts_data)) == CTFA_MAGIC
+	  && ctfsect->cts_size < (sizeof (ctf_archive_t) + sizeof (uint64_t))))
+    return NULL;
+
+  if (ctfsect->cts_size >= (sizeof (struct ctf_archive) + sizeof (uint64_t))
+      && le64toh ((*(uint64_t *) ctfsect->cts_data)) == CTFA_MAGIC)
     {
       struct ctf_archive *arc = (struct ctf_archive *) ctfsect->cts_data;
       return (const ctf_preamble_t *) ((char *) arc + le64toh (arc->ctfa_ctfs)
@@ -418,7 +423,7 @@ ctf_arc_bufopen (const ctf_sect_t *ctfsect, const ctf_sect_t *symsect,
   ctf_dict_t *fp = NULL;
 
   if (ctfsect->cts_data != NULL
-      && ctfsect->cts_size > sizeof (uint64_t)
+      && ctfsect->cts_size >= sizeof (struct ctf_archive)
       && (le64toh ((*(uint64_t *) ctfsect->cts_data)) == CTFA_MAGIC))
     {
       /* The archive is mmappable, so this operation is trivial.

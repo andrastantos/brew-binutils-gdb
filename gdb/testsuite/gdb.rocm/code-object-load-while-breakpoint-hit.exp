@@ -1,4 +1,4 @@
-# Copyright 2025 Free Software Foundation, Inc.
+# Copyright 2025-2026 Free Software Foundation, Inc.
 
 # This file is part of GDB.
 
@@ -39,7 +39,7 @@ require allow_hipcc_tests
 # Build the host executable.
 if { [build_executable "failed to prepare" \
 	  $testfile $srcfile {debug hip}] == -1 } {
-    return -1
+    return
 }
 
 set hipmodule_path [standard_output_file ${testfile}.co]
@@ -48,16 +48,15 @@ set hipmodule_path [standard_output_file ${testfile}.co]
 if { [gdb_compile $srcdir/$subdir/$srcfile \
 	$hipmodule_path object \
 	{ debug hip additional_flags=--genco additional_flags=-DDEVICE } ] != "" } {
-    return -1
+    return
 }
 
 proc do_test { } {
     with_rocm_gpu_lock {
 	clean_restart
 	gdb_load $::binfile
-	gdb_test_no_output "set args $::hipmodule_path" "set args"
 
-	if { ![runto_main] } {
+	if { ![runto_main -inferior-args $::hipmodule_path] } {
 		return
 	}
 

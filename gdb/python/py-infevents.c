@@ -1,6 +1,6 @@
 /* Python interface to inferior function events.
 
-   Copyright (C) 2013-2025 Free Software Foundation, Inc.
+   Copyright (C) 2013-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -68,7 +68,7 @@ create_register_changed_event_object (const frame_info_ptr &frame,
   if (event == NULL)
     return NULL;
 
-  gdbpy_ref<> frame_obj (frame_info_to_frame_object (frame));
+  gdbpy_ref<> frame_obj = frame_info_to_frame_object (frame);
   if (frame_obj == NULL)
     return NULL;
 

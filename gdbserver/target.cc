@@ -1,5 +1,5 @@
 /* Target operations for the remote server for GDB.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
 
@@ -409,10 +409,10 @@ process_stratum_target::stopped_by_watchpoint ()
   return false;
 }
 
-CORE_ADDR
-process_stratum_target::stopped_data_address ()
+std::vector<CORE_ADDR>
+process_stratum_target::stopped_data_addresses ()
 {
-  return 0;
+  return {};
 }
 
 bool
@@ -550,7 +550,7 @@ process_stratum_target::handle_new_gdb_connection ()
 }
 
 int
-process_stratum_target::handle_monitor_command (char *mon)
+process_stratum_target::handle_monitor_command (const char *mon)
 {
   return 0;
 }

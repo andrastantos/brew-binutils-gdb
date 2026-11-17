@@ -1,5 +1,5 @@
 /* Helper routines for C++ support in GDB.
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
    Contributed by David Carlton and by Kealia, Inc.
 
@@ -33,6 +33,7 @@
 #include "namespace.h"
 #include "inferior.h"
 #include "gdbsupport/unordered_map.h"
+#include "producer.h"
 #include <string>
 #include <string.h>
 
@@ -43,10 +44,6 @@ static struct block_symbol
 			     const struct block *block,
 			     const domain_search_flags domain,
 			     int basic_lookup, int is_in_anonymous);
-
-static struct type *cp_lookup_transparent_type_loop (const char *name,
-						     const char *scope,
-						     int scope_len);
 
 /* Check to see if SYMBOL refers to an object contained within an
    anonymous namespace; if so, add an appropriate using directive.  */
@@ -353,7 +350,7 @@ cp_lookup_symbol_in_namespace (const char *the_namespace, const char *name,
 }
 
 /* Type used for collecting symbols.  Maps names to symbols.  */
-using symbol_map = gdb::unordered_map<std::string, block_symbol>;
+using symbol_map = gdb::unordered_string_map<block_symbol>;
 
 /* This version of the function is internal, use the wrapper unless
    the list of ambiguous symbols is needed.
@@ -398,7 +395,6 @@ cp_lookup_symbol_via_imports (const char *scope,
 {
   struct block_symbol sym = {};
   int len;
-  int directive_match;
 
   /* All the symbols we found will be kept in this relational map between
      the mangled name and the block_symbol found.  We do this so that GDB
@@ -414,9 +410,26 @@ cp_lookup_symbol_via_imports (const char *scope,
 	found_symbols[sym.symbol->m_name] = sym;
     }
 
-  /* Due to a GCC bug, we need to know the boundaries of the current block
-     to know if a certain using directive is valid.  */
-  symtab_and_line boundary_sal = find_pc_line (block->end () - 1, 0);
+  unsigned boundary_line = 0;
+  {
+    struct symbol *fn = block->containing_function ();
+    int major, minor;
+    if (fn != nullptr
+	&& producer_is_gcc (fn->symtab ()->compunit ().producer (),
+			    &major, &minor)
+	&& (major <= 9
+	    || (major == 10 && minor < 5)
+	    || (major == 11 && minor < 4)
+	    || (major == 12 && minor < 3)
+	    || (major == 13 && minor < 1)))
+      {
+	/* Due to a GCC bug (PR debug/108716, fixed in 10.5, 11.4, 12.3, 13.1),
+	   we need to know the boundaries of the current block to know if a
+	   certain using directive is valid.  */
+	symtab_and_line boundary_sal = find_sal_for_pc (block->end () - 1, 0);
+	boundary_line = boundary_sal.line;
+      }
+  }
 
   /* Go through the using directives.  If any of them add new names to
      the namespace we're searching in, see if we can find a match by
@@ -427,15 +440,30 @@ cp_lookup_symbol_via_imports (const char *scope,
 
       /* If the using directive was below the place we are stopped at,
 	 do not use this directive.  */
-      if (!current->valid_line (boundary_sal.line))
+      if (!current->valid_line (boundary_line))
 	continue;
+
       len = strlen (current->import_dest);
-      directive_match = (search_parents
-			 ? (startswith (scope, current->import_dest)
-			    && (len == 0
-				|| scope[len] == ':'
-				|| scope[len] == '\0'))
-			 : strcmp (scope, current->import_dest) == 0);
+
+      bool directive_match;
+      if (search_parents)
+	{
+	  if (len == 0)
+	    {
+	      const char *current_scope = (block->function_block () != nullptr
+					   ? block->scope ()
+					   : nullptr /* Don't know.  */);
+	      directive_match = (current_scope != nullptr
+				 ? streq (scope, current_scope)
+				 : true /* Assume there's a match.  */);
+	    }
+	  else
+	    directive_match = (startswith (scope, current->import_dest)
+			       && (scope[len] == ':'
+				   || scope[len] == '\0'));
+	}
+      else
+	directive_match = streq (scope, current->import_dest);
 
       /* If the import destination is the current scope or one of its
 	 ancestors then it is applicable.  */
@@ -451,9 +479,10 @@ cp_lookup_symbol_via_imports (const char *scope,
 	     with the sought out name.  If there is a match pass
 	     current->import_src as NAMESPACE to direct the search
 	     towards the imported namespace.  */
-	  if (current->declaration
-	      && strcmp (name, current->alias
-			 ? current->alias : current->declaration) == 0)
+	  if (current->declaration != nullptr
+	      && streq (name, (current->alias != nullptr
+			       ? current->alias
+			       : current->declaration)))
 	    sym = cp_lookup_symbol_in_namespace (current->import_src,
 						 current->declaration,
 						 block, domain, 1);
@@ -471,13 +500,12 @@ cp_lookup_symbol_via_imports (const char *scope,
 
 	  /* Do not follow CURRENT if NAME matches its EXCLUDES.  */
 	  for (excludep = current->excludes; *excludep; excludep++)
-	    if (strcmp (name, *excludep) == 0)
+	    if (streq (name, *excludep))
 	      break;
 	  if (*excludep)
 	    continue;
 
-	  if (current->alias != NULL
-	      && strcmp (name, current->alias) == 0)
+	  if (current->alias != nullptr && streq (name, current->alias))
 	    /* If the import is creating an alias and the alias matches
 	       the sought name.  Pass current->import_src as the NAME to
 	       direct the search towards the aliased namespace.  */
@@ -492,9 +520,13 @@ cp_lookup_symbol_via_imports (const char *scope,
 	      /* If this import statement creates no alias, pass
 		 current->inner as NAMESPACE to direct the search
 		 towards the imported namespace.  */
-	      cp_lookup_symbol_via_imports (current->import_src, name,
-					    block, domain, 1, 0, 0,
-					    found_symbols);
+	      for (const struct block *b = block; b != nullptr;
+		   b = ((b->is_static_block () || b->is_global_block ())
+			? b->superblock ()
+			: b->static_block ()))
+		cp_lookup_symbol_via_imports (current->import_src, name,
+					      b, domain, 1, 0, 0,
+					      found_symbols);
 	    }
 
 	}
@@ -964,80 +996,6 @@ cp_lookup_nested_symbol (struct type *parent_type,
       internal_error (_("cp_lookup_nested_symbol called "
 			"on a non-aggregate type."));
     }
-}
-
-/* The C++-version of lookup_transparent_type.  */
-
-/* FIXME: carlton/2004-01-16: The problem that this is trying to
-   address is that, unfortunately, sometimes NAME is wrong: it may not
-   include the name of namespaces enclosing the type in question.
-   lookup_transparent_type gets called when the type in question
-   is a declaration, and we're trying to find its definition; but, for
-   declarations, our type name deduction mechanism doesn't work.
-   There's nothing we can do to fix this in general, I think, in the
-   absence of debug information about namespaces (I've filed PR
-   gdb/1511 about this); until such debug information becomes more
-   prevalent, one heuristic which sometimes looks is to search for the
-   definition in namespaces containing the current namespace.
-
-   We should delete this functions once the appropriate debug
-   information becomes more widespread.  (GCC 3.4 will be the first
-   released version of GCC with such information.)  */
-
-struct type *
-cp_lookup_transparent_type (const char *name, domain_search_flags flags)
-{
-  /* First, try the honest way of looking up the definition.  */
-  struct type *t = basic_lookup_transparent_type (name, flags);
-  const char *scope;
-
-  if (t != NULL)
-    return t;
-
-  /* If that doesn't work and we're within a namespace, look there
-     instead.  */
-  const block *block = get_selected_block (0);
-  if (block == nullptr)
-    return nullptr;
-
-  scope = block->scope ();
-
-  if (scope[0] == '\0')
-    return NULL;
-
-  return cp_lookup_transparent_type_loop (name, scope, 0);
-}
-
-/* Lookup the type definition associated to NAME in namespaces/classes
-   containing SCOPE whose name is strictly longer than LENGTH.  LENGTH
-   must be the index of the start of a component of SCOPE.  */
-
-static struct type *
-cp_lookup_transparent_type_loop (const char *name,
-				 const char *scope,
-				 int length)
-{
-  int scope_length = length + cp_find_first_component (scope + length);
-  char *full_name;
-
-  /* If the current scope is followed by "::", look in the next
-     component.  */
-  if (scope[scope_length] == ':')
-    {
-      struct type *retval
-	= cp_lookup_transparent_type_loop (name, scope,
-					   scope_length + 2);
-
-      if (retval != NULL)
-	return retval;
-    }
-
-  full_name = (char *) alloca (scope_length + 2 + strlen (name) + 1);
-  strncpy (full_name, scope, scope_length);
-  memcpy (full_name + scope_length, "::", 2);
-  strcpy (full_name + scope_length + 2, name);
-
-  return basic_lookup_transparent_type (full_name);
 }
 
 /* This used to do something but was removed when it became

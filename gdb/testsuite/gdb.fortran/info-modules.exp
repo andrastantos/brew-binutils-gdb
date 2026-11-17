@@ -1,4 +1,4 @@
-# Copyright 2019-2025 Free Software Foundation, Inc.
+# Copyright 2019-2026 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@ standard_testfile info-types.f90 info-types-2.f90
 
 if { [prepare_for_testing "failed to prepare" $testfile \
 	  [list $srcfile2 $srcfile] {debug f90}] } {
-    return -1
+    return
 }
 
 if { ![fortran_runto_main] } {
@@ -168,4 +168,3 @@ GDBInfoModuleSymbols::check_entry "${srcfile}" "mod1" "21" \
     "${real4} mod1::mod1_var_1;"
 GDBInfoModuleSymbols::check_no_entry "${srcfile}" ".*"
 GDBInfoModuleSymbols::check_no_entry "${srcfile2}" ".*"
-

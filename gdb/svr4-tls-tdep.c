@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux, architecture independent.
 
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -42,10 +42,7 @@ static const registry<gdbarch>::key<svr4_tls_gdbarch_data>
 static struct svr4_tls_gdbarch_data *
 get_svr4_tls_gdbarch_data (struct gdbarch *gdbarch)
 {
-  struct svr4_tls_gdbarch_data *result = svr4_tls_gdbarch_data_handle.get (gdbarch);
-  if (result == nullptr)
-    result = svr4_tls_gdbarch_data_handle.emplace (gdbarch);
-  return result;
+  return &svr4_tls_gdbarch_data_handle.try_emplace (gdbarch);
 }
 
 /* When true, force internal TLS address lookup instead of lookup via
@@ -123,7 +120,7 @@ svr4_tls_get_thread_local_address (struct gdbarch *gdbarch, ptid_t ptid,
      The idea here is to prefer use of of the target's thread_stratum
      method since it should be more accurate.  */
   if (gdbarch_data->get_tls_dtv_addr == nullptr
-      || (find_target_at (thread_stratum) != nullptr
+      || (current_inferior ()->target_at (thread_stratum) != nullptr
 	  && !force_internal_tls_address_lookup))
     {
       struct target_ops *target = current_inferior ()->top_target ();

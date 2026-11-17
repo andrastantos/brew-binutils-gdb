@@ -24,7 +24,7 @@ esac
 rm -f e${EMULATION_NAME}.c
 (echo;echo;echo;echo;echo)>e${EMULATION_NAME}.c # there, now line numbers match ;-)
 fragment <<EOF
-/* Copyright (C) 2006-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2006-2026 Free Software Foundation, Inc.
    Written by Kai Tietz, OneVision Software GmbH&CoKg.
 
    This file is part of the GNU Binutils.
@@ -246,6 +246,8 @@ gld${EMULATION_NAME}_before_parse (void)
   config.has_shared = 1;
   link_info.pei386_auto_import = 1;
   link_info.pei386_runtime_pseudo_reloc = 2; /* Use by default version 2.  */
+#else
+  pep_dll_enable_reloc_section = 0;
 #endif
 }
 
@@ -1087,7 +1089,7 @@ pep_fixup_stdcalls (void)
   for (undef = link_info.hash->undefs; undef; undef=undef->u.undef.next)
     if (undef->type == bfd_link_hash_undefined)
       {
-	char* at = strchr (undef->root.string, '@');
+	const char* at = strchr (undef->root.string, '@');
 	int lead_at = (*undef->root.string == '@');
 	if (lead_at)
 	  at = strchr (undef->root.string + 1, '@');
@@ -1096,12 +1098,13 @@ pep_fixup_stdcalls (void)
 	    /* The symbol is a stdcall symbol, so let's look for a
 	       cdecl symbol with the same name and resolve to that.  */
 	    char *cname = xstrdup (undef->root.string);
+	    char *at2;
 
 	    if (lead_at)
 	      *cname = '_';
-	    at = strchr (cname, '@');
-	    if (at)
-	      *at = 0;
+	    at2 = strchr (cname, '@');
+	    if (at2)
+	      *at2 = 0;
 	    sym = bfd_link_hash_lookup (link_info.hash, cname, 0, 0, 1);
 
 	    if (sym && sym->type == bfd_link_hash_defined)
@@ -1579,6 +1582,16 @@ gld${EMULATION_NAME}_after_open (void)
 
   pep_output_file_set_long_section_names (link_info.output_bfd);
 
+  /* The RVAs of these symbols will be written into the PE header, so they
+     must not be collected.  */
+  char *sym = xstrdup ("__tls_used");
+  sym[0] = bfd_get_symbol_leading_char (link_info.output_bfd);
+  lang_add_gc_name (sym + !sym[0]);
+
+  sym = xstrdup ("__load_config_used");
+  sym[0] = bfd_get_symbol_leading_char (link_info.output_bfd);
+  lang_add_gc_name (sym + !sym[0]);
+
 #ifdef DLL_SUPPORT
   pep_process_import_defs (link_info.output_bfd, &link_info);
 
@@ -1602,6 +1615,9 @@ gld${EMULATION_NAME}_after_open (void)
   else
     pep_exe_build_sections (link_info.output_bfd, &link_info);
 #endif
+#else /* !DLL_SUPPORT */
+  if (!bfd_link_relocatable (&link_info))
+    pep_exe_build_sections (link_info.output_bfd, &link_info);
 #endif /* DLL_SUPPORT */
 
   {
@@ -1732,7 +1748,7 @@ gld${EMULATION_NAME}_after_open (void)
       {
 	if (is->the_bfd->my_archive)
 	  {
-	    char *pnt;
+	    const char *pnt;
 
 	    /* Microsoft import libraries may contain archive members for
 	       one or more DLLs, together with static object files.
@@ -1944,6 +1960,9 @@ gld${EMULATION_NAME}_finish (void)
 
   if (pep_out_def_filename)
     pep_dll_generate_def_file (pep_out_def_filename);
+#else /* !DLL_SUPPORT */
+  if (!bfd_link_relocatable (&link_info))
+    pep_exe_fill_sections (link_info.output_bfd, &link_info);
 #endif /* DLL_SUPPORT */
 
   /* I don't know where .idata gets set as code, but it shouldn't be.  */
@@ -1978,7 +1997,7 @@ gld${EMULATION_NAME}_place_orphan (asection *s,
 				    int constraint)
 {
   const char *orig_secname = secname;
-  char *dollar = NULL;
+  const char *dollar = NULL;
   lang_output_section_statement_type *os;
   lang_statement_list_type add_child;
   lang_output_section_statement_type *match_by_name = NULL;

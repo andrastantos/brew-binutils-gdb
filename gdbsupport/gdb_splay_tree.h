@@ -1,6 +1,6 @@
 /* GDB wrapper for splay trees.
 
-   Copyright (C) 2017-2025 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -36,7 +36,7 @@ struct splay_tree_deleter
 
 /* A unique pointer to a splay tree.  */
 
-typedef std::unique_ptr<splay_tree_s, gdb::splay_tree_deleter>
-    gdb_splay_tree_up;
+using gdb_splay_tree_up
+  = std::unique_ptr<splay_tree_s, gdb::splay_tree_deleter>;
 
 #endif /* GDBSUPPORT_GDB_SPLAY_TREE_H */

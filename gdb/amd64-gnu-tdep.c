@@ -1,5 +1,5 @@
 /* Target-dependent code for the GNU Hurd.
-   Copyright (C) 2024-2025 Free Software Foundation, Inc.
+   Copyright (C) 2024-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "extract-store-integer.h"
 #include "gdbcore.h"
 #include "osabi.h"
@@ -90,7 +89,7 @@ amd64_gnu_sigtramp_p (const frame_info_ptr &this_frame)
   find_pc_partial_function (pc, &name, NULL, NULL);
 
   /* If we have a NAME, we can check for the trampoline function */
-  if (name != NULL && strcmp (name, "trampoline") == 0)
+  if (name != NULL && streq (name, "trampoline"))
     return 1;
 
   return amd64_gnu_sigtramp_start (this_frame) != 0;

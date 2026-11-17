@@ -1,5 +1,5 @@
 /* tc-mcore.c -- Assemble code for M*Core
-   Copyright (C) 1999-2025 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -2015,7 +2015,7 @@ md_apply_fix (fixS *   fixP,
 	fixP->fx_done = 0;
       break;
 
-    case BFD_RELOC_MCORE_PCREL_32:
+    case BFD_RELOC_32_PCREL:
     case BFD_RELOC_VTABLE_INHERIT:
     case BFD_RELOC_VTABLE_ENTRY:
       fixP->fx_done = 0;

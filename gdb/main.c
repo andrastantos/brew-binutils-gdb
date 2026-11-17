@@ -1,6 +1,6 @@
 /* Top level stuff for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -30,7 +30,6 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <ctype.h>
 #include "gdbsupport/event-loop.h"
 #include "ui-out.h"
 
@@ -60,6 +59,9 @@
 #include "serial.h"
 #include "cli-out.h"
 #include "bt-utils.h"
+#include "terminal.h"
+#include "logging-file.h"
+#include "filesystem.h"
 
 /* The selected interpreter.  */
 std::string interpreter_p;
@@ -78,10 +80,6 @@ static int gdb_datadir_provided = 0;
 /* If gdb was configured with --with-python=/path,
    the possibly relocated path to python's lib directory.  */
 std::string python_libdir;
-
-/* Target IO streams.  */
-struct ui_file *gdb_stdtargin;
-struct ui_file *gdb_stdtarg;
 
 /* True if --batch or --batch-silent was seen.  */
 int batch_flag = 0;
@@ -494,7 +492,7 @@ handle_command_errors (const struct gdb_exception &e)
 /* Type of the command callback passed to the const
    catch_command_errors.  */
 
-typedef void (catch_command_errors_const_ftype) (const char *, int);
+using catch_command_errors_const_ftype = void (const char *, int);
 
 /* Wrap calls to commands run before the event loop is started.  */
 
@@ -618,8 +616,19 @@ captured_main_1 (struct captured_main_args *context)
   char **argv = context->argv;
 
   static int quiet = 0;
-  static int set_args = 0;
   static int inhibit_home_gdbinit = 0;
+
+  /* Has the user passed inferior arguments on the command line.  */
+  enum {
+    /* No arguments passed.  */
+    NO_ARGS,
+
+    /* Arguments passed with --args.  */
+    SET_ESC_ARGS,
+
+    /* Arguments passed with --no-escape-args.  */
+    SET_NO_ESC_ARGS
+  } set_args = NO_ARGS;
 
   /* Pointers to various arguments from command line.  */
   char *symarg = NULL;
@@ -684,9 +693,6 @@ captured_main_1 (struct captured_main_args *context)
   gdb_internal_backtrace_init_str ();
   current_ui = main_ui;
 
-  gdb_stdtarg = gdb_stderr;
-  gdb_stdtargin = gdb_stdin;
-
   /* Put a CLI based uiout in place early.  If the early initialization
      files trigger any I/O then it isn't hard to reach parts of GDB that
      assume current_uiout is not nullptr.  Maybe we should just install the
@@ -712,7 +718,7 @@ captured_main_1 (struct captured_main_args *context)
     = xstrprintf ("%s: ", gdb_program_name);
   warning_pre_print = tmp_warn_preprint.get ();
 
-  current_directory = getcwd (NULL, 0);
+  current_directory = gdb_getcwd (NULL, 0);
   if (current_directory == NULL)
     perror_warning_with_name (_("error finding working directory"));
 
@@ -747,7 +753,7 @@ captured_main_1 (struct captured_main_args *context)
 
   /* There will always be an interpreter.  Either the one passed into
      this captured main, or one specified by the user at start up, or
-     the console.  Initialize the interpreter to the one requested by 
+     the console.  Initialize the interpreter to the one requested by
      the application.  */
   interpreter_p = context->interpreter_p;
 
@@ -770,7 +776,12 @@ captured_main_1 (struct captured_main_args *context)
       OPT_EIX,
       OPT_EIEX,
       OPT_READNOW,
-      OPT_READNEVER
+      OPT_READNEVER,
+      OPT_SET_ESC_ARGS,
+      OPT_SET_NO_ESC_ARGS,
+#ifdef USE_WIN32API
+      OPT_BINARY_OUTPUT,
+#endif
     };
     /* This struct requires int* in the struct, but write_files is a bool.
        So use this temporary int that we write back after argument parsing.  */
@@ -843,9 +854,13 @@ captured_main_1 (struct captured_main_args *context)
       {"windows", no_argument, NULL, OPT_WINDOWS},
       {"statistics", no_argument, 0, OPT_STATISTICS},
       {"write", no_argument, &write_files_1, 1},
-      {"args", no_argument, &set_args, 1},
+      {"args", no_argument, nullptr, OPT_SET_ESC_ARGS},
+      {"no-escape-args", no_argument, nullptr, OPT_SET_NO_ESC_ARGS},
       {"l", required_argument, 0, 'l'},
       {"return-child-result", no_argument, &return_child_result, 1},
+#ifdef USE_WIN32API
+      {"binary-output", no_argument, 0, OPT_BINARY_OUTPUT},
+#endif
       {0, no_argument, 0, 0}
     };
 
@@ -853,9 +868,14 @@ captured_main_1 (struct captured_main_args *context)
       {
 	int option_index;
 
+	/* If the previous argument was --args or --no-escape-args, then
+	   stop argument processing.  */
+	if (set_args != NO_ARGS)
+	  break;
+
 	c = getopt_long_only (argc, argv, "",
 			      long_options, &option_index);
-	if (c == EOF || set_args)
+	if (c == EOF)
 	  break;
 
 	/* Long option that takes an argument.  */
@@ -936,9 +956,15 @@ captured_main_1 (struct captured_main_args *context)
 	  case OPT_EIEX:
 	    cmdarg_vec.emplace_back (CMDARG_EARLYINIT_COMMAND, optarg);
 	    break;
+	  case OPT_SET_ESC_ARGS:
+	    set_args = SET_ESC_ARGS;
+	    break;
+	  case OPT_SET_NO_ESC_ARGS:
+	    set_args = SET_NO_ESC_ARGS;
+	    break;
 	  case 'B':
 	    batch_flag = batch_silent = 1;
-	    gdb_stdout = new null_file ();
+	    current_ui->m_ui_stdout = new null_file ();
 	    break;
 	  case 'D':
 	    if (optarg[0] == '\0')
@@ -1019,6 +1045,12 @@ captured_main_1 (struct captured_main_args *context)
 	    }
 	    break;
 
+#ifdef USE_WIN32API
+	  case OPT_BINARY_OUTPUT:
+	    set_output_translation_mode_binary ();
+	    break;
+#endif
+
 	  case '?':
 	    error (_("Use `%s --help' for a complete list of options."),
 		   gdb_program_name);
@@ -1069,7 +1101,7 @@ captured_main_1 (struct captured_main_args *context)
 
   /* Now that gdb_init has created the initial inferior, we're in
      position to set args for that inferior.  */
-  if (set_args)
+  if (set_args != NO_ARGS)
     {
       /* The remaining options are the command-line options for the
 	 inferior.  The first one is the sym/exec file, and the rest
@@ -1081,10 +1113,9 @@ captured_main_1 (struct captured_main_args *context)
       symarg = argv[optind];
       execarg = argv[optind];
       ++optind;
-      current_inferior ()->set_args
-	(gdb::array_view<char * const> (&argv[optind], argc - optind),
-	 startup_with_shell);
-    }
+      gdb::array_view<char * const> arg_view (&argv[optind], argc - optind);
+      current_inferior ()->set_args (arg_view, (set_args == SET_ESC_ARGS));
+   }
   else
     {
       /* OK, that's all the options.  */
@@ -1161,11 +1192,10 @@ captured_main_1 (struct captured_main_args *context)
 
   if (!quiet)
     {
-      /* Print all the junk at the top, with trailing "..." if we are
-	 about to read a symbol file (possibly slowly).  */
+      /* Print the version, copyright information, and hint text.  */
       print_gdb_version (gdb_stdout, true);
-      if (symarg)
-	gdb_printf ("..");
+      gdb_printf ("\n");
+      print_gdb_hints (gdb_stdout);
       gdb_printf ("\n");
       gdb_flush (gdb_stdout);	/* Force to screen during slow
 				   operations.  */
@@ -1211,9 +1241,7 @@ captured_main_1 (struct captured_main_args *context)
   save_auto_load = global_auto_load;
   global_auto_load = 0;
 
-  if (execarg != NULL
-      && symarg != NULL
-      && strcmp (execarg, symarg) == 0)
+  if (execarg != nullptr && symarg != nullptr && streq (execarg, symarg))
     {
       /* The exec file and the symbol-file are the same.  If we can't
 	 open it, better only print one error message.
@@ -1254,7 +1282,7 @@ captured_main_1 (struct captured_main_args *context)
 	 If pid_or_core_arg's first character is a digit, try attach
 	 first and then corefile.  Otherwise try just corefile.  */
 
-      if (isdigit (pid_or_core_arg[0]))
+      if (c_isdigit (pid_or_core_arg[0]))
 	{
 	  ret = catch_command_errors (attach_command, pid_or_core_arg,
 				      !batch_flag);
@@ -1306,7 +1334,7 @@ captured_main_1 (struct captured_main_args *context)
      We wait until now because it is common to add to the source search
      path in local_gdbinit.  */
   global_auto_load = save_auto_load;
-  for (objfile *objfile : current_program_space->objfiles ())
+  for (objfile &objfile : current_program_space->objfiles ())
     load_auto_scripts_for_objfile (objfile);
 
   /* Process '-x' and '-ex' options.  */
@@ -1401,6 +1429,7 @@ This is the GNU debugger.  Usage:\n\n\
   gdb_puts (_("\
 Selection of debuggee and its files:\n\n\
   --args             Arguments after executable-file are passed to inferior.\n\
+  --no-escape-args   Like --args, but arguments are not escaped.\n\
   --core=COREFILE    Analyze the core dump COREFILE.\n\
   --exec=EXECFILE    Use EXECFILE as the executable.\n\
   --pid=PID          Attach to running process PID.\n\
@@ -1458,8 +1487,13 @@ Remote debugging options:\n\n\
 Other options:\n\n\
   --cd=DIR           Change current directory to DIR.\n\
   --data-directory=DIR, -D\n\
-		     Set GDB's data-directory to DIR.\n\
-"), stream);
+		     Set GDB's data-directory to DIR.\n"
+#ifdef USE_WIN32API
+"\
+  --binary-output    Set the translation mode of stdout/stderr to binary,\n\
+		     disabling CRLF translation.\n"
+#endif
+), stream);
   gdb_puts (_("\n\
 At startup, GDB reads the following early init files and executes their\n\
 commands:\n\
@@ -1503,7 +1537,7 @@ At startup, GDB reads the following init files and executes their commands:\n\
 For more information, type \"%ps\" from within GDB, or consult the\n\
 GDB manual (available as on-line info or a printed manual).\n\
 "),
-	      styled_string (command_style.style (), "stream"));
+	      styled_string (command_style.style (), "help"));
   if (REPORT_BUGS_TO[0] && stream == gdb_stdout)
     gdb_printf (stream, _("\n\
 Report bugs to %ps.\n\

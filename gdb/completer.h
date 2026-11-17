@@ -1,5 +1,5 @@
 /* Header for GDB line completion.
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -24,14 +24,14 @@
 
 struct match_list_displayer;
 
-typedef void mld_crlf_ftype (const struct match_list_displayer *);
-typedef void mld_putch_ftype (const struct match_list_displayer *, int);
-typedef void mld_puts_ftype (const struct match_list_displayer *,
+using mld_crlf_ftype = void (const struct match_list_displayer *);
+using mld_putch_ftype = void (const struct match_list_displayer *, int);
+using mld_puts_ftype = void (const struct match_list_displayer *,
 			     const char *);
-typedef void mld_flush_ftype (const struct match_list_displayer *);
-typedef void mld_erase_entire_line_ftype (const struct match_list_displayer *);
-typedef void mld_beep_ftype (const struct match_list_displayer *);
-typedef int mld_read_key_ftype (const struct match_list_displayer *);
+using mld_flush_ftype = void (const struct match_list_displayer *);
+using mld_erase_entire_line_ftype = void (const struct match_list_displayer *);
+using mld_beep_ftype = void (const struct match_list_displayer *);
+using mld_read_key_ftype = int (const struct match_list_displayer *);
 
 /* Interface between CLI/TUI and gdb_match_list_displayer.  */
 
@@ -66,7 +66,7 @@ struct match_list_displayer
 /* A list of completion candidates.  Each element is a malloc string,
    because ownership of the strings is transferred to readline, which
    calls free on each element.  */
-typedef std::vector<gdb::unique_xmalloc_ptr<char>> completion_list;
+using completion_list = std::vector<gdb::unique_xmalloc_ptr<char>>;
 
 /* The result of a successful completion match.  When doing symbol
    comparison, we use the symbol search name for the symbol name match
@@ -203,7 +203,7 @@ private:
 
   /* The ignored substring ranges within M_MATCH.  E.g., if we were
      looking for completion matches for C++ functions starting with
-       "functio"
+       "functio"	codespell:ignore functio
      and successfully match:
        "function[abi:cxx11](int)"
      the ignored ranges vector will contain an entry that delimits the

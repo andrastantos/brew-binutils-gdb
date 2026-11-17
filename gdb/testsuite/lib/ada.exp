@@ -1,4 +1,4 @@
-# Copyright 2004-2025 Free Software Foundation, Inc.
+# Copyright 2004-2026 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,6 +12,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# tclint-disable redefined-builtin
 
 # A wrapper for foreach_with_prefix that applies suitable
 # -fgnat-encodings arguments to a command line.  SCENARIO_ARG is the
@@ -104,14 +106,14 @@ proc gdb_compile_ada_1 {source dest type options} {
     append options " additional_flags=-I$srcdir"
 
     set result [target_compile_ada_from_dir \
-                    $objdir [file tail $source] $dest $type $options]
+		    $objdir [file tail $source] $dest $type $options]
 
     # The Ada build always produces some output, even when the build
     # succeeds. Thus, we can not use the output the same way we do in
     # gdb_compile to determine whether the build has succeeded or not.
     # We therefore simply check whether the dest file has been created
     # or not. Unless not present, the build has succeeded.
-    if [file exists $dest] { set result "" }
+    if {[file exists $dest]} { set result "" }
     return $result
 }
 
@@ -164,21 +166,22 @@ proc find_ada_tool {tool} {
     set result ""
 
     if {![is_remote host]} {
-        set result [lookfor_file $root $tool]
+	set result [lookfor_file $root $tool]
 	if { $result != "" && $tool == "gnatlink" } {
 	    set result "$result --GCC=$root/xgcc -B$root"
 	}
     }
 
     if {$result == ""} {
-        set result [transform $tool]
+	set result [transform $tool]
     }
 
     return $result
 }
 
 # Compare the GNAT version against L2 using version_compare.  If the
-# compiler does not appear to be GCC, this will always return false.
+# compiler does not appear to be GCC, this will assume that gnatmake
+# is very new.
 
 proc gnat_version_compare {op l2} {
     set gnatmake [find_gnatmake]
@@ -187,7 +190,8 @@ proc gnat_version_compare {op l2} {
 	return 0
     }
     if {![regexp {GNATMAKE ([0-9]+(\.[0-9]+)*)} $output match version]} {
-	return 0
+	# Assume a "very new" version.
+	set version 99
     }
 
     return [version_compare [split $version .] $op $l2]
@@ -288,6 +292,14 @@ gdb_caching_proc ada_fvar_tracking {} {
 gdb_caching_proc ada_minimal_encodings {} {
     return [ada_simple_compile minimal_encodings \
 		additional_flags=-fgnat-encodings=minimal]
+}
+
+# Return 1 if GNAT is based on LLVM.
+gdb_caching_proc using_gnat_llvm {} {
+    # Whether or not gnatmake will use LLVM can't be determined from
+    # the command line -- e.g., --version doesn't provide any
+    # indication.  So for now use a proxy.
+    return [expr {![ada_minimal_encodings]}]
 }
 
 # Return 1 if GNAT supports -Og.

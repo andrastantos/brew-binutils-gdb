@@ -1,6 +1,6 @@
 /* TUI display source/assembly window.
 
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -26,7 +26,6 @@
 #include "value.h"
 #include "source.h"
 #include "objfiles.h"
-#include "gdbsupport/gdb-safe-ctype.h"
 
 #include "tui/tui.h"
 #include "tui/tui-data.h"
@@ -56,7 +55,7 @@ tui_display_main ()
 	  tui_batch_rendering defer;
 
 	  tui_update_source_windows_with_addr (gdbarch, addr);
-	  struct symtab *s = find_pc_line_symtab (addr);
+	  struct symtab *s = find_symtab_for_pc (addr);
 	  tui_location.set_location (s);
 	}
     }
@@ -109,7 +108,7 @@ tui_copy_source_line (const char **ptr, int *length)
 	}
       else if (c == '\t')
 	process_tab ();
-      else if (ISCNTRL (c))
+      else if (c_iscntrl (c))
 	{
 	  result.push_back ('^');
 	  result.push_back (c + 0100);
@@ -183,7 +182,7 @@ tui_source_window_base::update_source_window_with_addr (struct gdbarch *gdbarch,
 {
   struct symtab_and_line sal {};
   if (addr != 0)
-    sal = find_pc_line (addr, 0);
+    sal = find_sal_for_pc (addr, 0);
 
   maybe_update (gdbarch, sal);
 }
@@ -195,7 +194,7 @@ tui_update_source_windows_with_addr (struct gdbarch *gdbarch, CORE_ADDR addr)
 {
   struct symtab_and_line sal {};
   if (addr != 0)
-    sal = find_pc_line (addr, 0);
+    sal = find_sal_for_pc (addr, 0);
 
   for (struct tui_source_window_base *win_info : tui_source_windows ())
     win_info->update_source_window (gdbarch, sal);
@@ -209,8 +208,8 @@ tui_update_source_windows_with_line (struct symtab_and_line sal)
   struct gdbarch *gdbarch = nullptr;
   if (sal.symtab != nullptr)
     {
-      find_line_pc (sal.symtab, sal.line, &sal.pc);
-      gdbarch = sal.symtab->compunit ()->objfile ()->arch ();
+      find_pc_for_line (sal.symtab, sal.line, &sal.pc);
+      gdbarch = sal.symtab->compunit ().objfile ()->arch ();
     }
 
   for (struct tui_source_window_base *win_info : tui_source_windows ())
@@ -310,6 +309,8 @@ void
 tui_source_window_base::refresh_window ()
 {
   TUI_SCOPED_DEBUG_START_END ("window `%s`", name ());
+
+  gdb_assert (handle != nullptr);
 
   /* tui_win_info::refresh_window would draw the empty background window to
      the screen, potentially creating a flicker.  */
@@ -494,7 +495,7 @@ tui_source_window_base::refill ()
 	{
 	  frame_info_ptr fi = deprecated_safe_get_selected_frame ();
 	  if (fi != nullptr)
-	    sal = find_pc_line (get_frame_pc (fi), 0);
+	    sal = find_sal_for_pc (get_frame_pc (fi), 0);
 	}
     }
 

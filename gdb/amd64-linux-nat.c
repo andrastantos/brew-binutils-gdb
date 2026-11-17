@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux x86-64.
 
-   Copyright (C) 2001-2025 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
    Contributed by Jiri Smid, SuSE Labs.
 
    This file is part of GDB.
@@ -38,6 +38,9 @@
 #include "x86-linux-nat.h"
 #include "nat/linux-ptrace.h"
 #include "nat/amd64-linux-siginfo.h"
+#include "nat/i386-linux.h"
+
+#include <asm/ldt.h>
 
 /* This definition comes from prctl.h.  Kernels older than 2.5.64
    do not have it.  */
@@ -87,7 +90,10 @@ static int amd64_linux_gregset32_reg_offset[] =
   -1, -1, -1, -1, -1, -1, -1, -1, /* k0 ... k7 (AVX512)  */
   -1, -1, -1, -1, -1, -1, -1, -1, /* zmm0 ... zmm7 (AVX512)  */
   -1,				  /* PKEYS register PKRU  */
-  ORIG_RAX * 8			  /* "orig_eax"  */
+  -1,				  /* SSP register.  */
+  -1, -1,			  /* fs/gs base registers.  */
+  ORIG_RAX * 8,			  /* "orig_eax"  */
+  -1, -1, -1,			  /* TLS GDT regs: i386_tls_gdt_0...2.  */
 };
 
 
@@ -109,7 +115,7 @@ amd64_linux_collect_native_gregset (const struct regcache *regcache,
   if (gdbarch_bfd_arch_info (gdbarch)->bits_per_word == 32)
     {
       /* Sign extend EAX value to avoid potential syscall restart
-	 problems.  
+	 problems.
 
 	 On Linux, when a syscall is interrupted by a signal, the
 	 (kernel function implementing the) syscall may return
@@ -119,7 +125,7 @@ amd64_linux_collect_native_gregset (const struct regcache *regcache,
 	 handler is called, the kernel can then either return -EINTR
 	 or it can cause the syscall to be restarted.  We are
 	 concerned with the latter case here.
-	 
+
 	 On (32-bit) i386, the status (-ERESTARTSYS) is placed in the
 	 EAX register.  When debugging a 32-bit process from a 64-bit
 	 (amd64) GDB, the debugger fetches 64-bit registers even
@@ -136,11 +142,11 @@ amd64_linux_collect_native_gregset (const struct regcache *regcache,
 	 syscall after a signal expects to see a negative value
 	 (specifically -ERESTARTSYS) in the 64-bit RAX register in
 	 order to correctly cause a syscall to be restarted.
-	 
+
 	 The call to amd64_collect_native_gregset, above, is setting
 	 the high 32 bits of RAX (and other registers too) to 0.  For
 	 syscall restart, we need to sign extend EAX so that RAX will
-	 appear as a negative value when EAX is set to -ERESTARTSYS. 
+	 appear as a negative value when EAX is set to -ERESTARTSYS.
 	 This in turn will cause the signal handling code in the
 	 kernel to recognize -ERESTARTSYS which will in turn cause the
 	 syscall to be restarted.
@@ -151,7 +157,7 @@ amd64_linux_collect_native_gregset (const struct regcache *regcache,
 
       if (regnum == -1 || regnum == I386_EAX_REGNUM)
 	{
-	  void *ptr = ((gdb_byte *) gregs 
+	  void *ptr = ((gdb_byte *) gregs
 		       + amd64_linux_gregset32_reg_offset[I386_EAX_REGNUM]);
 
 	  *(int64_t *) ptr = *(int32_t *) ptr;
@@ -234,7 +240,13 @@ amd64_linux_nat_target::fetch_registers (struct regcache *regcache, int regnum)
 
   if (regnum == -1 || !amd64_native_gregset_supplies_p (gdbarch, regnum))
     {
-      elf_fpregset_t fpregs;
+      if (regnum == -1 || i386_is_tls_regnum_p (regnum))
+	{
+	  if (tdep->i386_linux_tls)
+	    i386_fetch_tls_regs (regcache, tid, regnum);
+	  if (regnum != -1)
+	    return;
+	}
 
       if (have_ptrace_getregset == TRIBOOL_TRUE)
 	{
@@ -264,6 +276,8 @@ amd64_linux_nat_target::fetch_registers (struct regcache *regcache, int regnum)
 	}
       else
 	{
+	  elf_fpregset_t fpregs;
+
 	  if (ptrace (PTRACE_GETFPREGS, tid, 0, (long) &fpregs) < 0)
 	    perror_with_name (_("Couldn't get floating point status"));
 
@@ -306,7 +320,13 @@ amd64_linux_nat_target::store_registers (struct regcache *regcache, int regnum)
 
   if (regnum == -1 || !amd64_native_gregset_supplies_p (gdbarch, regnum))
     {
-      elf_fpregset_t fpregs;
+      if (regnum == -1 || i386_is_tls_regnum_p (regnum))
+	{
+	  if (tdep->i386_linux_tls)
+	    i386_store_tls_regs (regcache, tid, regnum);
+	  if (regnum != -1)
+	    return;
+	}
 
       if (have_ptrace_getregset == TRIBOOL_TRUE)
 	{
@@ -335,6 +355,8 @@ amd64_linux_nat_target::store_registers (struct regcache *regcache, int regnum)
 	}
       else
 	{
+	  elf_fpregset_t fpregs;
+
 	  if (ptrace (PTRACE_GETFPREGS, tid, 0, (long) &fpregs) < 0)
 	    perror_with_name (_("Couldn't get floating point status"));
 

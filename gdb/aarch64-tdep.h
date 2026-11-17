@@ -1,6 +1,6 @@
 /* Common target dependent code for GDB on AArch64 systems.
 
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GDB.
@@ -206,6 +206,15 @@ struct aarch64_gdbarch_tdep : gdbarch_tdep_base
   has_gcs_linux () const
   {
     return gcs_linux_reg_base != -1;
+  }
+
+  /* First FPMR register.  This is -1 if FPMR is not supported.  */
+  int fpmr_regnum = -1;
+
+  bool
+  has_fpmr () const
+  {
+    return fpmr_regnum != -1;
   }
 };
 

@@ -1,6 +1,6 @@
 /* This testcase is part of GDB, the GNU debugger.
 
-   Copyright 2010-2025 Free Software Foundation, Inc.
+   Copyright 2010-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -346,7 +346,7 @@
 	.uleb128 0x13	/* (DW_AT_language) */
 	.uleb128 0xb	/* (DW_FORM_data1) */
 	.uleb128 0x3	/* (DW_AT_name) */
-	.uleb128 0x8	/* (DW_FORM_sting) */
+	.uleb128 0x8	/* (DW_FORM_string) */
 	.byte	0x0
 	.byte	0x0
 

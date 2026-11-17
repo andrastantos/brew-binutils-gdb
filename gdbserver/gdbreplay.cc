@@ -1,5 +1,5 @@
 /* Replay a remote debug session logfile for GDB.
-   Copyright (C) 1996-2025 Free Software Foundation, Inc.
+   Copyright (C) 1996-2026 Free Software Foundation, Inc.
    Written by Fred Fish (fnf@cygnus.com) from pieces of gdbserver.
 
    This file is part of GDB.
@@ -32,7 +32,6 @@
 #if HAVE_SIGNAL_H
 #include <signal.h>
 #endif
-#include <ctype.h>
 #if HAVE_FCNTL_H
 #include <fcntl.h>
 #endif
@@ -60,7 +59,7 @@
 #include "getopt.h"
 
 #ifndef HAVE_SOCKLEN_T
-typedef int socklen_t;
+using socklen_t = int;
 #endif
 
 /* Sort of a hack... */
@@ -110,7 +109,7 @@ static void
 remote_open (const char *name)
 {
 #ifndef USE_WIN32API
-  if (strcmp (name, "-") == 0)
+  if (streq (name, "-"))
     {
       remote_desc_in = 0;
       remote_desc_out = 1;
@@ -462,7 +461,7 @@ static void
 gdbreplay_version (void)
 {
   printf ("GNU gdbreplay %s%s\n"
-	  "Copyright (C) 2025 Free Software Foundation, Inc.\n"
+	  "Copyright (C) 2026 Free Software Foundation, Inc.\n"
 	  "gdbreplay is free software, covered by "
 	  "the GNU General Public License.\n"
 	  "This gdbreplay was configured as \"%s\"\n",

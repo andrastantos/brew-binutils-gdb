@@ -1,5 +1,5 @@
 /* x86-specific ELF linker support between ld and bfd.
-   Copyright (C) 2019-2025 Free Software Foundation, Inc.
+   Copyright (C) 2019-2026 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -108,5 +108,5 @@ struct elf_linker_x86_params
   char call_nop_byte;
 };
 
-extern void _bfd_elf_linker_x86_set_options
+extern void bfd_elf_linker_x86_set_options
   (struct bfd_link_info *, struct elf_linker_x86_params *);

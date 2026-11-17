@@ -1,6 +1,6 @@
 /* Target description related code for GNU/Linux i386.
 
-   Copyright (C) 2024-2025 Free Software Foundation, Inc.
+   Copyright (C) 2024-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,6 +21,7 @@
 #include "arch/i386-linux-tdesc.h"
 #include "arch/i386.h"
 #include "arch/x86-linux-tdesc-features.h"
+#include "gdbsupport/unordered_map.h"
 
 /* See arch/i386-linux-tdesc.h.  */
 
@@ -31,7 +32,7 @@ i386_linux_read_description (uint64_t xstate_bv)
      xstate_bv value that created the target description.  This
      needs to be static within this function to ensure it is initialised
      before first use.  */
-  static std::unordered_map<uint64_t, const target_desc_up> i386_tdesc_cache;
+  static gdb::unordered_map<uint64_t, const_target_desc_up> i386_tdesc_cache;
 
   /* Only some bits are checked when creating a tdesc, but the
      XSTATE_BV value contains other feature bits that are not relevant
@@ -41,19 +42,18 @@ i386_linux_read_description (uint64_t xstate_bv)
      set.  */
   xstate_bv &= x86_linux_i386_xstate_bv_feature_mask ();
 
-  const auto it = i386_tdesc_cache.find (xstate_bv);
-  if (it != i386_tdesc_cache.end ())
-    return it->second.get ();
+  const_target_desc_up &tdesc = i386_tdesc_cache[xstate_bv];
+  if (tdesc != nullptr)
+    return tdesc.get ();
 
   /* Create the previously unseen target description.  */
-  target_desc_up tdesc
-    (i386_create_target_description (xstate_bv, true, false));
-  x86_linux_post_init_tdesc (tdesc.get (), false);
+  target_desc_up new_tdesc
+    = i386_create_target_description (xstate_bv, true, false);
+  x86_linux_post_init_tdesc (new_tdesc.get (), false);
 
   /* Add to the cache, and return a pointer borrowed from the
      target_desc_up.  This is safe as the cache (and the pointers contained
      within it) are not deleted until GDB exits.  */
-  target_desc *ptr = tdesc.get ();
-  i386_tdesc_cache.emplace (xstate_bv, std::move (tdesc));
-  return ptr;
+  tdesc = std::move (new_tdesc);
+  return tdesc.get ();
 }

@@ -1,5 +1,5 @@
 /* Generic stabs parsing for gas.
-   Copyright (C) 1989-2025 Free Software Foundation, Inc.
+   Copyright (C) 1989-2026 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -260,7 +260,6 @@ s_stab_generic (int what,
       string = demand_copy_C_string (&length);
       if (string == NULL)
 	{
-	  as_warn (_(".stab%c: missing string"), what);
 	  ignore_rest_of_line ();
 	  goto out2;
 	}
@@ -296,26 +295,6 @@ s_stab_generic (int what,
 	goto out;
       SKIP_WHITESPACE ();
     }
-
-#ifdef TC_PPC
-#ifdef OBJ_ELF
-  /* Solaris on PowerPC has decided that .stabd can take 4 arguments, so if we were
-     given 4 arguments, make it a .stabn */
-  else if (what == 'd')
-    {
-      char *save_location = input_line_pointer;
-
-      SKIP_WHITESPACE ();
-      if (*input_line_pointer == ',')
-	{
-	  input_line_pointer++;
-	  what = 'n';
-	}
-      else
-	input_line_pointer = save_location;
-    }
-#endif /* OBJ_ELF */
-#endif /* TC_PPC */
 
 #ifndef NO_LISTING
   if (listing)
@@ -422,6 +401,11 @@ s_xstab (int what)
   char *stab_secname, *stabstr_secname;
 
   stab_secname = demand_copy_C_string (&length);
+  if (stab_secname == NULL)
+    {
+      ignore_rest_of_line ();
+      return;
+    }
   SKIP_WHITESPACE ();
   if (*input_line_pointer == ',')
     {
@@ -694,6 +678,8 @@ stabs_begin (void)
 void
 stabs_end (void)
 {
+  if (!ENABLE_LEAK_CHECK)
+    return;
   free ((char *) current_function_label);
   free (last_asm_file);
   free (prev_line_file);

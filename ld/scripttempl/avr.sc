@@ -1,4 +1,4 @@
-# Copyright (C) 2014-2025 Free Software Foundation, Inc.
+# Copyright (C) 2014-2026 Free Software Foundation, Inc.
 #
 # Copying and distribution of this file, with or without modification,
 # are permitted in any medium without royalty provided the copyright
@@ -81,7 +81,7 @@
 #             emulation avrxmega* is used or avrxmega*_flmap.
 
 cat <<EOF
-/* Copyright (C) 2014-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    Copying and distribution of this script, with or without modification,
    are permitted in any medium without royalty provided the copyright
@@ -271,6 +271,8 @@ cat <<EOF
     *(.fini0)  /* Infinite loop after program termination.  */
     KEEP (*(.fini0))
 
+    *(.gnu.linkonce.t*)
+
     /* For code that needs not to reside in the lower progmem.  */
     *(.hightext)
     *(.hightext*)
@@ -336,6 +338,7 @@ cat <<EOF
     ${RELOCATING+ PROVIDE (__bss_start = .) ; }
     *(.bss)
     ${RELOCATING+ *(.bss*)}
+    ${RELOCATING+ *(.gnu.linkonce.b*)}
     ${RELOCATING+ *(COMMON)}
     ${RELOCATING+ PROVIDE (__bss_end = .) ; }
   } ${RELOCATING+ > data}

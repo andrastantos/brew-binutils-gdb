@@ -1,6 +1,6 @@
 /* Everything about signal catchpoints, for GDB.
 
-   Copyright (C) 2011-2025 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -87,7 +87,7 @@ signal_to_name_or_int (enum gdb_signal sig)
 {
   const char *result = gdb_signal_to_name (sig);
 
-  if (strcmp (result, "?") == 0)
+  if (streq (result, "?"))
     result = plongest (sig);
 
   return result;

@@ -1,5 +1,5 @@
 /* Serial interface for a pipe to a separate program
-   Copyright (C) 1999-2025 Free Software Foundation, Inc.
+   Copyright (C) 1999-2026 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions.
 
@@ -81,7 +81,7 @@ pipe_open (struct serial *scb, const char *name)
      fork() due to the fact that autoconf will ``#define vfork fork''
      on certain platforms.  */
   pid = vfork ();
-  
+
   /* Error.  */
   if (pid == -1)
     {

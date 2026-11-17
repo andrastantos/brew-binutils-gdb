@@ -1,5 +1,5 @@
 /* Register support routines for the remote server for GDB.
-   Copyright (C) 2001-2025 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -206,7 +206,7 @@ registers_from_string (struct regcache *regcache, char *buf)
 
   if (len != tdesc->registers_size * 2)
     {
-      warning ("Wrong sized register packet (expected %d bytes, got %d)",
+      warning (_("Wrong sized register packet (expected %d bytes, got %d)"),
 	       2 * tdesc->registers_size, len);
       if (len > tdesc->registers_size * 2)
 	len = tdesc->registers_size * 2;
@@ -221,7 +221,7 @@ find_regno_no_throw (const struct target_desc *tdesc, const char *name)
 {
   for (int i = 0; i < tdesc->reg_defs.size (); ++i)
     {
-      if (strcmp (name, find_register_by_number (tdesc, i).name) == 0)
+      if (streq (name, find_register_by_number (tdesc, i).name))
 	return i;
     }
   return {};

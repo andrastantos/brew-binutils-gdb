@@ -1,4 +1,4 @@
-/* Copyright (C) 2009-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2009-2026 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GDB.
@@ -24,12 +24,12 @@
 /* Defines ps_err_e, struct ps_prochandle.  */
 #include "gdb_proc_service.h"
 
-typedef int compat_int_t;
-typedef unsigned int compat_uptr_t;
+using compat_int_t = int;
+using compat_uptr_t = unsigned int;
 
-typedef int compat_time_t;
-typedef int compat_timer_t;
-typedef int compat_clock_t;
+using compat_time_t = int;
+using compat_timer_t = int;
+using compat_clock_t = int;
 
 struct compat_timeval
 {
@@ -37,13 +37,13 @@ struct compat_timeval
   int tv_usec;
 };
 
-typedef union compat_sigval
+using compat_sigval_t = union compat_sigval
 {
   compat_int_t sival_int;
   compat_uptr_t sival_ptr;
-} compat_sigval_t;
+};
 
-typedef struct compat_siginfo
+using compat_siginfo_t = struct compat_siginfo
 {
   int si_signo;
   int si_errno;
@@ -99,7 +99,7 @@ typedef struct compat_siginfo
       int _fd;
     } _sigpoll;
   } _sifields;
-} compat_siginfo_t;
+};
 
 #define cpt_si_pid _sifields._kill._pid
 #define cpt_si_uid _sifields._kill._uid

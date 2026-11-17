@@ -1,4 +1,4 @@
-# Copyright 2022-2025 Free Software Foundation, Inc.
+# Copyright 2022-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -58,7 +58,7 @@ proc start_gdb_and_runto_main { target_async target_non_stop } {
 # CONDITION is the expression to be used as the breakpoint condition.
 #
 # N_EXPECTED_HITS is the number of threads that we expect to stop due to
-# CONDITON.
+# CONDITION.
 #
 # MESSAGE is used as a test name prefix.
 proc run_condition_test { message n_expected_hits condition \

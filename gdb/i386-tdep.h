@@ -1,6 +1,6 @@
 /* Target-dependent code for the i386.
 
-   Copyright (C) 2001-2025 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -240,6 +240,11 @@ struct i386_gdbarch_tdep : gdbarch_tdep_base
   struct type *i386_zmm_type = nullptr;
   struct type *i387_ext_type = nullptr;
 
+  /* If the registers containing the i386 Linux TLS related global
+     descriptor table information are available.  This is used to decide
+     whether to add the NT_386_TLS note to the core file or not.  */
+  bool i386_linux_tls = false;
+
   /* Process record/replay target.  */
   /* The map for registers because the AMD64's registers order
      in GDB is not same as I386 instructions.  */
@@ -303,7 +308,14 @@ enum i386_regnum
   I386_PKRU_REGNUM,
   I386_PL3_SSP_REGNUM,
   I386_FSBASE_REGNUM,
-  I386_GSBASE_REGNUM
+  I386_GSBASE_REGNUM,
+
+  I386_NUM_REGS,	/* Calculated from last *_REGNUM entry.  */
+  I386_SSE_NUM_REGS = I386_MXCSR_REGNUM + 1,
+  I386_AVX_NUM_REGS = I386_YMM7H_REGNUM + 1,
+  I386_AVX512_NUM_REGS = I386_ZMM7H_REGNUM + 1,
+  I386_PKEYS_NUM_REGS = I386_PKRU_REGNUM + 1
+  /* STOP!  New *_REGNUM entries should be added before I386_NUM_REGS.  */
 };
 
 /* Register numbers of RECORD_REGMAP.  */
@@ -340,12 +352,6 @@ enum record_i386_regnum
 #define I386_NUM_GREGS	16
 #define I386_NUM_XREGS  9
 
-#define I386_SSE_NUM_REGS	(I386_MXCSR_REGNUM + 1)
-#define I386_AVX_NUM_REGS	(I386_YMM7H_REGNUM + 1)
-#define I386_AVX512_NUM_REGS	(I386_ZMM7H_REGNUM + 1)
-#define I386_PKEYS_NUM_REGS	(I386_PKRU_REGNUM + 1)
-#define I386_NUM_REGS		(I386_GSBASE_REGNUM + 1)
-
 /* Size of the largest register.  */
 #define I386_MAX_REGISTER_SIZE	64
 
@@ -378,9 +384,9 @@ extern void i386_pseudo_register_write (gdbarch *gdbarch,
 					const frame_info_ptr &next_frame, int regnum,
 					gdb::array_view<const gdb_byte> buf);
 
-extern int i386_ax_pseudo_register_collect (struct gdbarch *gdbarch,
-					    struct agent_expr *ax,
-					    int regnum);
+extern void i386_ax_pseudo_register_collect (struct gdbarch *gdbarch,
+					     struct agent_expr *ax,
+					     int regnum);
 
 /* Segment selectors.  */
 #define I386_SEL_RPL	0x0003  /* Requester's Privilege Level mask.  */
@@ -414,8 +420,8 @@ extern CORE_ADDR i386_thiscall_push_dummy_call (struct gdbarch *gdbarch,
 extern int i386_sigtramp_p (const frame_info_ptr &this_frame);
 
 /* Return non-zero if REGNUM is a member of the specified group.  */
-extern int i386_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
-				     const struct reggroup *group);
+extern bool i386_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
+				      const struct reggroup *group);
 
 /* Supply register REGNUM from the general-purpose register set REGSET
    to register cache REGCACHE.  If REGNUM is -1, do this for all
@@ -475,8 +481,8 @@ extern int i386bsd_sc_reg_offset[];
 
 /* SystemTap related functions.  */
 
-extern int i386_stap_is_single_operand (struct gdbarch *gdbarch,
-					const char *s);
+extern bool i386_stap_is_single_operand (struct gdbarch *gdbarch,
+					 const char *s);
 
 extern expr::operation_up i386_stap_parse_special_token
      (struct gdbarch *gdbarch, struct stap_parse_info *p);

@@ -1,4 +1,4 @@
-# Copyright 2016-2025 Free Software Foundation, Inc.
+# Copyright 2016-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,7 +29,7 @@ standard_testfile
 
 if {[build_executable $testfile.exp $testfile ${srcfile} "debug"] == -1} {
     untested "failed to compile"
-    return -1
+    return
 }
 
 # The test driver.  SYNC_COMMAND specifies which command is used to
@@ -69,7 +69,9 @@ proc do_test {sync_command} {
     # in the separate MI UI.  Note the "run" variant usually triggers
     # =thread-group-started/=thread-created/=library-loaded as well.
     with_spawn_id $gdb_main_spawn_id {
-	gdb_test "add-inferior" "Added inferior 2 on connection .*"
+	# We don't need to share the connection with inferior 1 to
+	# trigger the async event.
+	gdb_test "add-inferior -no-connection" "Added inferior 2"
     }
 
     # Interrupt the program.
