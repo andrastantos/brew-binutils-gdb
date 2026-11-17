@@ -2222,7 +2222,12 @@ test_python ()
     std::string ref_output_1 ("Traceback (most recent call last):\n"
 			      "  File \"<string>\", line 1, in <module>\n"
 			      "KeyboardInterrupt\n");
-    SELF_CHECK (output == ref_output_0 || output == ref_output_1);
+    /* Newer Python (seen with 3.14): line 0, no leading space.  */
+    std::string ref_output_2 ("Traceback (most recent call last):\n"
+			      "  File \"<string>\", line 0, in <module>\n"
+			      "KeyboardInterrupt\n");
+    SELF_CHECK (output == ref_output_0 || output == ref_output_1
+		|| output == ref_output_2);
   }
 
 #undef CMD
