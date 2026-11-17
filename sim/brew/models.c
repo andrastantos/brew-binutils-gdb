@@ -462,13 +462,13 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
           memcpy(host_buffer.c_cc, target_buffer.c_cc, min(sizeof(host_buffer.c_cc), sizeof(target_buffer.c_cc)));
           host_buffer.c_ispeed = target_buffer.c_ispeed;
           host_buffer.c_ospeed = target_buffer.c_ospeed;
-          int ret_val = ioctl(fd, cmd, &host_buffer);
+          ret_val = ioctl(fd, cmd, &host_buffer);
           if (ret_val == -1)
             SET_ERRNO(errno);
         } break;
         case NEWLIB_TCGETS: {
           struct termios host_buffer;
-          int ret_val = ioctl(fd, cmd, &host_buffer);
+          ret_val = ioctl(fd, cmd, &host_buffer);
           if (ret_val == -1) {
             SET_ERRNO(errno);
           } else {
@@ -486,20 +486,21 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
         } break;
         case NEWLIB_TIOCINQ: {
           int32_t val;
-          if (ioctl(fd, FIONREAD, &val) == -1) {
+          ret_val = ioctl(fd, FIONREAD, &val);
+          if (ret_val == -1) {
             SET_ERRNO(errno);
           } else {
             sim_core_write_buffer(sd, scpu, write_map, &val, arg_ptr, 4);
           }
-        }
+        } break;
         default:
+          ret_val = -1;
           SET_ERRNO(EINVAL);
         break;
       }
 
+      // errno (if any) has already been set by the individual requests above.
       SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
-      if (ret_val == 0)
-        SET_ERRNO(errno);
       break;
     }
     default:
