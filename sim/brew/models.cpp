@@ -4,6 +4,7 @@ extern "C" {
 
 #include <fcntl.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <utime.h>
