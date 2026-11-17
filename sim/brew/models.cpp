@@ -194,6 +194,30 @@ static char *sim_core_read_str(sim_cpu *scpu, uint32_t vma)
 }
 
 
+// newlib (brew-none-elf) layouts of the time-related syscall structures;
+// see brew/abi/abi-layout.c. 64-bit fields are only 4-byte aligned.
+#define NEWLIB_TIME_T_SIZE           8
+#define NEWLIB_TIMEVAL_TV_SEC        0  // time_t
+#define NEWLIB_TIMEVAL_TV_USEC       8  // suseconds_t (long)
+#define NEWLIB_TIMEZONE_MINUTESWEST  0  // int
+#define NEWLIB_TIMEZONE_DSTTIME      4  // int
+#define NEWLIB_TMS_UTIME             0  // clock_t (unsigned long)
+#define NEWLIB_TMS_STIME             4
+#define NEWLIB_TMS_CUTIME            8
+#define NEWLIB_TMS_CSTIME           12
+#define NEWLIB_CLOCKS_PER_SEC     1000
+
+// Writes the low 'size' bytes of 'value' to SIM memory in the target's
+// (little-endian) byte order, with no alignment requirement.
+static void sim_write_le(SIM_DESC sd, sim_cpu *scpu, uint32_t vma, uint64_t value, unsigned size)
+{
+  uint8_t bytes[8];
+  SIM_ASSERT(size <= sizeof(bytes));
+  for (unsigned i = 0; i < size; ++i)
+    bytes[i] = (uint8_t)(value >> (8 * i));
+  sim_core_write_buffer(sd, scpu, write_map, bytes, vma, size);
+}
+
 #define NEWLIB_TCGETS     0x5401
 #define NEWLIB_TCSETS     0x5402
 #define NEWLIB_TCSETSW    0x5403
@@ -390,33 +414,75 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
       break;
     }
     case SYS_time: {
-      time_t now = time(NULL);
+      // newlib's time_t is 64 bits: return it in $r4 (low) and $r5 (high).
+      uint64_t now = (uint64_t)(int64_t)time(NULL);
       SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)now, BREW_REG_TYPE_INT32);
+      SIM_REG_T(BREW_REG_ARG1) = MAKE_INT((uint32_t)(now >> 32), BREW_REG_TYPE_INT32);
       if (arg1 != 0)
-        {
-          sim_core_write_aligned_4(scpu, CPU_PC_GET(scpu), write_map, arg1, now);
-        }
+        sim_write_le(sd, scpu, arg1, now, NEWLIB_TIME_T_SIZE);
       break;
     }
     case SYS_gettimeofday: {
+      // int gettimeofday(struct timeval *tv, void *tz)
       struct timeval time_val;
-      struct timezone time_zone;
-      ret_val = gettimeofday(&time_val, &time_zone);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      SIM_ASSERT(false);
+      ret_val = gettimeofday(&time_val, NULL);
+      if (ret_val == 0 && arg1 != 0)
+        {
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TIMEVAL_TV_SEC, (uint64_t)(int64_t)time_val.tv_sec, NEWLIB_TIME_T_SIZE);
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TIMEVAL_TV_USEC, (uint32_t)time_val.tv_usec, 4);
+        }
+      // The timezone argument is obsolete; report UTC like most systems do.
+      if (ret_val == 0 && arg2 != 0)
+        {
+          sim_write_le(sd, scpu, arg2 + NEWLIB_TIMEZONE_MINUTESWEST, 0, 4);
+          sim_write_le(sd, scpu, arg2 + NEWLIB_TIMEZONE_DSTTIME, 0, 4);
+        }
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
+      if (ret_val == -1)
+        SET_ERRNO(errno);
       break;
     }
-#if ! defined __MINGW32__
     case SYS_times: {
+      // clock_t times(struct tms *buf). newlib's clock_t is 32 bits and
+      // counts in CLOCKS_PER_SEC (1000) ticks per second; convert from the
+      // host's clock tick rate. The times reported are the host's, i.e. the
+      // simulator process's CPU time and the host's elapsed time.
+      uint64_t now_ticks;
+#if ! defined __MINGW32__
       struct tms time_buf;
-      ret_val = times(&time_buf);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      SIM_ASSERT(false);
+      clock_t host_now = times(&time_buf);
+      long host_hz = sysconf(_SC_CLK_TCK);
+      if (host_now == (clock_t)-1 || host_hz <= 0)
+        {
+          SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)-1, BREW_REG_TYPE_INT32);
+          uint32_t err = (uint32_t)(host_now == (clock_t)-1 ? errno : EINVAL);
+          SET_ERRNO(err);
+          break;
+        }
+#define TO_NEWLIB_TICKS(t) ((uint32_t)((uint64_t)(t) * NEWLIB_CLOCKS_PER_SEC / (uint64_t)host_hz))
+      now_ticks = TO_NEWLIB_TICKS(host_now);
+      if (arg1 != 0)
+        {
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TMS_UTIME, TO_NEWLIB_TICKS(time_buf.tms_utime), 4);
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TMS_STIME, TO_NEWLIB_TICKS(time_buf.tms_stime), 4);
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TMS_CUTIME, TO_NEWLIB_TICKS(time_buf.tms_cutime), 4);
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TMS_CSTIME, TO_NEWLIB_TICKS(time_buf.tms_cstime), 4);
+        }
+#undef TO_NEWLIB_TICKS
+#else // __MINGW32__
+      // No times() on the host: report process time from clock().
+      now_ticks = (uint64_t)clock() * NEWLIB_CLOCKS_PER_SEC / CLOCKS_PER_SEC;
+      if (arg1 != 0)
+        {
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TMS_UTIME, (uint32_t)now_ticks, 4);
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TMS_STIME, 0, 4);
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TMS_CUTIME, 0, 4);
+          sim_write_le(sd, scpu, arg1 + NEWLIB_TMS_CSTIME, 0, 4);
+        }
+#endif // __MINGW32__
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)now_ticks, BREW_REG_TYPE_INT32);
       break;
     }
-#endif // __MINGW32__
 #if ! defined __MINGW32__
     case SYS_link:
       str1 = sim_core_read_str(scpu, arg1);
