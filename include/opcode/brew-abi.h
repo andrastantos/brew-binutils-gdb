@@ -32,8 +32,8 @@
 #define BREW_REG_ARG1            5
 #define BREW_REG_ARG2            6
 #define BREW_REG_ARG3            7
-#define BREW_REG_EH_RETURN_DATA0 8 // TODO: change this to the first call-saved register - TODO: this is done, but why was that important ???
-#define BREW_REG_EH_RETURN_DATA1 9
+#define BREW_REG_EH_RETURN_DATA0 2 // must be call-clobbered; see abi.rst ("C++ Exceptions")
+#define BREW_REG_EH_RETURN_DATA1 3
 #define BREW_REG_FP              12
 #define BREW_REG_SP              13
 #define BREW_REG_LINK            14
