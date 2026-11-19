@@ -395,7 +395,16 @@ static CORE_ADDR brew_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
     }
 
   CORE_ADDR post_prologue_pc = skip_prologue_using_sal(gdbarch, func_addr);
-  if (post_prologue_pc != 0)
+  // skip_prologue_using_sal treats two line-table rows at the function's
+  // start address as an empty prologue and returns FUNC_ADDR. Newer GCC
+  // (16 for Brew, which writes its own line table; 13 did not) emits exactly
+  // that for optimized code: the entry line as a statement and again as a
+  // non-statement location view. Trusting it would make 'step' into a
+  // function stop on its opening brace, so ask the instruction analyzer
+  // instead. (The first-line fallback below is not safe here: when the first
+  // statement starts at FUNC_ADDR too, its line can extend into the body.)
+  bool empty_by_sal = post_prologue_pc == func_addr;
+  if (post_prologue_pc != 0 && !empty_by_sal)
     {
       return std::max(pc, post_prologue_pc);
     }
@@ -411,7 +420,7 @@ static CORE_ADDR brew_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
       return func_addr;
     }
   sal = find_pc_line(func_addr, 0);
-  if (sal.end && sal.end < func_end)
+  if (!empty_by_sal && sal.end && sal.end < func_end)
     {
       // Found a line number, use it as end of prologue.
       return sal.end;
