@@ -720,6 +720,17 @@ sim_create_inferior (SIM_DESC sd, struct bfd *prog_bfd,
           SIM_ASSERT(false);
         }
     }
+
+  // Keep the program's arguments for the SYS_argc/SYS_argnlen/SYS_argn
+  // syscalls, which crt0 uses to build argv. Standalone, argv already is
+  // STATE_PROG_ARGV (set up by sim_parse_args); under gdb, 'run' can pass
+  // new arguments each time.
+  if (STATE_PROG_ARGV (sd) != argv)
+    {
+      freeargv (STATE_PROG_ARGV (sd));
+      STATE_PROG_ARGV (sd) = dupargv (argv);
+    }
+
   // This is the old Moxie code to transfer argv into simulated memory
 #if 0
   avp = argv;

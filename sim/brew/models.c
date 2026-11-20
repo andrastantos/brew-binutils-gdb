@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <utime.h>
@@ -492,10 +493,41 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
       break;
 #endif // __MINGW32__
 
-    // These are not implemented
+    // Program arguments (used by crt0 to build argv), as in sim/common/syscall.c.
     case SYS_argc:
+      ret_val = countargv(STATE_PROG_ARGV(sd));
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
+      break;
     case SYS_argnlen:
-    case SYS_argn:
+      // int argnlen(int n): length of argument n, without the terminating NUL.
+      if ((int32_t)arg1 >= 0 && (int32_t)arg1 < countargv(STATE_PROG_ARGV(sd)))
+        ret_val = strlen(STATE_PROG_ARGV(sd)[arg1]);
+      else
+        {
+          ret_val = -1;
+          SET_ERRNO(EINVAL);
+        }
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
+      break;
+    case SYS_argn: {
+      // char *argn(int n, char *buf): copies argument n, with its NUL, to buf.
+      uint32_t result = (uint32_t)-1;
+      if ((int32_t)arg1 >= 0 && (int32_t)arg1 < countargv(STATE_PROG_ARGV(sd)))
+        {
+          const char *arg = STATE_PROG_ARGV(sd)[arg1];
+          size_t len = strlen(arg) + 1;
+          if (sim_core_write_buffer(sd, scpu, write_map, arg, arg2, len) == len)
+            result = arg2;
+          else
+            SET_ERRNO(EFAULT);
+        }
+      else
+        SET_ERRNO(EINVAL);
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT(result, BREW_REG_TYPE_INT32);
+      break;
+    }
+
+    // These are not implemented
     case SYS_reconfig:
       TRACE_EVENTS (scpu, "Unknown SYSCALL: %d", syscall_no);
       sim_engine_halt(sd, scpu, NULL, sim_pc_get(scpu), sim_stopped, SIM_SIGTRAP);
