@@ -244,8 +244,18 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
   // Handle exceptions
   if (BREW_SIM_CPU (scpu)->sim_state.ecause != BREW_EXCEPTION_NONE)
     {
-      BREW_SIM_CPU (scpu)->sim_state.ntpc = BREW_SIM_CPU (scpu)->sim_state.tpc; // Undo any pending changes to $tpc
-      BREW_SIM_CPU (scpu)->sim_state.model_functions.handle_exception(scpu);
+      brew_sim_state *sim_state = &BREW_SIM_CPU (scpu)->sim_state;
+
+      // Record the exception in the CSRs (docs_src/exceptions.rst): csr_eaddr is the
+      // target address for memory-related exceptions (whoever raised those set it
+      // already), the excepting instruction's address otherwise.
+      sim_state->csr_ecause = sim_state->ecause;
+      if (sim_state->ecause != BREW_EXCEPTION_UNALIGNED &&
+          sim_state->ecause != ESPRESSO_EXCEPTION_MEM_AV &&
+          sim_state->ecause != ESPRESSO_EXCEPTION_INST_AV)
+        sim_state->csr_eaddr = sim_state->is_task_mode ? sim_state->tpc : sim_state->spc;
+      sim_state->ntpc = sim_state->tpc; // Undo any pending changes to $tpc
+      sim_state->model_functions.handle_exception(scpu);
     }
   // Update PC
   BREW_SIM_CPU (scpu)->sim_state.tpc = BREW_SIM_CPU (scpu)->sim_state.ntpc;
@@ -258,7 +268,7 @@ sim_engine_run(
   SIM_DESC sd,
   int next_cpu_nr, /* the CPU to run  */
   int nr_cpus,     /* ignore  */
-  int signal       /* ignore  */
+  int signal       /* signal to deliver on resume; see below  */
 ) {
   uint16_t insn_code;
   uint32_t field_e = 0xdeadbeef;
@@ -267,6 +277,22 @@ sim_engine_run(
 
   uint32_t non_branch_tpc;
   uint32_t non_branch_spc;
+
+  // In the operating environment, 'run' resumes after every stop and hands
+  // the stop signal back (gdb does the same for signals it passes, such as
+  // SIGSEGV). The simulated machine has nowhere to deliver a host signal (it
+  // comes from a fault the model couldn't turn into an exception, e.g. one in
+  // SCHEDULER mode), and resuming would just repeat the fault forever. So treat
+  // delivery as fatal, like an unhandled signal in a native process: report
+  // the signal the simulation stopped with. (The number passed in is a host
+  // signal from 'run' but a gdb_signal from gdb, so don't use it.)
+  if (signal != 0 && STATE_ENVIRONMENT(sd) == OPERATING_ENVIRONMENT)
+    {
+      sim_engine *engine = STATE_ENGINE(sd);
+      int sig = (engine->reason == sim_stopped) ? engine->sigrc : SIM_SIGABRT;
+      sim_engine_halt(sd, scpu, NULL, CPU_PC_GET(scpu), sim_signalled, sig);
+    }
+
   do
     {
       BREW_SIM_CPU (scpu)->sim_state.ecause = BREW_EXCEPTION_NONE;
@@ -299,8 +325,6 @@ sim_engine_run(
           BREW_SIM_CPU (scpu)->sim_state.nspc = BREW_SIM_CPU (scpu)->sim_state.spc + (BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? 0 : insn_length);
           BREW_SIM_CPU (scpu)->sim_state.nis_task_mode = BREW_SIM_CPU (scpu)->sim_state.is_task_mode;
           BREW_SIM_CPU (scpu)->sim_state.insn_class = BREW_INSN_CLS_UNKNOWN;
-          if (BREW_SIM_CPU (scpu)->sim_state.ecause != BREW_EXCEPTION_NONE)
-            BREW_SIM_CPU (scpu)->sim_state.csr_ecause = BREW_SIM_CPU (scpu)->sim_state.ecause;
           BREW_SIM_CPU (scpu)->decode_buf[0] = 0;
 
           non_branch_spc = BREW_SIM_CPU (scpu)->sim_state.nspc;

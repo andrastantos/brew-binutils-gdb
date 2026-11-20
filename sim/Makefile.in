@@ -2225,7 +2225,7 @@ testsuite_common_CPPFLAGS = \
 @SIM_ENABLE_ARCH_brew_TRUE@	brew/libsim.a \
 @SIM_ENABLE_ARCH_brew_TRUE@	$(SIM_COMMON_LIBS)
 
-@SIM_ENABLE_ARCH_brew_TRUE@brew_SIM_EXTRA_HW_DEVICES = brew_con brew_gpio
+@SIM_ENABLE_ARCH_brew_TRUE@brew_SIM_EXTRA_HW_DEVICES = brew_con brew_gpio brew_simctl
 @SIM_ENABLE_ARCH_brew_TRUE@dtbdir = $(datadir)/gdb/dtb
 @SIM_ENABLE_ARCH_moxie_TRUE@dtbdir = $(datadir)/gdb/dtb
 @SIM_ENABLE_ARCH_brew_TRUE@dtb_DATA = brew/brew-gdb.dtb

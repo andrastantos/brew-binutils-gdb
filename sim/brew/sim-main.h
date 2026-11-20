@@ -54,6 +54,10 @@ struct brew_sim_cpu {
   // This is a giant hack, but I can't solve this: we need to squirrel away all the command-line options before we know what the model is
   // going to be, so neither sim_state.model_functions.XXX nor model_info is filled in.
   const char *rom_file_name;
+  // Base addresses of the console and the simulator control device
+  // (--console-base, --simctl-base); defaults set in brew_options_init.
+  uint32_t console_base;
+  uint32_t simctl_base;
 };
 
 #define BREW_SIM_CPU(cpu) ((struct brew_sim_cpu *) CPU_ARCH_DATA (cpu))

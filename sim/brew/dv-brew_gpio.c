@@ -35,12 +35,12 @@
 typedef struct dv_brew_gpio
 {
   uint32_t base_addr;
-  bool terminate_on_write;
+  bool print_on_write;
 } dv_brew_gpio;
 
 static void dv_brew_gpio_init(dv_brew_gpio *gpio)
 {
-  gpio->terminate_on_write = false;
+  gpio->print_on_write = false;
 }
 
 static void dv_brew_gpio_set_base_addr(dv_brew_gpio *gpio, uint32_t base_addr) {
@@ -53,12 +53,16 @@ static unsigned dv_brew_gpio_io_write_buffer(struct hw *me, const void *source, 
   dv_brew_gpio *gpio = (dv_brew_gpio *)hw_data(me);
   uint32_t ofs = addr - gpio->base_addr;
 
-  SIM_ASSERT(nr_bytes == 1);
+  // Registers are 8-bit; anything else is a bus error (the core reports it)
+  if (nr_bytes != 1)
+    return 0;
   switch (ofs) {
     case GPIO_DATA_REG_OFS:
-      if (gpio->terminate_on_write)
+      if (gpio->print_on_write)
         {
-          sim_engine_halt(hw_system(me), hw_system_cpu(me), NULL, NULL_CIA, sim_exited, SIM_SIGNONE);
+          // Print the byte as a character, like the RTL test bench does for GPIO3
+          sim_io_write_stdout(sd, (const char *)source, 1);
+          sim_io_flush_stdout(sd);
         }
       return 1;
     break;
@@ -75,7 +79,8 @@ static unsigned dv_brew_gpio_io_read_buffer(struct hw *me, void *dest, int space
   dv_brew_gpio *gpio = (dv_brew_gpio *)hw_data(me);
   uint32_t ofs = addr - gpio->base_addr;
 
-  SIM_ASSERT(nr_bytes == 1);
+  if (nr_bytes != 1)
+    return 0;
   switch (ofs) {
     case GPIO_DATA_REG_OFS:
       // Bit 0 is set fo RTL sims, Bit 1 is set for SW sims
@@ -100,8 +105,8 @@ static dv_brew_gpio *attach_gpio_regs(struct hw *me)
 
   dv_brew_gpio_init(gpio);
 
-  if (hw_args(me) != NULL && strcmp(hw_args(me), "terminate_on_write") == 0) {
-    gpio->terminate_on_write = true;
+  if (hw_args(me) != NULL && strcmp(hw_args(me), "print_on_write") == 0) {
+    gpio->print_on_write = true;
   }
 
   if (hw_find_property(me, "reg") == NULL)

@@ -46,7 +46,7 @@ noinst_LIBRARIES += %D%/libsim.a
 
 noinst_PROGRAMS += %D%/run
 
-%C%_SIM_EXTRA_HW_DEVICES = brew_con brew_gpio
+%C%_SIM_EXTRA_HW_DEVICES = brew_con brew_gpio brew_simctl
 
 dtbdir = $(datadir)/gdb/dtb
 

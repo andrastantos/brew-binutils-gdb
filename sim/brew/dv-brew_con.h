@@ -25,6 +25,14 @@
 // It is a heavily based on the m32r UART virtual peripheral.
 
 // All registers are 8-bit wide and can only be accessed using 8-bit transactions.
+// The layout follows brew/rtl/v1/anacron_fpga/apb_uart.sv:
+//   DATA    (0): read: received byte; write: byte to send
+//   STATUS  (1): bit 0 RX data valid, bit 1 TX ready, bit 2 parity error,
+//                bit 3 framing error, bit 4 overrun error, bit 5 CTS;
+//                a write clears the error bits. The simulated port is always
+//                ready to send and never reports errors.
+//   CONFIG1 (2), CONFIG2 (3), DIVIDER (4): line settings; stored, but have no
+//                effect in the simulator.
 #define CON_DATA_REG_OFS     0x0
 #define CON_STATUS_REG_OFS   0x1
 #define CON_CONFIG1_REG_OFS  0x2

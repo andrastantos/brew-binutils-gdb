@@ -62,7 +62,9 @@ static unsigned dv_brew_con_io_write_buffer(struct hw *me, const void *source, i
   int status = dv_sockser_status(sd);
   uint32_t ofs = addr - console->base_addr;
 
-  SIM_ASSERT(nr_bytes == 1);
+  // Registers are 8-bit; anything else is a bus error (the core reports it)
+  if (nr_bytes != 1)
+    return 0;
   switch (ofs) {
     case CON_DATA_REG_OFS:
       if (status & DV_SOCKSER_DISCONNECTED) {
@@ -73,6 +75,9 @@ static unsigned dv_brew_con_io_write_buffer(struct hw *me, const void *source, i
         // If any error occurs, simply say we couldn't write anything
         if (ret < 0) nr_bytes = 0;
       }
+    break;
+    case CON_STATUS_REG_OFS:
+      // Clears the error bits in the RTL; the simulated port never sets them
     break;
     case CON_CONFIG1_REG_OFS:
       console->ctrl_reg1 = *(uint8_t*)(source);
@@ -121,7 +126,8 @@ static unsigned dv_brew_con_io_read_buffer(struct hw *me, void *dest, int space,
   int status = dv_sockser_status(sd);
   uint32_t ofs = addr - console->base_addr;
 
-  SIM_ASSERT(nr_bytes == 1);
+  if (nr_bytes != 1)
+    return 0;
   switch (ofs) {
     case CON_DATA_REG_OFS:
       if (dv_brew_con_handle_input(me)) {
@@ -130,7 +136,9 @@ static unsigned dv_brew_con_io_read_buffer(struct hw *me, void *dest, int space,
         console->status_reg &= ~CON_STAT_RX_FULL;
         return 1;
       }
-    break;
+      // No input: the RTL would wait for it; fail the access (the core
+      // reports it) rather than hang the simulator. Poll STATUS first.
+      return 0;
     case CON_STATUS_REG_OFS:
       // check for new input (it sets the requisite status bits too if not already set)
       dv_brew_con_handle_input(me);

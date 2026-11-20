@@ -1,5 +1,6 @@
 #include "defs.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -102,20 +103,29 @@ static const uint16_t ESPRESSO_CSR_EVENT_CNT_REG_7     = 0x8110;
 static const uint32_t ANACHRON_IO_GPIO_BASE     = 0x00010000;
 static const uint32_t ANACHRON_IO_APB_BASE      = 0x00020000;
 
-static const uint32_t ANACHRON_UART_BASE        = ANACHRON_IO_APB_BASE + 0x0000;
+// The I/O map follows the Anachron FPGA system (anachron/rtl/espresso:
+// fpga_system.py and the APB decode in anacron_fpga/fpga_top.sv). GPIO3 and
+// GPIO4 aren't wired to pins on the boards; the RTL test bench (sim_top.sv)
+// prints every byte written to GPIO3 and ends the simulation on a write to
+// GPIO4, printing the value as the exit code. The simulator does the same:
+// GPIO3 prints, and the simulator control device (dv-brew_simctl.c) takes
+// GPIO4's place.
+static const uint32_t ANACHRON_UART_BASE        = ANACHRON_IO_APB_BASE + 0x0000; // default for --console-base
 static const uint32_t ANACHRON_UART_SIZE        = 5;
 
 static const uint32_t ANACHRON_GPIO_3_BASE      = ANACHRON_IO_APB_BASE + 0x0100;
 static const uint32_t ANACHRON_GPIO_3_SIZE      = 1;
 
-static const uint32_t ANACHRON_GPIO_4_BASE      = ANACHRON_IO_APB_BASE + 0x0200;
-static const uint32_t ANACHRON_GPIO_4_SIZE      = 1;
+static const uint32_t ANACHRON_GPIO_4_BASE      = ANACHRON_IO_APB_BASE + 0x0200; // default for --simctl-base
+static const uint32_t BREW_SIMCTL_SIZE          = 4;
 
 static const uint32_t ANACHRON_GPIO_INT_BASE    = ANACHRON_IO_GPIO_BASE + 0x2000;
 static const uint32_t ANACHRON_GPIO_INT_SIZE    = 1;
 
 enum {
   OPTION_ESPRESSO_ROM_FILE = OPTION_START,
+  OPTION_CONSOLE_BASE,
+  OPTION_SIMCTL_BASE,
 };
 
 
@@ -753,10 +763,33 @@ static void brew_model_done(sim_cpu *scpu)
     sim_io_printf(sd, "Done with model BREW\n");
 }
 
+// The I/O devices of the Anachron FPGA system (see the address map above).
+// See espresso_model_setup_sim for how sim_hw_parse paths work.
+static void attach_anachron_devices(SIM_DESC sd)
+{
+  struct brew_sim_cpu *cpu0 = BREW_SIM_CPU (STATE_CPU(sd, 0)); // the options are stored on the first CPU
+
+  sim_hw_parse(sd, "/core/brew_con@%#x/reg %#x %i",                  cpu0->console_base,     cpu0->console_base,     ANACHRON_UART_SIZE);
+  sim_hw_parse(sd, "/core/brew_gpio@%#x/reg %#x %i",                 ANACHRON_GPIO_INT_BASE, ANACHRON_GPIO_INT_BASE, ANACHRON_GPIO_INT_SIZE);
+  sim_hw_parse(sd, "/core/brew_gpio@%#x:print_on_write/reg %#x %i",  ANACHRON_GPIO_3_BASE,   ANACHRON_GPIO_3_BASE,   ANACHRON_GPIO_3_SIZE);
+  sim_hw_parse(sd, "/core/brew_simctl@%#x/reg %#x %i",               cpu0->simctl_base,      cpu0->simctl_base,      BREW_SIMCTL_SIZE);
+}
+
 static void brew_model_setup_sim(SIM_DESC sd, sim_cpu *scpu)
 {
-  // FIXME: not sure what these do. Probably create and allocate some memory
-  sim_do_command(sd," memory region 0x00000000,0x80000000"); // main memory for program storage
+  // Flat main memory for program storage, 0 to 2GB.
+  if (STATE_ENVIRONMENT(sd) == OPERATING_ENVIRONMENT)
+    {
+      // Bare-metal programs also get the Anachron devices. They overlay main
+      // memory: memory is attached at level 1, so the devices (level 0) take
+      // precedence where they overlap it. User-environment programs don't get
+      // them, because a program with more than ~124kB of text (it starts at
+      // 0x1000) would run into the console at 0x20000.
+      sim_do_command(sd, " memory region 0x00000000@1,0x80000000");
+      attach_anachron_devices(sd);
+    }
+  else
+    sim_do_command(sd, " memory region 0x00000000,0x80000000");
 }
 
 static void brew_model_setup_sd(SIM_DESC sd ATTRIBUTE_UNUSED)
@@ -892,9 +925,10 @@ static void brew_model_reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
 void brew_model_init(sim_cpu *scpu)
 {
   SIM_DESC sd = CPU_STATE(scpu);
-  int i;
 
-  if (STATE_VERBOSE_P(sd))
+  // sd is NULL when the model comes from --model: sim_parse_args runs before
+  // sim_post_argv_init links the CPUs to their state.
+  if (sd != NULL && STATE_VERBOSE_P(sd))
     sim_io_printf(sd, "Setting model to BREW\n");
 
   BREW_SIM_CPU (scpu)->model_info = ZALLOC(brew_model_info);
@@ -913,16 +947,12 @@ void brew_model_init(sim_cpu *scpu)
   model_functions->rsqrt_fp16 = brew_rsqrt_fp16;
   model_functions->rsqrt = brew_rsqrt;
 
-  // Let's try to set up the simulator. We can only do that, if the 'sd' member is populated
-  // already, which only happens if the model is set as the default, not on the command line.
-  // If the model is specified on the command line, we'll have to defer the call to setup_sim
-  // to sim_open in interp.c
-  for (i = 0; i < MAX_NR_PROCESSORS; ++i)
-    {
-      sim_cpu *scpu = STATE_CPU (sd, i);
-
-      BREW_SIM_CPU (scpu)->sim_state.model_functions.setup_sim(sd, scpu);
-    }
+  // Set up the simulator for this CPU (sim_model_set calls us once per CPU).
+  // That needs 'sd', which is only populated if the model is the default one
+  // (set in sim_post_argv_init). If the model is specified on the command line,
+  // sim_open in interp.c calls setup_sim after sim_config instead.
+  if (sd != NULL)
+    model_functions->setup_sim(sd, scpu);
 }
 
 
@@ -1090,16 +1120,13 @@ static void espresso_model_setup_sim(SIM_DESC sd, sim_cpu *scpu)
 
   /core/foo:args/reg: would create 'arguments': Whatever follows gets copied into hw->args_of_hw as a string, which then can
     be accessed through the 'hw_args' macro. I'm using it to pass an argument to the GPIO model, such that when it is written,
-    it terminates the simulation. This is in accordance with the RTL simulator.
+    it prints the value as a character. This is in accordance with the RTL simulator.
 
   Apart from register space definitions, one could also make 'port connections'. These (I think) are useful for interrupt
   or DMA routing. It takes the form: "/core/source_dev > rx   src_rx   /core/target_dev"
 
   */
-  sim_hw_parse(sd, "/core/brew_con@%#x/reg %#x %i",                     ANACHRON_UART_BASE,     ANACHRON_UART_BASE,     ANACHRON_UART_SIZE);
-  sim_hw_parse(sd, "/core/brew_gpio@%#x/reg %#x %i",                    ANACHRON_GPIO_INT_BASE, ANACHRON_GPIO_INT_BASE, ANACHRON_GPIO_INT_SIZE);
-  sim_hw_parse(sd, "/core/brew_gpio@%#x/reg %#x %i",                    ANACHRON_GPIO_3_BASE,   ANACHRON_GPIO_3_BASE,   ANACHRON_GPIO_3_SIZE);
-  sim_hw_parse(sd, "/core/brew_gpio@%#x:terminate_on_write/reg %#x %i", ANACHRON_GPIO_4_BASE,   ANACHRON_GPIO_4_BASE,   ANACHRON_GPIO_4_SIZE);
+  attach_anachron_devices(sd);
 }
 
 // This is a routine that loads an binary into memory without modifying the bfd-related structures in 'sd'
@@ -1169,6 +1196,7 @@ static void espresso_model_v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_
   }
   if ((v_addr & ADDR_MASK & ~1023) > (limit & ADDR_MASK & ~1023)) {
     sim_state->ecause = exc;
+    sim_state->csr_eaddr = v_addr;
     return;
   }
   *p_addr = ((v_addr & ADDR_MASK) + (base & ADDR_MASK & ~1023)) & ADDR_MASK;
@@ -1289,9 +1317,9 @@ static void espresso_model_handle_interrupt(sim_cpu *scpu)
 void espresso_model_init(sim_cpu *scpu)
 {
   SIM_DESC sd = CPU_STATE(scpu);
-  int i;
 
-  if (STATE_VERBOSE_P(sd))
+  // sd is NULL when the model comes from --model (see brew_model_init).
+  if (sd != NULL && STATE_VERBOSE_P(sd))
     sim_io_printf(sd, "Setting model to ESPRESSO\n");
 
   espresso_model_info *model_info = ZALLOC(espresso_model_info);
@@ -1318,18 +1346,12 @@ void espresso_model_init(sim_cpu *scpu)
   model_functions->rsqrt_fp16 = brew_rsqrt_fp16;
   model_functions->rsqrt = brew_rsqrt;
 
-  // Let's try to set up the simulator. We can only do that, if the 'sd' member is populated
-  // already, which only happens if the model is set as the default, not on the command line.
-  // If the model is specified on the command line, we'll have to defer the call to setup_sim
-  // to sim_open in interp.c
+  // Set up the simulator for this CPU (sim_model_set calls us once per CPU).
+  // That needs 'sd', which is only populated if the model is the default one
+  // (set in sim_post_argv_init). If the model is specified on the command line,
+  // sim_open in interp.c calls setup_sim after sim_config instead.
   if (sd != NULL)
-    {
-      for (i = 0; i < MAX_NR_PROCESSORS; ++i)
-        {
-          sim_cpu *scpu = STATE_CPU (sd, i);
-          BREW_SIM_CPU (scpu)->sim_state.model_functions.setup_sim(sd, scpu);
-        }
-    }
+    model_functions->setup_sim(sd, scpu);
 }
 
 
@@ -1338,10 +1360,37 @@ void espresso_model_init(sim_cpu *scpu)
 
 // Create command-line options to define various aspects of the simulation
 
+// Parses a device base address option. Returns false (after printing an error) if ARG isn't a 32-bit number.
+static bool parse_base_addr(SIM_DESC sd, const char *option, const char *arg, uint32_t *addr)
+{
+  char *end;
+  unsigned long long value;
+
+  errno = 0;
+  value = strtoull(arg, &end, 0);
+  if (errno != 0 || end == arg || *end != '\0' || value > 0xffffffffULL)
+    {
+      sim_io_eprintf(sd, "invalid address for --%s: `%s'\n", option, arg);
+      return false;
+    }
+  *addr = (uint32_t)value;
+  return true;
+}
+
 static SIM_RC brew_option_handler(SIM_DESC sd, sim_cpu *scpu, int opt, char *arg, int is_command)
 {
   switch (opt)
     {
+    case OPTION_CONSOLE_BASE:
+      if (!parse_base_addr(sd, "console-base", arg, &BREW_SIM_CPU (STATE_CPU(sd, 0))->console_base))
+        return SIM_RC_FAIL;
+      return SIM_RC_OK;
+
+    case OPTION_SIMCTL_BASE:
+      if (!parse_base_addr(sd, "simctl-base", arg, &BREW_SIM_CPU (STATE_CPU(sd, 0))->simctl_base))
+        return SIM_RC_FAIL;
+      return SIM_RC_OK;
+
     case OPTION_ESPRESSO_ROM_FILE:
       if (arg == NULL) {
         sim_io_eprintf(sd, "FIXME: default ROM file is not implemented yet for --rom-file option\n");
@@ -1366,6 +1415,23 @@ static const OPTION brew_options[] =
     brew_option_handler,
     NULL
   },
+  {
+    {"console-base", required_argument, NULL, OPTION_CONSOLE_BASE },
+    '\0',
+    "ADDRESS",
+    "Base address of the console (UART) in the operating environment. Default 0x20000, as on the Anachron FPGA system.",
+    brew_option_handler,
+    NULL
+  },
+  {
+    {"simctl-base", required_argument, NULL, OPTION_SIMCTL_BASE },
+    '\0',
+    "ADDRESS",
+    "Base address of the simulator control device in the operating environment (a write ends the simulation with the "
+    "written value as exit status). Default 0x20200, where the Anachron RTL test bench ends its simulation.",
+    brew_option_handler,
+    NULL
+  },
 
   { {NULL, no_argument, NULL, 0}, '\0', NULL, NULL, NULL, NULL }
 };
@@ -1373,6 +1439,9 @@ static const OPTION brew_options[] =
 SIM_RC brew_options_init(SIM_DESC sd)
 {
   SIM_ASSERT(STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
+  // Defaults for the options stored on the first CPU (allocated by now)
+  BREW_SIM_CPU (STATE_CPU(sd, 0))->console_base = ANACHRON_UART_BASE;
+  BREW_SIM_CPU (STATE_CPU(sd, 0))->simctl_base = ANACHRON_GPIO_4_BASE;
   if (sim_add_option_table (sd, NULL, brew_options) != SIM_RC_OK)
     return SIM_RC_FAIL;
   //sim_module_add_init_fn (sd, dv_sockser_init);
