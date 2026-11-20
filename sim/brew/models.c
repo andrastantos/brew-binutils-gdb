@@ -1,6 +1,5 @@
 #include "defs.h"
 
-#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -243,6 +242,66 @@ typedef struct newlib_termios {
     uint32_t c_ospeed;    /* output speed */
 } newlib_termios;
 
+// Signal numbers of newlib (generic BSD numbering, newlib/libc/include/sys/signal.h)
+enum {
+  NEWLIB_SIGINT  = 2,  NEWLIB_SIGILL  = 4,  NEWLIB_SIGTRAP = 5,  NEWLIB_SIGABRT = 6,
+  NEWLIB_SIGFPE  = 8,  NEWLIB_SIGBUS  = 10, NEWLIB_SIGSEGV = 11, NEWLIB_SIGURG  = 16,
+  NEWLIB_SIGSTOP = 17, NEWLIB_SIGTSTP = 18, NEWLIB_SIGCONT = 19, NEWLIB_SIGCHLD = 20,
+  NEWLIB_SIGTTIN = 21, NEWLIB_SIGTTOU = 22, NEWLIB_SIGXCPU = 24, NEWLIB_SIGWINCH = 28,
+  NEWLIB_NSIG    = 32
+};
+
+// kill(): the simulated program is the only process there is, so it can only
+// signal itself (its own pid, 0 for its process group or -1 for "every
+// process"). newlib's raise() runs installed handlers itself and only calls
+// kill() for the default action, so deliver that: stop the simulation the way
+// the signal would end a native process ('run' then exits with the signal
+// number, gdb reports "Program terminated with signal ..."). Never pass the
+// call to the host: kill(getpid(), SIGABRT) from abort() would kill the
+// simulator itself, which under gdb is gdb.
+// Returns the syscall's result (0 or -1) and sets *err on failure.
+static int user_mode_kill(SIM_DESC sd, sim_cpu *scpu, int32_t pid, int32_t sig, int *err)
+{
+  SIM_SIGNAL sim_sig;
+
+  if (pid != (int32_t)getpid() && pid != 0 && pid != -1)
+    {
+      *err = ESRCH;
+      return -1;
+    }
+  if (sig < 0 || sig >= NEWLIB_NSIG)
+    {
+      *err = EINVAL;
+      return -1;
+    }
+  switch (sig)
+    {
+    // Signal 0 only checks that the process exists
+    case 0:
+    // Ignored by default
+    case NEWLIB_SIGURG: case NEWLIB_SIGCONT: case NEWLIB_SIGCHLD: case NEWLIB_SIGWINCH:
+    // Stop the process by default; there is no job control to resume it
+    case NEWLIB_SIGSTOP: case NEWLIB_SIGTSTP: case NEWLIB_SIGTTIN: case NEWLIB_SIGTTOU:
+      return 0;
+    case NEWLIB_SIGINT:  sim_sig = SIM_SIGINT;  break;
+    case NEWLIB_SIGILL:  sim_sig = SIM_SIGILL;  break;
+    case NEWLIB_SIGTRAP: sim_sig = SIM_SIGTRAP; break;
+    case NEWLIB_SIGABRT: sim_sig = SIM_SIGABRT; break;
+    case NEWLIB_SIGFPE:  sim_sig = SIM_SIGFPE;  break;
+    case NEWLIB_SIGBUS:  sim_sig = SIM_SIGBUS;  break;
+    case NEWLIB_SIGSEGV: sim_sig = SIM_SIGSEGV; break;
+    case NEWLIB_SIGXCPU: sim_sig = SIM_SIGXCPU; break;
+    default:
+      // Terminates by default, but the sim can't report it as a signal
+      // (SIM_SIGNAL has no equivalent): exit with 128 + the signal, as a shell
+      // reports a process killed by a signal.
+      sim_io_eprintf(sd, "program terminated by signal %d.\n", sig);
+      sim_engine_halt(sd, scpu, NULL, sim_pc_get(scpu), sim_exited, 128 + sig);
+    }
+  sim_engine_halt(sd, scpu, NULL, sim_pc_get(scpu), sim_signalled, sim_sig);
+  return 0; // not reached
+}
+
 static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
 {
   // Syscalls follow normal function-call ABI with the addition that
@@ -355,18 +414,20 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
         SET_ERRNO(errno);
       break;
     case SYS_getpid:
-      // Since we don't simulate multiple processes, we simply return the PID of the simulator.
+      // Since we don't simulate multiple processes, we simply return the PID of the
+      // simulator (unique across parallel runs, e.g. for temp file names);
+      // user_mode_kill() takes it as the program itself.
       ret_val = getpid();
       SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
       break;
-#if ! defined __MINGW32__
-    case SYS_kill:
-      ret_val = kill(arg1, arg2);
+    case SYS_kill: {
+      int err = 0;
+      ret_val = user_mode_kill(sd, scpu, (int32_t)arg1, (int32_t)arg2, &err);
       SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
       if (ret_val == -1)
-        SET_ERRNO(errno);
+        SET_ERRNO(err);
       break;
-#endif // __MINGW32__
+    }
     case SYS_fstat: {
       struct stat statbuf;
       ret_val = fstat(arg1, &statbuf);
