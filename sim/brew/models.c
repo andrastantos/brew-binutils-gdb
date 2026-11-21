@@ -239,6 +239,86 @@ static void sim_write_le(SIM_DESC sd, sim_cpu *scpu, uint32_t vma, uint64_t valu
   sim_core_write_buffer(sd, scpu, write_map, bytes, vma, size);
 }
 
+// Reads 'size' bytes (at most 8) from SIM memory as a little-endian value.
+static uint64_t sim_read_le(SIM_DESC sd, sim_cpu *scpu, uint32_t vma, unsigned size)
+{
+  uint8_t bytes[8];
+  uint64_t value = 0;
+  SIM_ASSERT(size <= sizeof(bytes));
+  sim_core_read_buffer(sd, scpu, read_map, bytes, vma, size);
+  for (unsigned i = size; i-- > 0; )
+    value = (value << 8) | bytes[i];
+  return value;
+}
+
+// newlib's file type bits (newlib/libc/include/sys/stat.h); the permission
+// bits are the same everywhere.
+#define NEWLIB_S_IFDIR  0040000
+#define NEWLIB_S_IFCHR  0020000
+#define NEWLIB_S_IFBLK  0060000
+#define NEWLIB_S_IFREG  0100000
+#define NEWLIB_S_IFLNK  0120000
+#define NEWLIB_S_IFSOCK 0140000
+#define NEWLIB_S_IFIFO  0010000
+
+static uint32_t marshal_mode_to_sim(mode_t mode)
+{
+  uint32_t ret_val = mode & 07777;
+  if (S_ISDIR(mode))       ret_val |= NEWLIB_S_IFDIR;
+  else if (S_ISCHR(mode))  ret_val |= NEWLIB_S_IFCHR;
+  else if (S_ISBLK(mode))  ret_val |= NEWLIB_S_IFBLK;
+  else if (S_ISREG(mode))  ret_val |= NEWLIB_S_IFREG;
+  else if (S_ISFIFO(mode)) ret_val |= NEWLIB_S_IFIFO;
+#ifdef S_ISLNK
+  else if (S_ISLNK(mode))  ret_val |= NEWLIB_S_IFLNK;
+#endif
+#ifdef S_ISSOCK
+  else if (S_ISSOCK(mode)) ret_val |= NEWLIB_S_IFSOCK;
+#endif
+  return ret_val;
+}
+
+static void sim_write_timespec(SIM_DESC sd, sim_cpu *scpu, uint32_t vma, time_t sec, long nsec)
+{
+  sim_write_le(sd, scpu, vma + NEWLIB_TIMESPEC_TV_SEC, (uint64_t)(int64_t)sec, NEWLIB_TIME_T_SIZE);
+  sim_write_le(sd, scpu, vma + NEWLIB_TIMESPEC_TV_NSEC, (uint32_t)nsec, 4);
+}
+
+// Stores a host struct stat as newlib's struct stat at 'vma'. Returns 0, or
+// EOVERFLOW (a host errno value) if the file size doesn't fit newlib's
+// 32-bit off_t; newlib's other narrow fields (st_dev, st_ino, ... are 16
+// bits) are truncated, as no program can rely on them on the simulator.
+static int sim_write_stat(SIM_DESC sd, sim_cpu *scpu, uint32_t vma, const struct stat *st)
+{
+  uint8_t zeros[NEWLIB_STAT_SIZE] = { 0 };
+
+  if (st->st_size > INT32_MAX)
+    return EOVERFLOW;
+  sim_core_write_buffer(sd, scpu, write_map, zeros, vma, sizeof(zeros));
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_DEV, st->st_dev, 2);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_INO, st->st_ino, 2);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_MODE, marshal_mode_to_sim(st->st_mode), 4);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_NLINK, st->st_nlink, 2);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_UID, st->st_uid, 2);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_GID, st->st_gid, 2);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_RDEV, st->st_rdev, 2);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_SIZE, (uint32_t)st->st_size, 4);
+#if ! defined __MINGW32__
+  sim_write_timespec(sd, scpu, vma + NEWLIB_STAT_ST_ATIM, st->st_atim.tv_sec, st->st_atim.tv_nsec);
+  sim_write_timespec(sd, scpu, vma + NEWLIB_STAT_ST_MTIM, st->st_mtim.tv_sec, st->st_mtim.tv_nsec);
+  sim_write_timespec(sd, scpu, vma + NEWLIB_STAT_ST_CTIM, st->st_ctim.tv_sec, st->st_ctim.tv_nsec);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_BLKSIZE, (uint32_t)st->st_blksize, 4);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_BLOCKS, (uint32_t)st->st_blocks, 4);
+#else // __MINGW32__: no nanoseconds, st_blksize or st_blocks
+  sim_write_timespec(sd, scpu, vma + NEWLIB_STAT_ST_ATIM, st->st_atime, 0);
+  sim_write_timespec(sd, scpu, vma + NEWLIB_STAT_ST_MTIM, st->st_mtime, 0);
+  sim_write_timespec(sd, scpu, vma + NEWLIB_STAT_ST_CTIM, st->st_ctime, 0);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_BLKSIZE, 512, 4);
+  sim_write_le(sd, scpu, vma + NEWLIB_STAT_ST_BLOCKS, (uint32_t)((st->st_size + 511) / 512), 4);
+#endif // __MINGW32__
+  return 0;
+}
+
 #define NEWLIB_TCGETS     0x5401
 #define NEWLIB_TCSETS     0x5402
 #define NEWLIB_TCSETSW    0x5403
@@ -445,15 +525,21 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
       break;
     }
     case SYS_fstat: {
+      // int fstat(int fd, struct stat *buf)
       struct stat statbuf;
       ret_val = fstat(arg1, &statbuf);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      // for now, simply return an error...
-      ret_val = -1;
+      if (ret_val == 0)
+        {
+          int err = sim_write_stat(sd, scpu, arg2, &statbuf);
+          if (err != 0)
+            {
+              ret_val = -1;
+              errno = err;
+            }
+        }
       SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
-      SET_ERRNO(EOVERFLOW);
-      //SIM_ASSERT(false);
+      if (ret_val == -1)
+        SET_ERRNO(errno);
       break;
     }
 
@@ -472,11 +558,23 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
         SET_ERRNO(errno);
       break;
     case SYS_stat: {
+      // int stat(const char *path, struct stat *buf)
       struct stat statbuf;
-      ret_val = fstat(arg1, &statbuf);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      SIM_ASSERT(false);
+      str1 = sim_core_read_str(scpu, arg1);
+      ret_val = stat(str1, &statbuf);
+      free(str1);
+      if (ret_val == 0)
+        {
+          int err = sim_write_stat(sd, scpu, arg2, &statbuf);
+          if (err != 0)
+            {
+              ret_val = -1;
+              errno = err;
+            }
+        }
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
+      if (ret_val == -1)
+        SET_ERRNO(errno);
       break;
     }
     case SYS_chmod:
@@ -488,13 +586,20 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
         SET_ERRNO(errno);
       break;
     case SYS_utime: {
+      // int utime(const char *path, const struct utimbuf *times); NULL
+      // times means now.
       struct utimbuf times;
       str1 = sim_core_read_str(scpu, arg1);
-      ret_val = utime(str1, &times);
+      if (arg2 != 0)
+        {
+          times.actime = (time_t)(int64_t)sim_read_le(sd, scpu, arg2 + NEWLIB_UTIMBUF_ACTIME, NEWLIB_TIME_T_SIZE);
+          times.modtime = (time_t)(int64_t)sim_read_le(sd, scpu, arg2 + NEWLIB_UTIMBUF_MODTIME, NEWLIB_TIME_T_SIZE);
+        }
+      ret_val = utime(str1, arg2 != 0 ? &times : NULL);
       free(str1);
-      // We actually have to translate the stat structure: we can't just assume it has the same layout
-      // on the host as on the simulator.
-      SIM_ASSERT(false);
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
+      if (ret_val == -1)
+        SET_ERRNO(errno);
       break;
     }
     case SYS_time: {
