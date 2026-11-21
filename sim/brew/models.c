@@ -12,6 +12,9 @@
 #include <sys/times.h>
 #endif // __MINGW32__
 #include <sys/ioctl.h>
+#if ! defined __MINGW32__
+#include <sys/random.h>
+#endif
 #include <termios.h>
 #include <errno.h>
 #include <math.h>
@@ -731,6 +734,40 @@ static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
       if (ret_val == 0)
         SET_ERRNO(errno);
       break;
+
+    case BREW_getentropy: {
+      // int getentropy(void *buf, size_t len): fills buf with len random
+      // bytes from the host. Unlike the host's, any length is accepted
+      // (newlib's getentropy has no limit either); it is read in chunks of
+      // at most 256 bytes, the host call's limit.
+#if ! defined __MINGW32__
+      uint8_t chunk[256];
+      uint32_t done = 0;
+      ret_val = 0;
+      while (done < arg2)
+        {
+          uint32_t len = min(arg2 - done, (uint32_t)sizeof(chunk));
+          if (getentropy(chunk, len) != 0)
+            {
+              ret_val = -1;
+              SET_ERRNO(errno);
+              break;
+            }
+          if (sim_core_write_buffer(sd, scpu, write_map, chunk, arg1 + done, len) != len)
+            {
+              ret_val = -1;
+              SET_ERRNO(EFAULT);
+              break;
+            }
+          done += len;
+        }
+#else // __MINGW32__
+      ret_val = -1;
+      SET_ERRNO(ENOSYS);
+#endif // __MINGW32__
+      SIM_REG_T(BREW_REG_ARG0) = MAKE_INT((uint32_t)ret_val, BREW_REG_TYPE_INT32);
+      break;
+    }
 
     case BREW_ioctl: {
       int fd = arg1;

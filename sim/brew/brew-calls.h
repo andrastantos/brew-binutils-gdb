@@ -18,3 +18,4 @@
 
 #define BREW_isatty (0x8000)
 #define BREW_ioctl  (0x8001)
+#define BREW_getentropy (0x8002) /* int getentropy(void *buf, size_t len) */
