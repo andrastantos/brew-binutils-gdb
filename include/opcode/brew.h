@@ -147,6 +147,12 @@ typedef struct {
   bool is_task_mode;
   bool nis_task_mode;
 
+  // Load-lock reservation (memll / memsc): a single address per CPU. Set by
+  // memll, cleared by memsc (whether it succeeds or not), by a change of
+  // execution mode (an exception, interrupt or stm) and by reset.
+  bool ll_valid;
+  uint32_t ll_addr;
+
   fprintf_ftype tracer;
   void *tracer_strm;
 

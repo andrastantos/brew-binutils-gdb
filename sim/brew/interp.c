@@ -260,6 +260,9 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
   // Update PC
   BREW_SIM_CPU (scpu)->sim_state.tpc = BREW_SIM_CPU (scpu)->sim_state.ntpc;
   BREW_SIM_CPU (scpu)->sim_state.spc = BREW_SIM_CPU (scpu)->sim_state.nspc;
+  // A change of execution mode (exception, interrupt, stm) breaks a load-lock.
+  if (BREW_SIM_CPU (scpu)->sim_state.is_task_mode != BREW_SIM_CPU (scpu)->sim_state.nis_task_mode)
+    BREW_SIM_CPU (scpu)->sim_state.ll_valid = false;
   BREW_SIM_CPU (scpu)->sim_state.is_task_mode = BREW_SIM_CPU (scpu)->sim_state.nis_task_mode;
 }
 

@@ -1133,6 +1133,7 @@ static void brew_model_reset_cpu(sim_cpu *scpu, bool is_user_mode_sim)
   sim_state->tpc = 0;
   sim_state->reg[BREW_REG_SP] = MAKE_INT(0x01000000, BREW_REG_TYPE_INT32); // Setting $sp to something meaningful
   sim_state->is_task_mode = is_user_mode_sim;
+  sim_state->ll_valid = false;
   /* FIXME: do we want to get some other state in the registers? */
   /* Such as:
      - explicit randomization

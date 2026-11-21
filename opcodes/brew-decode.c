@@ -277,6 +277,40 @@ sim_mem_store(void *scpu, brew_sim_state *sim_state, int ref_size, int base_reg_
   OPCODES_ASSERT((ref_size & 7) == 0);
 }
 
+// memll: a 32-bit load that also places the load-lock on the address.
+static uint32_t
+sim_mem_load_lock(struct _sim_cpu *scpu, brew_sim_state *sim_state, int base_reg_idx, uint32_t offset, bool has_offset, uint32_t old_val)
+{
+  uint32_t vma = sim_mem_calc_ref(sim_state, base_reg_idx, offset, has_offset);
+  uint32_t val = sim_mem_load(scpu, sim_state, 32, false, base_reg_idx, offset, has_offset, old_val);
+  if (sim_state->ecause == BREW_EXCEPTION_NONE)
+    {
+      sim_state->ll_valid = true;
+      sim_state->ll_addr = vma;
+    }
+  return val;
+}
+
+// memsc: stores 'val' only if the load-lock on the address is still valid.
+// Returns the new value of $rD: 0 on success, 1 if the store failed. After
+// an exception (e.g. a fault on the store) neither the lock nor memory is
+// changed, and $rD keeps 'old_val'.
+static uint32_t
+sim_mem_store_cond(void *scpu, brew_sim_state *sim_state, int base_reg_idx, uint32_t offset, bool has_offset, uint32_t val)
+{
+  uint32_t vma = sim_mem_calc_ref(sim_state, base_reg_idx, offset, has_offset);
+  if (!sim_state->ll_valid || sim_state->ll_addr != vma)
+    {
+      sim_state->ll_valid = false;
+      return 1;
+    }
+  sim_state->model_functions.write_mem(scpu, vma, 32, val);
+  if (sim_state->ecause != BREW_EXCEPTION_NONE)
+    return val;
+  sim_state->ll_valid = false;
+  return 0;
+}
+
 static uint32_t
 sim_csr_load(void *scpu, brew_sim_state *sim_state, uint16_t csr_addr)
 {
@@ -1194,12 +1228,12 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
               case 0x4: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state,  8, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("mem8",   FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
               case 0x5: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state, 16, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("mem16",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
               case 0x6: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("mem32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
-              case 0x7: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state, 32, false, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("memll32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
+              case 0x7: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load_lock(scpu, sim_state, FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("memll32",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
 
               case 0x8: SIM( CLASS(ST); sim_mem_store(scpu, sim_state,  8, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("mem8",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
               case 0x9: SIM( CLASS(ST); sim_mem_store(scpu, sim_state, 16, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("mem16", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
               case 0xa: SIM( CLASS(ST); sim_mem_store(scpu, sim_state, 32, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("mem32", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
-              case 0xb: SIM( CLASS(ST); sim_mem_store(scpu, sim_state, 32, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val)); INST("%s <- %s", format_mem_ref("memsr32", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
+              case 0xb: SIM( CLASS(ST); SIM_REGD_T = MAKE_INT(sim_mem_store_cond(scpu, sim_state, FIELD_A, field_e, FIELD_C == 0xf, SIM_REG(FIELD_D).val), BREW_REG_TYPE_INT32)); INST("%s <- %s", format_mem_ref("memsc32", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer), REG_D);
 
               case 0xc: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state,  8, true,  FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("smem8",  FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
               case 0xd: SIM( CLASS(LD); SIM_REGD_T = MAKE_INT(sim_mem_load(scpu, sim_state, 16, true,  FIELD_A, field_e, FIELD_C == 0xf, SIM_REGD.val), SIM_REGD_TYPE)); INST("%s <- %s", REG_D, format_mem_ref("smem16", FIELD_A, field_e, FIELD_C == 0xf, false, str_buffer));
