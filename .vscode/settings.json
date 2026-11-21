@@ -19,5 +19,6 @@
         "editor.tabSize": 8,
 	"editor.insertSpaces": true,
     },
-    "cmake.configureOnOpen": false
+    "cmake.configureOnOpen": false,
+    "cmake.sourceDirectory": "/home/tantos/brew_related/brew-binutils-gdb/zlib"
 }
