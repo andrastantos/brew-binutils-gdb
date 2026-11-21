@@ -24,6 +24,7 @@
 
 #include "libiberty.h"
 #include "sim/sim.h"
+#include "sim/callback.h"
 
 #include "sim-main.h"
 #include "sim-base.h"
@@ -166,7 +167,21 @@ static int marshal_o_flags_from_sim(int oflags)
 #define SIM_REG_T(idx) sim_state->dirty_map |= (1<<(idx)); sim_state->reg[idx]
 #define MAKE_INT(l0, type) (brew_typed_reg) { l0, type }
 
-#define SET_ERRNO(value) { SIM_REG_T(BREW_REG_SYSCALL_ERRNO) = MAKE_INT(value, BREW_REG_TYPE_INT32); }
+// A syscall returns the new value of errno in $lr (BREW_REG_SYSCALL_ERRNO;
+// see "Syscalls" in brew/docs_src/abi.rst): libgloss's stubs load errno into
+// $lr before the syscall and store $lr back after it. The value must be
+// newlib's number for the error, not the host's: they differ above ERANGE
+// (34), e.g. ENOSYS is 38 on Linux and 88 in newlib.
+#define SET_ERRNO(value) { SIM_REG_T(BREW_REG_SYSCALL_ERRNO) = MAKE_INT(host_to_newlib_errno(sd, value), BREW_REG_TYPE_INT32); }
+
+// Translates a host errno value to newlib's, using the sim's errno map
+// (sim/common/target-newlib-errno.c, the default for every sim).
+static uint32_t host_to_newlib_errno(SIM_DESC sd, int host_errno)
+{
+  int target_errno = cb_host_to_target_errno(STATE_CALLBACK(sd), host_errno);
+  // The map returns 0 for a host error newlib has no name for; report EIO.
+  return target_errno != 0 ? target_errno : 5 /* newlib EIO */;
+}
 
 
 // Copies a string from SIM memory to host memory.
@@ -305,7 +320,8 @@ static int user_mode_kill(SIM_DESC sd, sim_cpu *scpu, int32_t pid, int32_t sig, 
 static void user_mode_handle_syscall(SIM_DESC sd, sim_cpu *scpu)
 {
   // Syscalls follow normal function-call ABI with the addition that
-  // $r3 points to 'errno' on entry.
+  // $lr holds the value of 'errno' on entry, and the new value on return
+  // (see SET_ERRNO).
   // The ABI declares that $r8...$r14 needs to maintain it's value
   // accross calls. This applies to SYSCALLs too. $sp and $fp need
   // to be preserved as well. $r3...$r7 can change, though it's quite
