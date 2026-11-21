@@ -484,8 +484,15 @@ static void brew_sim_uninstall(SIM_DESC sd)
   int c;
   for (c = 0; c < MAX_NR_PROCESSORS; ++c) {
     SIM_CPU *scpu = STATE_CPU(sd, c);
-    if (BREW_SIM_CPU (scpu)->model_info != NULL)
+    if (BREW_SIM_CPU (scpu)->model_info != NULL) {
+      // A model is set up while the options are parsed (--model), before
+      // sim_post_argv_init links the CPU to its state; if sim_open fails
+      // in between (e.g. the program can't be opened), the model's done
+      // hook would read a NULL CPU_STATE.
+      if (CPU_STATE (scpu) == NULL)
+        CPU_STATE (scpu) = sd;
       BREW_SIM_CPU (scpu)->sim_state.model_functions.free_model_info(scpu);
+    }
     BREW_SIM_CPU (scpu)->model_info = NULL;
   }
 }
