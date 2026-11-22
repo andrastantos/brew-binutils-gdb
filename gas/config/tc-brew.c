@@ -1150,17 +1150,41 @@ static int action_binary_imm_reg(void *context ATTRIBUTE_UNUSED, const brew_pars
       reg_op = &tokens[4];
       op_tok = tokens[3].last_lexer_token;
       imm_op = &tokens[3];
-      if (op_tok->type == T_LSHIFT || op_tok->type == T_RSHIFT)
-        {
-          as_bad(_("Short shift immediates are not supported as the first operand"));
-          return A_ERR;
-        }
     }
   else
     {
       reg_op = &tokens[3];
       op_tok = tokens[2].last_lexer_token;
       imm_op = &tokens[2];
+    }
+
+  // The pattern takes anything between '<-' and the register, so check
+  // that it is <expression> <binary operator>: '$r1 <- int $r2' (an
+  // unknown prefix operator) would otherwise give an empty expression.
+  switch (op_tok->type)
+    {
+    case T_HAT:
+    case T_BAR:
+    case T_LSHIFT:
+    case T_RSHIFT:
+    case T_PLUS_MINUS:
+    case T_STAR:
+    case T_AND:
+      break;
+    default:
+      as_bad(_("Unrecognized instruction: `%.*s' is not a binary operator"),
+             (int) op_tok->len, op_tok->start);
+      return A_ERR;
+    }
+  if (op_tok == imm_op->first_lexer_token)
+    {
+      as_bad(_("Missing operand before `%.*s'"), (int) op_tok->len, op_tok->start);
+      return A_ERR;
+    }
+  if (is_short && (op_tok->type == T_LSHIFT || op_tok->type == T_RSHIFT))
+    {
+      as_bad(_("Short shift immediates are not supported as the first operand"));
+      return A_ERR;
     }
   gas_assert(reg_dst->parser_token == T_REG);
   gas_assert(reg_op->parser_token == T_REG);
