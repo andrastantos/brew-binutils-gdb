@@ -20,6 +20,7 @@
 #include "frame.h"
 #include "frame-unwind.h"
 #include "frame-base.h"
+#include "dwarf2/frame.h"
 #include "symtab.h"
 #include "gdbtypes.h"
 #include "cli/cli-cmds.h"
@@ -120,6 +121,30 @@ static int brew_dwarf2_reg_to_regnum(struct gdbarch *gdbarch, int reg)
   if (reg == 17) // gcc's $pc
     return BREW_GDB_REG_PC;
   return -1;
+}
+
+// How each register is found in the caller's frame when the CFI
+// (.debug_frame) doesn't say. The caller's $pc is the return address and
+// its $sp is the CFA (the value of $sp before the call). $r0-$r7 are
+// call-clobbered, and the mode-specific PCs and the task-mode flag can't be
+// recovered, so those are undefined, as brew_frame_prev_register reports
+// them. The call-saved $r8-$r14 keep the default: unchanged unless the CFI
+// records a save.
+static void brew_dwarf2_frame_init_reg(
+  struct gdbarch *gdbarch,
+  int regnum,
+  struct dwarf2_frame_state_reg *reg,
+  const frame_info_ptr &this_frame
+) {
+  if (regnum == BREW_GDB_REG_PC)
+    reg->how = DWARF2_FRAME_REG_RA;
+  else if (regnum == BREW_REG_SP)
+    reg->how = DWARF2_FRAME_REG_CFA;
+  else if (regnum <= BREW_REG_ARG3
+           || regnum == BREW_GDB_REG_TPC
+           || regnum == BREW_GDB_REG_SPC
+           || regnum == BREW_GDB_REG_TASK_MODE)
+    reg->how = DWARF2_FRAME_REG_UNDEFINED;
 }
 
 // TODO: we should handle true target register types here
@@ -1143,12 +1168,19 @@ static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbar
   set_gdbarch_sw_breakpoint_from_kind(gdbarch, brew_breakpoint::bp_from_kind);
   set_gdbarch_frame_align(gdbarch, brew_frame_align);
 
+  // Frame bases and unwinders: the CFI GCC writes (.debug_frame) first,
+  // then the prologue analyzer for code without it (crt0, hand-written
+  // assembly). The DWARF unwinder also lets gdb rebuild tail-call frames
+  // from DW_TAG_call_site and find DW_OP_entry_value values.
+  dwarf2_frame_set_init_reg(gdbarch, brew_dwarf2_frame_init_reg);
+  frame_base_append_sniffer(gdbarch, dwarf2_frame_base_sniffer);
   frame_base_set_default(gdbarch, &brew_frame_base);
 
   // Hook in ABI-specific overrides, if they have been registered.
   gdbarch_init_osabi(info, gdbarch);
 
   // Hook in the default unwinders.
+  dwarf2_append_unwinders(gdbarch);
   frame_unwind_append_unwinder(gdbarch, &brew_frame_unwind);
 
   // Single stepping.
