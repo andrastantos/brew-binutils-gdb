@@ -117,21 +117,27 @@ static reloc_howto_type brew_elf_howto_table[] =
   ),
 
 
-  /* 16 bit PC relative offset.  */
+  /* The pc-relative branch offset (FIELD_E of the conditional
+     branches): a 17-bit signed, even byte offset from the start of the
+     instruction, which is 2 bytes before the field.  Bits 1-15 are in
+     place and bit 16 (the sign) is in bit 0, so it isn't a plain
+     shift-and-mask field: brew_final_link_relocate encodes it.
+     bfd_elf_generic_reloc only matters when gas writes the relocation:
+     without it, bfd_install_relocation adds a global target's value to
+     the addend.  */
   HOWTO (
     R_BREW_16_SPCREL,           /* type */
-    1,                          /* rightshift */
-    2,                          /* size (0 = byte, 1 = short, 2 = long) */
-    16,                         /* bitsize */
+    0,                          /* rightshift */
+    2,                          /* size (bytes) */
+    17,                         /* bitsize */
     true,                       /* pc_relative */
     0,                          /* bitpos */
     complain_overflow_signed,   /* complain_on_overflow */
-    NULL,                       /* special_function */
+    bfd_elf_generic_reloc,      /* special_function */
     "R_BREW_16_SPCREL",         /* name */
     false,                      /* partial_inplace */
     0x0,                        /* src_mask */
     0xffff,                     /* dst_mask */
-    // TODO: not sure what the right value here is.
     true                        /* pcrel_offset */
   ),
 
@@ -244,15 +250,25 @@ brew_final_link_relocate (
   switch (howto->type)
     {
     case R_BREW_16_SPCREL:
-      r = _bfd_final_link_relocate(
-        howto,
-        input_bfd,
-        input_section,
-        contents,
-        rel->r_offset,
-        relocation + 2,
-        rel->r_addend
-      );
+      {
+        bfd_vma insn_addr;
+        bfd_signed_vma offset;
+
+        if (!bfd_reloc_offset_in_range (howto, input_bfd, input_section,
+                                        rel->r_offset))
+          return bfd_reloc_outofrange;
+
+        insn_addr = (input_section->output_section->vma
+                     + input_section->output_offset + rel->r_offset - 2);
+        offset = (bfd_signed_vma) (relocation + rel->r_addend - insn_addr);
+        /* Same encoding as brew_munge_address (opcodes/brew-decode.c).  */
+        bfd_put_16 (input_bfd, (offset & 0xfffe) | ((offset >> 16) & 1),
+                    contents + rel->r_offset);
+        if (offset < -65536 || offset > 65534)
+          r = bfd_reloc_overflow;
+        else if ((offset & 1) != 0)
+          r = bfd_reloc_dangerous;
+      }
       break;
     default:
       r = _bfd_final_link_relocate(
@@ -438,7 +454,16 @@ brew_elf_relocate_section (
               break;
 
             case bfd_reloc_dangerous:
-              msg = _("internal error: dangerous relocation");
+              if (r_type == R_BREW_16_SPCREL)
+                (*info->callbacks->reloc_dangerous)(
+                  info,
+                  _("branch target is not 2-byte aligned"),
+                  input_bfd,
+                  input_section,
+                  rel->r_offset
+                );
+              else
+                msg = _("internal error: dangerous relocation");
               break;
 
             default:

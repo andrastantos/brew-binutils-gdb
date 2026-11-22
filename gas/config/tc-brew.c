@@ -2062,12 +2062,15 @@ md_show_usage(FILE *stream)
   -NF                     disable floating point instructions\n"));
 }
 
+static bool
+brew_pcrel_resolvable (fixS *fixP, segT seg);
+
 // Apply a fixup to the object file.
 void
 md_apply_fix(
   fixS *fixP,
   valueT * valP,
-  segT seg ATTRIBUTE_UNUSED
+  segT seg
 ) {
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
   long val = *valP;
@@ -2117,9 +2120,23 @@ md_apply_fix(
       buf += 2;
       break;
     case BFD_RELOC_BREW_PCREL16:
-      max = INT16_MAX;
-      min = INT16_MIN;
-      // This is a relative 17-bit offset, the LSB being 0 and not stored
+      // A 17-bit signed, even byte offset from the start of the
+      // instruction: bits 1-15 in place, bit 16 (the sign) in bit 0
+      // (brew_munge_address), so -65536 to 65534. That is checked here,
+      // not by the generic 16-bit field check.
+      fixP->fx_no_overflow = 1;
+      if (fixP->fx_addsy != NULL && !brew_pcrel_resolvable (fixP, seg))
+        {
+          // A target in another section, undefined, global or weak: left
+          // to the linker (R_BREW_16_SPCREL; RELA, so the field stays 0
+          // and the addend is fx_offset). VAL isn't the offset then, so
+          // don't range-check it.
+          buf[1] = 0;
+          buf[0] = 0;
+          break;
+        }
+      max = 65534;
+      min = -65536;
       if ((val & 1) != 0)
         as_bad_where (fixP->fx_file, fixP->fx_line, _("$pc offset must be even"));
       munged_val = brew_munge_address(val);
@@ -2137,6 +2154,18 @@ md_apply_fix(
 
   if ((fixP->fx_addsy == NULL) || mark_done)
     fixP->fx_done = 1;
+}
+
+// Whether the assembler can resolve a pc-relative fixup itself: only for
+// a target in the fixup's own section that the link can't replace.
+// (TC_FORCE_RELOCATION_LOCAL keeps even those as fixups with a symbol;
+// local labels have become the section symbol plus an offset by now.)
+static bool
+brew_pcrel_resolvable (fixS *fixP, segT seg)
+{
+  return S_IS_DEFINED (fixP->fx_addsy)
+         && S_GET_SEGMENT (fixP->fx_addsy) == seg
+         && !S_FORCE_RELOC (fixP->fx_addsy, 1);
 }
 
 // Put number into target byte order.
