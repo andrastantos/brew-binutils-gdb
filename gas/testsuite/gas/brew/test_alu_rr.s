@@ -8,7 +8,11 @@
   break
   syscall
   stm
-  sii
+  swi 3
+  swi 4
+  swi 5
+  swi 6
+  swi 7
   fence_rw_rw
   fence_r__rw
   fence__w_rw
@@ -58,10 +62,8 @@
   $r\D <- ~$r\A
   $r\D <- wse $r\A
   $r\D <- bse $r\A
-  $r\D <- int $r\A
-  $r\D <- float $r\A
   $r\D <- rsqrt $r\A
-  $r\D <- sum $r\A
+  $r\D <- popcnt $r\A
   $r\D <- 1 / $r\A
 
   .endr
