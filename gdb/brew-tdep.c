@@ -262,6 +262,42 @@ template <class data_type> static bool read_memory_uint(CORE_ADDR addr, enum bfd
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+// Is PC in the tail of an epilogue, after '$sp <- N + $sp' put $sp back at the
+// entry value? There the epilogue reloads the saved registers from below $sp
+// ('$rD <- mem32[$sp - tiny N]', the prologue's stores with the load opcode),
+// $fp last, then returns or jumps (sibcall). Function bodies address their
+// frame through $fp and never load from below $sp, so a run of such reloads
+// that match FRAME_INFO's save slots identifies the epilogue; on the final
+// jump (no reload left) the preceding instruction is the $fp reload.
+// On success, *PENDING has a bit for each register whose reload is ahead.
+static bool brew_in_epilogue(
+  CORE_ADDR pc,
+  const struct brew_frame_info *frame_info,
+  enum bfd_endian byte_order,
+  uint32_t *pending
+) {
+  *pending = 0;
+  if (frame_info->saved_regs[BREW_REG_FP] == REG_UNAVAIL)
+    return false;
+  uint16_t inst;
+  CORE_ADDR addr = pc;
+  while (read_memory_uint(addr, byte_order, inst)
+         && FIELD_C(inst) == 0xd && (inst & 1) == 1 && FIELD_D(inst) != 0xf) {
+    int32_t offset = (inst & 0xfe) << 1;
+    offset |= (offset & 0x100) != 0 ? 0xfffffe00 : 0;
+    size_t reg_idx = FIELD_D(inst);
+    if ((uint32_t) offset != frame_info->saved_regs[reg_idx])
+      return false;
+    *pending |= 1u << reg_idx;
+    addr += 2;
+  }
+  if (*pending != 0)
+    return (*pending & (1u << BREW_REG_FP)) != 0;
+  // At the return or sibcall jump: was the previous instruction the $fp reload?
+  uint16_t fp_reload = 0xcd01 | (frame_info->saved_regs[BREW_REG_FP] & 0x1fc) >> 1;
+  return pc >= 2 && read_memory_uint(pc - 2, byte_order, inst) && inst == fp_reload;
+}
+
 // Analyze a function prolog and fill the associated frame_info record.
 // This contains all the saved registers (or rather the memory offsets to them)
 // and some minimal info about the PC/SP/FP associated with the frame.
@@ -318,9 +354,13 @@ static bool brew_analyze_prolog(
       // sign-extend offset:
       offset |= (offset & 0x100) != 0 ? 0xfffffe00 : 0;
       size_t reg_idx = FIELD_D(inst);
-      frame_info->saved_regs[reg_idx] = offset;
-      if (cur_pc > start_addr && reg_idx == BREW_REG_LINK)
-        lr_is_saved = true;
+      // At cur_pc only the stores before it have been executed; a register
+      // whose store is still ahead holds the caller's value.
+      if (this_frame == NULL || inst_addr < cur_pc) {
+        frame_info->saved_regs[reg_idx] = offset;
+        if (reg_idx == BREW_REG_LINK)
+          lr_is_saved = true;
+      }
       inst_addr += 2;
     } else {
       break;
@@ -368,26 +408,39 @@ static bool brew_analyze_prolog(
 
   // If we've gotten this far, we managed to parse the prolog.
   if (this_frame != NULL) {
-    if (sp_is_old) {
+    // The prologue stores below the entry $sp (the caller's), and then sets
+    // $fp to it, so it is the base of every save slot.
+    if (fp_is_old)
       frame_info->prev_sp = get_frame_register_unsigned(this_frame, BREW_REG_SP);
-    } else {
+    else
       frame_info->prev_sp = cur_fp;
+
+    // In the epilogue $sp is back at the entry value and the saved registers
+    // are being reloaded, $fp last. Reloads still ahead keep their slots;
+    // the registers already reloaded hold the caller's values again.
+    uint32_t pending;
+    if (brew_in_epilogue(cur_pc, frame_info, byte_order, &pending)) {
+      frame_info->prev_sp = get_frame_register_unsigned(this_frame, BREW_REG_SP);
+      for (int r = 0; r < BREW_REG_SP + 2; ++r)
+        if ((pending & (1u << r)) == 0)
+          frame_info->saved_regs[r] = REG_UNAVAIL;
+      fp_is_old = (pending & (1u << BREW_REG_FP)) == 0;
+      lr_is_saved = (pending & (1u << BREW_REG_LINK)) != 0;
     }
-    if (fp_is_old) {
+
+    if (fp_is_old || frame_info->saved_regs[BREW_REG_FP] == REG_UNAVAIL) {
       frame_info->prev_fp = cur_fp;
     } else {
       int32_t fp_ofs = frame_info->saved_regs[BREW_REG_FP];
-      uint32_t fp = cur_fp;
       uint32_t old_fp;
-      if (!read_memory_uint(fp+fp_ofs, byte_order, old_fp))
+      if (!read_memory_uint(frame_info->prev_sp+fp_ofs, byte_order, old_fp))
         return false;
       frame_info->prev_fp = old_fp;
     }
     if (lr_is_saved) {
-      int32_t fp_ofs = frame_info->saved_regs[BREW_REG_LINK];
-      uint32_t fp = cur_fp;
+      int32_t lr_ofs = frame_info->saved_regs[BREW_REG_LINK];
       uint32_t return_addr;
-      if (!read_memory_uint(fp+fp_ofs, byte_order, return_addr))
+      if (!read_memory_uint(frame_info->prev_sp+lr_ofs, byte_order, return_addr))
         return false;
       frame_info->return_addr = return_addr;
     } else {
@@ -857,10 +910,11 @@ static struct value *brew_frame_prev_register(
   if (regnum < BREW_GDB_NUM_REGS && frame_info->saved_regs[regnum] != REG_UNAVAIL) {
     return frame_unwind_got_memory(this_frame, regnum, frame_info->prev_sp + frame_info->saved_regs[regnum]);
   }
-  // We don't have a value for this register. Most platforms at this point return the current register value
-  // but that seems to be very optimistic: the current value is most likely not what the register held in the
-  // calling frame. So, I think we should return `frame_unwind_got_optimized` instead.
-  //return frame_unwind_got_register(this_frame, regnum, regnum);
+  // Not saved (or already reloaded): a call-saved register still holds the
+  // caller's value, while the call-clobbered ones, $lr and the PCs/mode
+  // are lost (the same defaults as brew_dwarf2_frame_init_reg).
+  if (regnum > BREW_REG_ARG3 && regnum < BREW_REG_LINK)
+    return frame_unwind_got_register(this_frame, regnum, regnum);
   return frame_unwind_got_optimized(this_frame, regnum);
 }
 
@@ -868,7 +922,9 @@ static struct value *brew_frame_prev_register(
 static CORE_ADDR brew_frame_base_address (const frame_info_ptr &this_frame, void **this_cache)
 {
   struct brew_frame_info *frame_info = brew_frame_info_fill(this_frame, this_cache);
-  gdb_assert(frame_info->valid);
+  // Outermost frame ($fp == 0) or code the analyzer doesn't understand.
+  if (!frame_info->valid)
+    return get_frame_sp(this_frame);
   return frame_info->prev_sp;
 }
 
