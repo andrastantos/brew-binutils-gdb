@@ -34,6 +34,7 @@
 #include "language.h"
 #include "arch-utils.h"
 #include "regcache.h"
+#include "user-regs.h"
 #include "trad-frame.h"
 #include "dis-asm.h"
 #include "record.h"
@@ -87,25 +88,43 @@ constexpr gdb_byte brew_break_insn[] = { 0x00, 0x10 }; /* BREAK instruction: 0x1
 
 typedef BP_MANIPULATION (brew_break_insn) brew_breakpoint;
 
-// Virtual registers. Their definition is in sim/brew/gdb-if.h
-static const char * const brew_virtual_reg_names[] = {
-  "$tpc", "$spc", "$pc", "task mode"
+// Register names as gdb spells them: without the assembler's '$' (gdb adds
+// it in expressions, so "$r8" looks up "r8"), and one word each. $r0-$r14
+// are the GPRs (brew_reg_names in opcodes has the assembler names); the
+// rest are the virtual registers of sim/brew/gdb-if.h.
+static const char * const brew_gdb_reg_names[BREW_GDB_NUM_REGS] = {
+  "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+  "r8", "r9", "r10", "r11", "fp", "sp", "lr",
+  "tpc", "spc", "pc", "task_mode"
 };
 
 // gdbarch 'method' implementations. The follow the name in gdbarch with the 'brew_' prefix
 
 static const char *brew_register_name(struct gdbarch *gdbarch, int reg_nr)
 {
-  // TODO: what to do with $pc/$tpc/$spc????
   // gdb only asks for valid register numbers, and the result must never be NULL.
-  if (reg_nr < 0)
+  if (reg_nr < 0 || reg_nr >= BREW_GDB_NUM_REGS)
     return "";
-  if (reg_nr < 15) // normal registers
-    return brew_reg_names[reg_nr];
-  reg_nr -= 15;
-  if (reg_nr >= sizeof(brew_virtual_reg_names)/sizeof(brew_virtual_reg_names[0]))
-    return "";
-  return brew_virtual_reg_names[reg_nr];
+  return brew_gdb_reg_names[reg_nr];
+}
+
+// The numbered names of the registers that have an ABI name: $r12 is $fp,
+// $r13 $sp and $r14 $lr.
+static const struct
+{
+  const char *name;
+  int regnum;
+} brew_register_aliases[] = {
+  { "r12", BREW_REG_FP },
+  { "r13", BREW_REG_SP },
+  { "r14", BREW_REG_LINK },
+};
+
+static struct value *
+brew_value_of_alias(const frame_info_ptr &frame, const void *baton)
+{
+  return value_of_register((int) (intptr_t) baton,
+                           get_next_frame_sentinel_okay(frame));
 }
 
 // Map a DWARF register number (gcc's hard register number, see REGISTER_NAMES
@@ -323,7 +342,6 @@ static bool brew_analyze_prolog(
   CORE_ADDR inst_addr = start_addr;
   uint16_t inst;
   int32_t offset;
-  bool sp_is_old = true;
   bool fp_is_old = true;
   bool lr_is_saved = false;
 
@@ -402,9 +420,6 @@ static bool brew_analyze_prolog(
     inst_addr += 4;
   } else
     return false;
-
-  if (cur_pc >= inst_addr)
-    sp_is_old = false;
 
   // If we've gotten this far, we managed to parse the prolog.
   if (this_frame != NULL) {
@@ -1213,6 +1228,9 @@ static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbar
   set_gdbarch_sp_regnum(gdbarch, BREW_REG_SP);
   set_gdbarch_pc_regnum(gdbarch, BREW_GDB_REG_PC);
   set_gdbarch_register_name(gdbarch, brew_register_name);
+  for (const auto &alias : brew_register_aliases)
+    user_reg_add(gdbarch, alias.name, brew_value_of_alias,
+                 (const void *) (intptr_t) alias.regnum);
   set_gdbarch_register_type(gdbarch, brew_register_type);
   set_gdbarch_dwarf2_reg_to_regnum(gdbarch, brew_dwarf2_reg_to_regnum);
 
