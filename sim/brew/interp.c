@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "sim-options.h"
 #include "sim-io.h"
 #include "sim-signal.h"
+#include "safe-ctype.h"
 #include "target-newlib-syscall.h"
 
 #include "opcode/brew-abi.h"
@@ -168,7 +169,294 @@ static INLINE void trace_exception(sim_cpu *scpu, char *message, size_t message_
     }
 }
 
-static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_branch_tpc, uint32_t non_branch_spc)
+#if WITH_PROFILE_INSN_P
+
+/* Instruction profile (--profile-insn; 'run' prints it with -v).
+
+   Instructions are counted per first instruction word: on the current ISA
+   that word alone selects the instruction form.  (The extension groups,
+   which decode FIELD_E, are disabled in brew-decode.c; enabling them needs
+   FIELD_E in the key.)  The report disassembles one sample of each word
+   that ran, turns its operands into placeholders and merges the words that
+   give the same form.  The class summary groups them by the instruction
+   class the decoder reports, split by instruction length.  */
+
+#define BREW_INSN_WORDS 0x10000
+#define BREW_INSN_LENGTHS 3 /* 16, 32 and 48 bits */
+
+struct brew_insn_profile
+{
+  uint64_t count[BREW_INSN_WORDS];
+  uint32_t sample_field_e[BREW_INSN_WORDS];
+  uint8_t insn_class[BREW_INSN_WORDS];
+};
+
+static INLINE void
+profile_count_insn_form(sim_cpu *scpu, uint16_t insn_code, uint32_t field_e)
+{
+  struct brew_insn_profile *prof = BREW_SIM_CPU (scpu)->insn_profile;
+
+  if (prof == NULL)
+    prof = BREW_SIM_CPU (scpu)->insn_profile = xcalloc(1, sizeof(*prof));
+  if (prof->count[insn_code]++ == 0)
+    {
+      prof->sample_field_e[insn_code] = field_e;
+      prof->insn_class[insn_code] = BREW_SIM_CPU (scpu)->sim_state.insn_class;
+    }
+}
+
+static bool
+is_gpr_name(const char *name, size_t len)
+{
+  for (int i = 0; i < 15; ++i)
+    if (strncmp(brew_reg_names[i], name, len) == 0 && brew_reg_names[i][len] == 0)
+      return true;
+  return false;
+}
+
+/* Turn a disassembled instruction into its form: general registers become
+   $r, numbers N (the disassembler's " (0x...)" repeats are dropped), and
+   the sign the disassembler picks for an offset or immediate ("+ N",
+   "- N", "- tiny N") becomes "+/-".  A subtraction keeps its "-": its
+   right operand is a register, or the immediate is on the left.  */
+static void
+insn_form(const char *in, char *out, size_t out_size)
+{
+  char tmp[256];
+  const char *start = in;
+  size_t o = 0;
+  char prev = ' ';
+
+  while (*in != 0 && o + 4 < sizeof(tmp))
+    {
+      if (*in == '$')
+        {
+          const char *end = in + 1;
+          while (ISALNUM(*end))
+            ++end;
+          if (is_gpr_name(in, end - in))
+            {
+              tmp[o++] = '$';
+              tmp[o++] = 'r';
+            }
+          else
+            while (in < end && o + 4 < sizeof(tmp))
+              tmp[o++] = *in++;
+          in = end;
+          prev = 'r';
+          continue;
+        }
+      if (in[0] == ' ' && in[1] == '(' && in[2] == '0' && in[3] == 'x')
+        {
+          const char *end = strchr(in, ')');
+          if (end != NULL)
+            {
+              in = end + 1;
+              continue;
+            }
+        }
+      if (!ISALNUM(prev) && prev != '_'
+          && (ISDIGIT(in[0]) || (in[0] == '-' && ISDIGIT(in[1]))))
+        {
+          // "if $rA == 0 ...": the 0 is part of the instruction (branches
+          // compare with zero or a register, never an immediate)
+          if (in[0] == '0' && !ISALNUM(in[1]) && strncmp(start, "if ", 3) == 0
+              && o >= 2 && tmp[o - 1] == ' '
+              && strchr("=<>", tmp[o - 2]) != NULL)
+            {
+              prev = *in;
+              tmp[o++] = *in++;
+              continue;
+            }
+          if (*in == '-')
+            ++in;
+          if (in[0] == '0' && (in[1] == 'x' || in[1] == 'X'))
+            {
+              in += 2;
+              while (ISXDIGIT(*in))
+                ++in;
+            }
+          else
+            while (ISDIGIT(*in))
+              ++in;
+          tmp[o++] = 'N';
+          prev = 'N';
+          continue;
+        }
+      prev = *in;
+      tmp[o++] = *in++;
+    }
+  tmp[o] = 0;
+
+  /* Fold the signs.  */
+  o = 0;
+  for (const char *t = tmp; *t != 0 && o + 4 < out_size; )
+    {
+      if ((t[0] == '+' || t[0] == '-') && t[1] == ' '
+          && (t == tmp || t[-1] == ' ')
+          && ((t[2] == 'N' && !ISALNUM(t[3]))
+              || (strncmp(t + 2, "tiny N", 6) == 0 && !ISALNUM(t[8]))))
+        {
+          memcpy(out + o, "+/-", 3);
+          o += 3;
+          ++t;
+          continue;
+        }
+      out[o++] = *t++;
+    }
+  out[o] = 0;
+}
+
+struct insn_form_count
+{
+  char *name;
+  uint64_t count;
+};
+
+static int
+cmp_form_name(const void *a, const void *b)
+{
+  return strcmp(((const struct insn_form_count *)a)->name,
+                ((const struct insn_form_count *)b)->name);
+}
+
+static int
+cmp_form_count(const void *a, const void *b)
+{
+  const struct insn_form_count *fa = a, *fb = b;
+
+  if (fa->count != fb->count)
+    return fa->count < fb->count ? 1 : -1;
+  return strcmp(fa->name, fb->name);
+}
+
+struct class_count
+{
+  int insn_class;
+  uint64_t count[BREW_INSN_LENGTHS];
+  uint64_t total;
+};
+
+static int
+cmp_class_count(const void *a, const void *b)
+{
+  const struct class_count *ca = a, *cb = b;
+
+  if (ca->total != cb->total)
+    return ca->total < cb->total ? 1 : -1;
+  return ca->insn_class - cb->insn_class;
+}
+
+/* Like sim-profile.c's profile_printf: to --profile-file if given.  */
+static void ATTRIBUTE_PRINTF (2, 3)
+brew_profile_printf(sim_cpu *scpu, const char *fmt, ...)
+{
+  FILE *fp = PROFILE_FILE (CPU_PROFILE_DATA (scpu));
+  va_list ap;
+
+  va_start(ap, fmt);
+  if (fp != NULL)
+    vfprintf(fp, fmt, ap);
+  else
+    sim_io_evprintf(CPU_STATE (scpu), fmt, ap);
+  va_end(ap);
+}
+
+#define COUNT_STR(buf, n) sim_add_commas((buf), sizeof(buf), (n))
+
+static void
+brew_profile_info(sim_cpu *scpu, bool verbose)
+{
+  struct brew_insn_profile *prof = BREW_SIM_CPU (scpu)->insn_profile;
+  struct class_count classes[BREW_INSN_CLS_MAX];
+  struct insn_form_count *forms;
+  size_t nr_forms = 0;
+  uint64_t total = 0;
+  int width = 20;
+  char b0[32], b1[32], b2[32], b3[32];
+
+  if (!PROFILE_INSN_P (scpu))
+    return;
+
+  brew_profile_printf(scpu, "Instruction Statistics\n\n");
+  if (prof == NULL)
+    {
+      brew_profile_printf(scpu, "  Total: 0 insns\n\n");
+      return;
+    }
+
+  memset(classes, 0, sizeof(classes));
+  for (int c = 0; c < BREW_INSN_CLS_MAX; ++c)
+    classes[c].insn_class = c;
+  forms = xmalloc(sizeof(*forms) * BREW_INSN_WORDS);
+  for (unsigned code = 0; code < BREW_INSN_WORDS; ++code)
+    {
+      char text[256], form[256];
+      int cls;
+
+      if (prof->count[code] == 0)
+        continue;
+      total += prof->count[code];
+      cls = prof->insn_class[code] < BREW_INSN_CLS_MAX ? prof->insn_class[code] : BREW_INSN_CLS_UNKNOWN;
+      classes[cls].count[(brew_insn_len(code) - 2) / 2] += prof->count[code];
+      classes[cls].total += prof->count[code];
+
+      text[0] = 0;
+      brew_print_insn((fprintf_ftype)sprintf, text, code, prof->sample_field_e[code]);
+      insn_form(text, form, sizeof(form));
+      forms[nr_forms].name = xstrdup(form);
+      forms[nr_forms].count = prof->count[code];
+      ++nr_forms;
+    }
+
+  /* Merge the words that give the same form.  */
+  qsort(forms, nr_forms, sizeof(*forms), cmp_form_name);
+  {
+    size_t out = 0;
+    for (size_t i = 0; i < nr_forms; ++i)
+      {
+        if (out > 0 && strcmp(forms[out - 1].name, forms[i].name) == 0)
+          {
+            forms[out - 1].count += forms[i].count;
+            free(forms[i].name);
+          }
+        else
+          forms[out++] = forms[i];
+      }
+    nr_forms = out;
+  }
+  qsort(forms, nr_forms, sizeof(*forms), cmp_form_count);
+  qsort(classes, BREW_INSN_CLS_MAX, sizeof(classes[0]), cmp_class_count);
+  for (size_t i = 0; i < nr_forms; ++i)
+    if ((int)strlen(forms[i].name) > width)
+      width = strlen(forms[i].name);
+
+  brew_profile_printf(scpu, "  Total: %s insns\n\n", COUNT_STR(b0, total));
+  brew_profile_printf(scpu, "  %-*s %12s %7s %12s %12s %12s\n", width, "Class",
+                      "Count", "%", "16-bit", "32-bit", "48-bit");
+  for (int c = 0; c < BREW_INSN_CLS_MAX && classes[c].total != 0; ++c)
+    brew_profile_printf(scpu, "  %-*s %12s %7.2f %12s %12s %12s\n", width,
+                        brew_insn_class_name(classes[c].insn_class),
+                        COUNT_STR(b0, classes[c].total),
+                        100.0 * classes[c].total / total,
+                        COUNT_STR(b1, classes[c].count[0]),
+                        COUNT_STR(b2, classes[c].count[1]),
+                        COUNT_STR(b3, classes[c].count[2]));
+  brew_profile_printf(scpu, "\n  %-*s %12s %7s\n", width, "Form", "Count", "%");
+  for (size_t i = 0; i < nr_forms; ++i)
+    {
+      brew_profile_printf(scpu, "  %-*s %12s %7.2f\n", width, forms[i].name,
+                          COUNT_STR(b0, forms[i].count),
+                          100.0 * forms[i].count / total);
+      free(forms[i].name);
+    }
+  brew_profile_printf(scpu, "\n");
+  free(forms);
+}
+
+#endif /* WITH_PROFILE_INSN_P */
+
+static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t field_e, bool fetched, uint32_t non_branch_tpc, uint32_t non_branch_spc)
 {
   SIM_DESC sd = CPU_STATE(scpu);
   PROFILE_DATA *profile_data = CPU_PROFILE_DATA(scpu);
@@ -226,10 +514,11 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t non_bra
     }
   // Handle profiling
   {
-    uint16_t profile_idx;
-    int insn_length_cls = (brew_insn_len(insn_code) - 2) / 2; // 0 for 2-byte, 1 for 4-byte, 2 for 6-byte instructions.
-    profile_idx = BREW_SIM_CPU (scpu)->sim_state.insn_class + BREW_INSN_CLS_MAX * insn_length_cls;
-    PROFILE_COUNT_INSN(scpu, NULL, profile_idx);
+#if WITH_PROFILE_INSN_P
+    // An instruction that failed to fetch has no form (insn_code is stale)
+    if (fetched && PROFILE_INSN_P (scpu))
+      profile_count_insn_form(scpu, insn_code, field_e);
+#endif
 
     if (non_branch_spc != BREW_SIM_CPU (scpu)->sim_state.nspc || non_branch_tpc != BREW_SIM_CPU (scpu)->sim_state.ntpc)
       ++PROFILE_MODEL_TAKEN_COUNT(profile_data);
@@ -298,6 +587,8 @@ sim_engine_run(
 
   do
     {
+      bool fetched = false;
+
       BREW_SIM_CPU (scpu)->sim_state.ecause = BREW_EXCEPTION_NONE;
       {
         // scoping pc to make sure we don't even accidentally use that for anything
@@ -334,6 +625,7 @@ sim_engine_run(
           non_branch_tpc = BREW_SIM_CPU (scpu)->sim_state.ntpc;
 
           brew_sim_insn(scpu, &BREW_SIM_CPU (scpu)->sim_state, insn_code, field_e);
+          fetched = true;
         } else {
           // If we had a fetch exception, what should the non-branch PCs be? We branch no matter what???
           // I actually don't think it matters all that much, we use it only for reporting below, but still...
@@ -341,7 +633,7 @@ sim_engine_run(
           non_branch_tpc = BREW_SIM_CPU (scpu)->sim_state.tpc;
         }
 
-      post_exec(scpu, insn_code, non_branch_tpc, non_branch_spc);
+      post_exec(scpu, insn_code, field_e, fetched, non_branch_tpc, non_branch_spc);
       if (sim_events_tick (sd))
         sim_events_process (sd);
     }
@@ -497,6 +789,8 @@ static void brew_sim_uninstall(SIM_DESC sd)
       BREW_SIM_CPU (scpu)->sim_state.model_functions.free_model_info(scpu);
     }
     BREW_SIM_CPU (scpu)->model_info = NULL;
+    free(BREW_SIM_CPU (scpu)->insn_profile);
+    BREW_SIM_CPU (scpu)->insn_profile = NULL;
   }
 }
 
@@ -515,23 +809,6 @@ free_state (SIM_DESC sd)
   sim_state_free(sd);
 }
 
-/* Given the instruction class code, return a descriptive string */
-static const char *
-full_insn_class_name(sim_cpu *scpu, int insn_class_code)
-{
-  static const char *insn_length_names[] = {
-    "",
-    " short",
-    " long"
-  };
-  static char insn_name[200];
-  brew_insn_classes base_class = insn_class_code % BREW_INSN_CLS_MAX;
-  int insn_length_code = (insn_class_code / BREW_INSN_CLS_MAX);
-
-  sprintf(insn_name, "%s%s", brew_insn_class_name(base_class), insn_length_names[insn_class_code]);
-  return insn_name;
-}
-
 static const SIM_MODEL brew_models[];
 
 static void
@@ -541,8 +818,11 @@ brew_init_cpu(sim_cpu *scpu)
   CPU_REG_STORE(scpu) = brew_reg_store;
   CPU_PC_FETCH(scpu) = brew_pc_get;
   CPU_PC_STORE(scpu) = brew_pc_set;
-  CPU_MAX_INSNS(scpu) = 0x10000; // To make is simple, every instruction code is counted separately (for now)
-  CPU_INSN_NAME(scpu) = full_insn_class_name;
+#if WITH_PROFILE_INSN_P
+  // The common instruction profile (CPU_MAX_INSNS, CPU_INSN_NAME) is unused:
+  // brew_profile_info prints Brew's own.
+  PROFILE_INFO_CPU_CALLBACK (CPU_PROFILE_DATA (scpu)) = brew_profile_info;
+#endif
 }
 
 static void

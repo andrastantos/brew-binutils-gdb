@@ -43,6 +43,7 @@ typedef struct {
 
 
 struct brew_model_functions;
+struct brew_insn_profile;
 
 /* Brew-specific CPU state. The common sim_cpu holds a pointer to this (CPU_ARCH_DATA);
    it is allocated by sim_cpu_alloc_all_extra in sim_open.  */
@@ -50,6 +51,8 @@ struct brew_sim_cpu {
   brew_sim_state sim_state;
   char decode_buf[255];
   mem_trace_s mem_trace;
+  // Instruction profile (--profile-insn), allocated on the first instruction.
+  struct brew_insn_profile *insn_profile;
   void *model_info; // pointer to model-specific data
   // This is a giant hack, but I can't solve this: we need to squirrel away all the command-line options before we know what the model is
   // going to be, so neither sim_state.model_functions.XXX nor model_info is filled in.
