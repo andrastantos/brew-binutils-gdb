@@ -281,23 +281,62 @@ template <class data_type> static bool read_memory_uint(CORE_ADDR addr, enum bfd
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+// Decode '$sp <- N + $sp' at ADDR (tiny, short or long immediate, as GCC
+// emits it to allocate and free the frame). On success, *LEN is the
+// instruction's length and *OFFSET its N.
+static bool brew_sp_adjust(
+  CORE_ADDR addr,
+  enum bfd_endian byte_order,
+  int *len,
+  int32_t *offset
+) {
+  uint16_t inst;
+  if (!read_memory_uint(addr, byte_order, inst))
+    return false;
+  if ((inst & 0xfff0) == 0xdbd0) {
+    *len = 2;
+    *offset = sign_extend_tiny_to_32(FIELD_A(inst));
+    return true;
+  }
+  if (inst == 0xd4fd) {
+    uint16_t short_offset;
+    if (!read_memory_uint(addr + 2, byte_order, short_offset))
+      return false;
+    *len = 4;
+    *offset = sign_extend_short_to_32(short_offset);
+    return true;
+  }
+  if (inst == 0xd4df) {
+    *len = 6;
+    return read_memory_uint(addr + 2, byte_order, *offset);
+  }
+  return false;
+}
+
+// The reload of REG from the save slot at OFS: '$rD <- mem32[$sp - tiny N]'.
+static uint16_t brew_slot_reload(size_t reg, uint32_t ofs)
+{
+  return (reg << 12) | 0x0d01 | (ofs & 0x1fc) >> 1;
+}
+
 // Is PC in the tail of an epilogue, after '$sp <- N + $sp' put $sp back at the
 // entry value? There the epilogue reloads the saved registers from below $sp
 // ('$rD <- mem32[$sp - tiny N]', the prologue's stores with the load opcode),
-// $fp last, then returns or jumps (sibcall). Function bodies address their
-// frame through $fp and never load from below $sp, so a run of such reloads
-// that match FRAME_INFO's save slots identifies the epilogue; on the final
-// jump (no reload left) the preceding instruction is the $fp reload.
+// the first save slot ($fp, or $lr in a function without a frame pointer)
+// last, then returns or jumps (sibcall). Function bodies never load from
+// below $sp, so a run of such reloads that match FRAME_INFO's save slots
+// identifies the epilogue. With no reload left, a return ('$pc <- $lr') is
+// in the epilogue; a sibcall jump is if it follows the last reload or, in a
+// function that saves nothing, the '$sp <- N + $sp' that frees FRAMESIZE.
 // On success, *PENDING has a bit for each register whose reload is ahead.
 static bool brew_in_epilogue(
   CORE_ADDR pc,
   const struct brew_frame_info *frame_info,
+  int32_t framesize,
   enum bfd_endian byte_order,
   uint32_t *pending
 ) {
   *pending = 0;
-  if (frame_info->saved_regs[BREW_REG_FP] == REG_UNAVAIL)
-    return false;
   uint16_t inst;
   CORE_ADDR addr = pc;
   while (read_memory_uint(addr, byte_order, inst)
@@ -305,16 +344,39 @@ static bool brew_in_epilogue(
     int32_t offset = (inst & 0xfe) << 1;
     offset |= (offset & 0x100) != 0 ? 0xfffffe00 : 0;
     size_t reg_idx = FIELD_D(inst);
-    if ((uint32_t) offset != frame_info->saved_regs[reg_idx])
+    if (frame_info->saved_regs[reg_idx] == REG_UNAVAIL
+        || (uint32_t) offset != frame_info->saved_regs[reg_idx])
       return false;
     *pending |= 1u << reg_idx;
     addr += 2;
   }
   if (*pending != 0)
-    return (*pending & (1u << BREW_REG_FP)) != 0;
-  // At the return or sibcall jump: was the previous instruction the $fp reload?
-  uint16_t fp_reload = 0xcd01 | (frame_info->saved_regs[BREW_REG_FP] & 0x1fc) >> 1;
-  return pc >= 2 && read_memory_uint(pc - 2, byte_order, inst) && inst == fp_reload;
+    return true;
+  if (!read_memory_uint(pc, byte_order, inst))
+    return false;
+  if (inst == 0xe002)
+    return true;
+  // A sibcall jump ('$pc <- $rN' or '$pc <- N'): what precedes it?
+  if (inst != 0x2fef && (inst & 0x0fff) != 0x0002)
+    return false;
+  bool saves = false;
+  for (size_t r = 0; r < BREW_GDB_NUM_REGS; ++r)
+    if (frame_info->saved_regs[r] != REG_UNAVAIL) {
+      saves = true;
+      if (frame_info->saved_regs[r] == (uint32_t) -4)
+        return pc >= 2 && read_memory_uint(pc - 2, byte_order, inst)
+               && inst == brew_slot_reload(r, -4);
+    }
+  if (saves || framesize == 0)
+    return false;
+  for (int len = 2; len <= 6; len += 2) {
+    int l;
+    int32_t ofs;
+    if (pc >= (CORE_ADDR) len && brew_sp_adjust(pc - len, byte_order, &l, &ofs)
+        && l == len && ofs == framesize)
+      return true;
+  }
+  return false;
 }
 
 // Analyze a function prolog and fill the associated frame_info record.
@@ -366,9 +428,7 @@ static bool brew_analyze_prolog(
   enum bfd_endian byte_order = gdbarch_byte_order(gdbarch);
   CORE_ADDR inst_addr = start_addr;
   uint16_t inst;
-  int32_t offset;
-  bool fp_is_old = true;
-  bool lr_is_saved = false;
+  int32_t offset = 0;
 
   // We are looking for something like this:
   //
@@ -378,6 +438,11 @@ static bool brew_analyze_prolog(
   // 800022a:  f9 9c               mem32[$sp - tiny 16 (0xfffffff0)] <- $r9
   // 800022c:  dd c2               $fp <- $sp
   // 800022e:  fd d4 e0 ff         $sp <- short -32 (0xffffffe0) + $sp
+  //
+  // Only functions that need a frame pointer (alloca, __builtin_eh_return)
+  // have '$fp <- $sp'; the others address their frame through $sp, and
+  // save $fp (an ordinary call-saved register there) only if they use it.
+  // Each part is optional: a leaf may save nothing, or have no frame at all.
 
   frame_info->valid = false;
   frame_info->entry_point = start_addr;
@@ -399,83 +464,68 @@ static bool brew_analyze_prolog(
       size_t reg_idx = FIELD_D(inst);
       // At cur_pc only the stores before it have been executed; a register
       // whose store is still ahead holds the caller's value.
-      if (this_frame == NULL || inst_addr < cur_pc) {
+      if (this_frame == NULL || inst_addr < cur_pc)
         frame_info->saved_regs[reg_idx] = offset;
-        if (reg_idx == BREW_REG_LINK)
-          lr_is_saved = true;
-      }
       inst_addr += 2;
     } else {
       break;
     }
   }
+  bool saves = inst_addr != start_addr;
 
-  // This must be a $fp <- $sp instruction
-  if (!read_memory_uint(inst_addr, byte_order, inst))
+  // The optional '$fp <- $sp'.
+  bool has_fp = inst == 0xc2dd;
+  bool fp_set = false;
+  if (has_fp) {
+    fp_set = this_frame == NULL || cur_pc > inst_addr;
+    inst_addr += 2;
+  }
+
+  // The $sp adjustment. Saves are always followed by one.
+  int adjust_len;
+  if (brew_sp_adjust(inst_addr, byte_order, &adjust_len, &offset) && offset < 0) {
+    inst_addr += adjust_len;
+  } else {
+    // A function that doesn't start with the standard prologue is a
+    // frameless leaf, such as setjmp or other hand-written assembly without
+    // CFI.
+    if (!saves && !has_fp)
+      return brew_frameless_frame(start_addr, cur_fp, frame_info, this_frame);
     return false;
-  // A function that doesn't start with the standard prologue (no saves, no
-  // $fp <- $sp) is a frameless leaf, such as setjmp or other hand-written
-  // assembly without CFI. At a function's entry nothing has run yet, so any
-  // function is frameless there.
-  if ((inst_addr == start_addr && inst != 0xc2dd)
-      || (this_frame != NULL && cur_pc == start_addr))
+  }
+  int32_t framesize = -offset;
+  // At a function's entry nothing has run yet, so any function is frameless
+  // there.
+  if (this_frame != NULL && cur_pc == start_addr)
     return brew_frameless_frame(start_addr, cur_fp, frame_info, this_frame);
-  if (inst != 0xc2dd)
-    return false;
-  inst_addr += 2;
-
-  if (cur_pc >= inst_addr)
-    fp_is_old = false;
-
-  // This is the $sp adjustment. It could be a short or a long decrement
-  if (!read_memory_uint(inst_addr, byte_order, inst))
-    return false;
-  if ((inst & 0xfff0) == 0xdbd0) {
-    // tiny decrement 0x.b..
-    inst_addr += 2;
-    // Sign-extend
-    offset = sign_extend_tiny_to_32(FIELD_A(inst));
-  } else if (inst == 0xd4fd) {
-    // short decrement
-    inst_addr += 2;
-    uint16_t short_offset;
-    if (!read_memory_uint(inst_addr, byte_order, short_offset))
-      return false;
-    // Sign-extend
-    offset = sign_extend_short_to_32(short_offset);
-    inst_addr += 2;
-  } else if (inst == 0xd4df) {
-    // long decrement
-    inst_addr += 2;
-    if (!read_memory_uint(inst_addr, byte_order, offset))
-      return false;
-    inst_addr += 4;
-  } else
-    return false;
 
   // If we've gotten this far, we managed to parse the prolog.
   if (this_frame != NULL) {
-    // The prologue stores below the entry $sp (the caller's), and then sets
-    // $fp to it, so it is the base of every save slot.
-    if (fp_is_old)
-      frame_info->prev_sp = get_frame_register_unsigned(this_frame, BREW_REG_SP);
-    else
+    CORE_ADDR cur_sp = get_frame_register_unsigned(this_frame, BREW_REG_SP);
+    // The prologue stores below the entry $sp (the caller's). A frame
+    // pointer is set to it; otherwise it lies FRAMESIZE above $sp once the
+    // adjustment has run (the frame has a fixed size without one).
+    if (fp_set)
       frame_info->prev_sp = cur_fp;
+    else if (cur_pc >= inst_addr)
+      frame_info->prev_sp = cur_sp + framesize;
+    else
+      frame_info->prev_sp = cur_sp;
 
     // In the epilogue $sp is back at the entry value and the saved registers
-    // are being reloaded, $fp last. Reloads still ahead keep their slots;
-    // the registers already reloaded hold the caller's values again.
+    // are being reloaded. Reloads still ahead keep their slots; the
+    // registers already reloaded hold the caller's values again.
     uint32_t pending;
-    if (brew_in_epilogue(cur_pc, frame_info, byte_order, &pending)) {
-      frame_info->prev_sp = get_frame_register_unsigned(this_frame, BREW_REG_SP);
-      for (int r = 0; r < BREW_REG_SP + 2; ++r)
+    if (cur_pc >= inst_addr
+        && brew_in_epilogue(cur_pc, frame_info, framesize, byte_order, &pending)) {
+      frame_info->prev_sp = cur_sp;
+      for (int r = 0; r < BREW_GDB_NUM_REGS; ++r)
         if ((pending & (1u << r)) == 0)
           frame_info->saved_regs[r] = REG_UNAVAIL;
-      fp_is_old = (pending & (1u << BREW_REG_FP)) == 0;
-      lr_is_saved = (pending & (1u << BREW_REG_LINK)) != 0;
     }
 
-    if (fp_is_old || frame_info->saved_regs[BREW_REG_FP] == REG_UNAVAIL) {
+    // A saved $fp is the caller's; otherwise $fp still holds it.
+    if (frame_info->saved_regs[BREW_REG_FP] == REG_UNAVAIL) {
       frame_info->prev_fp = cur_fp;
     } else {
       int32_t fp_ofs = frame_info->saved_regs[BREW_REG_FP];
@@ -484,7 +534,7 @@ static bool brew_analyze_prolog(
         return false;
       frame_info->prev_fp = old_fp;
     }
-    if (lr_is_saved) {
+    if (frame_info->saved_regs[BREW_REG_LINK] != REG_UNAVAIL) {
       int32_t lr_ofs = frame_info->saved_regs[BREW_REG_LINK];
       uint32_t return_addr;
       if (!read_memory_uint(frame_info->prev_sp+lr_ofs, byte_order, return_addr))
@@ -499,7 +549,7 @@ static bool brew_analyze_prolog(
   }
 
   frame_info->prolog_end = inst_addr;
-  frame_info->framesize = -offset;
+  frame_info->framesize = framesize;
   frame_info->valid = true;
 
   return true;
@@ -879,11 +929,13 @@ static struct brew_frame_info *brew_frame_info_fill(const frame_info_ptr &this_f
 
   ULONGEST fp = get_frame_register_unsigned(this_frame, BREW_REG_FP);
 
-  // This marks the outermost frame.
-  if (fp == 0) {
-    // printf(">>>>>>>>>>>>>>>>> FOUND OUTERMOST FRAME!!!!!!\n");
+  // The program's entry function (crt0's __start) is the outermost frame.
+  // ($fp can't mark it: crt0 zeroes $fp, but functions without a frame
+  // pointer leave it zero or use it as an ordinary register.)
+  std::optional<CORE_ADDR> entry
+    = current_program_space->entry_point_address_query();
+  if (entry.has_value() && get_frame_func(this_frame) == *entry)
     return frame_info;
-  }
 
   bool success = brew_analyze_prolog(
     get_frame_func(this_frame),
@@ -972,13 +1024,13 @@ static struct value *brew_frame_prev_register(
 static CORE_ADDR brew_frame_base_address (const frame_info_ptr &this_frame, void **this_cache)
 {
   struct brew_frame_info *frame_info = brew_frame_info_fill(this_frame, this_cache);
-  // Outermost frame ($fp == 0) or code the analyzer doesn't understand.
+  // Outermost frame or code the analyzer doesn't understand.
   if (!frame_info->valid)
     return get_frame_sp(this_frame);
   return frame_info->prev_sp;
 }
 
-// The outermost frame ($fp == 0) and code the analyzer doesn't understand
+// The outermost frame (the entry function) and code the analyzer doesn't understand
 // end the backtrace.
 static enum unwind_stop_reason brew_frame_unwind_stop_reason(
   const frame_info_ptr &this_frame,
