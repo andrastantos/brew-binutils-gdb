@@ -330,6 +330,31 @@ static bool brew_in_epilogue(
 //
 // On return, we return the end of the prolog, or start_addr if we can't find the end of the prolog
 // for some reason.
+// Describe a frame that has no prologue (yet): the caller's $sp is the
+// current one, its $pc is in $lr, and every register still holds the
+// caller's value.
+static bool brew_frameless_frame(
+  CORE_ADDR start_addr,
+  CORE_ADDR cur_fp,
+  struct brew_frame_info *frame_info,
+  const frame_info_ptr &this_frame
+) {
+  for (auto &ofs : frame_info->saved_regs)
+    ofs = REG_UNAVAIL;
+  if (this_frame != NULL) {
+    frame_info->prev_sp = get_frame_register_unsigned(this_frame, BREW_REG_SP);
+    frame_info->prev_fp = cur_fp;
+    frame_info->return_addr = get_frame_register_unsigned(this_frame, BREW_REG_LINK);
+  } else {
+    frame_info->prev_sp = 0;
+    frame_info->prev_fp = 0;
+  }
+  frame_info->prolog_end = start_addr;
+  frame_info->framesize = 0;
+  frame_info->valid = true;
+  return true;
+}
+
 static bool brew_analyze_prolog(
   CORE_ADDR start_addr,
   CORE_ADDR cur_pc,
@@ -388,6 +413,13 @@ static bool brew_analyze_prolog(
   // This must be a $fp <- $sp instruction
   if (!read_memory_uint(inst_addr, byte_order, inst))
     return false;
+  // A function that doesn't start with the standard prologue (no saves, no
+  // $fp <- $sp) is a frameless leaf, such as setjmp or other hand-written
+  // assembly without CFI. At a function's entry nothing has run yet, so any
+  // function is frameless there.
+  if ((inst_addr == start_addr && inst != 0xc2dd)
+      || (this_frame != NULL && cur_pc == start_addr))
+    return brew_frameless_frame(start_addr, cur_fp, frame_info, this_frame);
   if (inst != 0xc2dd)
     return false;
   inst_addr += 2;
@@ -905,7 +937,10 @@ static struct value *brew_frame_prev_register(
   struct brew_frame_info *frame_info = brew_frame_info_fill(this_frame, this_prologue_cache);
 
   gdb_assert(regnum >= 0);
-  gdb_assert(frame_info->valid);
+  // A frame the analyzer can't describe is the outermost one
+  // (brew_frame_unwind_stop_reason): nothing of the caller is known.
+  if (!frame_info->valid)
+    return frame_unwind_got_optimized(this_frame, regnum);
 
   if (regnum == BREW_REG_SP) {
     return frame_unwind_got_constant(this_frame, regnum, frame_info->prev_sp);
@@ -943,11 +978,22 @@ static CORE_ADDR brew_frame_base_address (const frame_info_ptr &this_frame, void
   return frame_info->prev_sp;
 }
 
+// The outermost frame ($fp == 0) and code the analyzer doesn't understand
+// end the backtrace.
+static enum unwind_stop_reason brew_frame_unwind_stop_reason(
+  const frame_info_ptr &this_frame,
+  void **this_prologue_cache
+) {
+  struct brew_frame_info *frame_info = brew_frame_info_fill(this_frame, this_prologue_cache);
+
+  return frame_info->valid ? UNWIND_NO_REASON : UNWIND_OUTERMOST;
+}
+
 static const struct frame_unwind_legacy brew_frame_unwind(
   "brew prologue",
   NORMAL_FRAME,
   FRAME_UNWIND_ARCH,
-  default_frame_unwind_stop_reason,
+  brew_frame_unwind_stop_reason,
   brew_frame_this_id,
   brew_frame_prev_register,
   NULL,
@@ -1208,6 +1254,21 @@ finish:
 //
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Where longjmp will resume: newlib's setjmp (libc/machine/brew/setjmp.S)
+// stores the return address at offset 8 of the jmp_buf, whose address is
+// longjmp's first argument. gdb calls this at longjmp's entry.
+static bool brew_get_longjmp_target(const frame_info_ptr &frame, CORE_ADDR *pc)
+{
+  struct gdbarch *gdbarch = get_frame_arch(frame);
+  CORE_ADDR jb_addr = get_frame_register_unsigned(frame, BREW_REG_ARG0);
+  gdb_byte buf[4];
+
+  if (target_read_memory(jb_addr + 8, buf, sizeof(buf)) != 0)
+    return false;
+  *pc = extract_unsigned_integer(buf, sizeof(buf), gdbarch_byte_order(gdbarch));
+  return true;
+}
+
 // Allocate and initialize the brew gdbarch object.
 static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 {
@@ -1259,6 +1320,7 @@ static struct gdbarch *brew_gdbarch_init (struct gdbarch_info info, struct gdbar
 
   // Single stepping.
   set_gdbarch_get_next_pcs(gdbarch, brew_software_single_step);
+  set_gdbarch_get_longjmp_target(gdbarch, brew_get_longjmp_target);
 
   // Support simple overlay manager.
   set_gdbarch_overlay_update(gdbarch, simple_overlay_update);
