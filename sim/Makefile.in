@@ -457,6 +457,7 @@ brew_libsim_a_AR = $(AR) $(ARFLAGS)
 @SIM_ENABLE_ARCH_brew_TRUE@	$(patsubst \
 @SIM_ENABLE_ARCH_brew_TRUE@	%,brew/dv-%.o,$(brew_SIM_EXTRA_HW_DEVICES)) \
 @SIM_ENABLE_ARCH_brew_TRUE@	brew/interp.o brew/models.o \
+@SIM_ENABLE_ARCH_brew_TRUE@	brew/espresso-timing.o \
 @SIM_ENABLE_ARCH_brew_TRUE@	brew/sim-resume.o
 @SIM_ENABLE_ARCH_brew_TRUE@am_brew_libsim_a_OBJECTS =  \
 @SIM_ENABLE_ARCH_brew_TRUE@	$(am__objects_1)
@@ -2217,6 +2218,7 @@ testsuite_common_CPPFLAGS = \
 @SIM_ENABLE_ARCH_brew_TRUE@	$(patsubst %,brew/dv-%.o,$(brew_SIM_EXTRA_HW_DEVICES)) \
 @SIM_ENABLE_ARCH_brew_TRUE@	brew/interp.o \
 @SIM_ENABLE_ARCH_brew_TRUE@	brew/models.o \
+@SIM_ENABLE_ARCH_brew_TRUE@	brew/espresso-timing.o \
 @SIM_ENABLE_ARCH_brew_TRUE@	brew/sim-resume.o
 
 @SIM_ENABLE_ARCH_brew_TRUE@brew_run_SOURCES = 

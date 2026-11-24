@@ -44,6 +44,7 @@ typedef struct {
 
 struct brew_model_functions;
 struct brew_insn_profile;
+struct espresso_timing;
 
 /* Brew-specific CPU state. The common sim_cpu holds a pointer to this (CPU_ARCH_DATA);
    it is allocated by sim_cpu_alloc_all_extra in sim_open.  */
@@ -61,6 +62,10 @@ struct brew_sim_cpu {
   // (--console-base, --simctl-base); defaults set in brew_options_init.
   uint32_t console_base;
   uint32_t simctl_base;
+  // Cycle model (--timing): the option is stored on the first CPU, the model,
+  // created on the first instruction, on each.
+  bool timing_espresso;
+  struct espresso_timing *espresso_timing;
 };
 
 #define BREW_SIM_CPU(cpu) ((struct brew_sim_cpu *) CPU_ARCH_DATA (cpu))

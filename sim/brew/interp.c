@@ -43,6 +43,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "opcode/brew.h"
 #include "gdb-if.h"
 #include "models.h"
+#include "espresso-timing.h"
+
+#include <inttypes.h>
 
 
 #ifndef MIN
@@ -364,8 +367,49 @@ brew_profile_printf(sim_cpu *scpu, const char *fmt, ...)
 
 #define COUNT_STR(buf, n) sim_add_commas((buf), sizeof(buf), (n))
 
+/* The cycle model's report (--timing=espresso with --profile-model).  */
 static void
-brew_profile_info(sim_cpu *scpu, bool verbose)
+brew_timing_profile_info(sim_cpu *scpu)
+{
+  espresso_timing_stats st;
+  char b0[32];
+  double total;
+
+  if (!BREW_SIM_CPU (STATE_CPU (CPU_STATE (scpu), 0))->timing_espresso || !PROFILE_MODEL_P (scpu))
+    return;
+  brew_profile_printf(scpu, "Espresso Timing (--timing=espresso)\n\n");
+  if (BREW_SIM_CPU (scpu)->espresso_timing == NULL)
+    {
+      brew_profile_printf(scpu, "  Total: 0 cycles\n\n");
+      return;
+    }
+  st = *espresso_timing_get_stats(BREW_SIM_CPU (scpu)->espresso_timing);
+  total = st.cycles ? (double)st.cycles : 1.0;
+#define TIMING_LINE(label, n) \
+  brew_profile_printf(scpu, "  %-34s %14s %7.2f%%\n", label, COUNT_STR(b0, n), 100.0 * (n) / total)
+  brew_profile_printf(scpu, "  %-34s %14s\n", "Total cycles:", COUNT_STR(b0, st.cycles));
+  brew_profile_printf(scpu, "  %-34s %14s\n", "Instructions entering execute:", COUNT_STR(b0, st.insns));
+  brew_profile_printf(scpu, "  %-34s %14.3f\n", "Cycles per instruction:", st.insns ? st.cycles / (double)st.insns : 0.0);
+  brew_profile_printf(scpu, "\n  Where the cycles went (one reason per cycle):\n");
+  TIMING_LINE("An instruction entered execute:", st.insns);
+  TIMING_LINE("Refill after a taken branch:", st.stall_branch);
+  TIMING_LINE("Fetch starved decode:", st.stall_fetch);
+  TIMING_LINE("Waiting for a register:", st.stall_dep);
+  TIMING_LINE("Waiting for memory or the bus:", st.stall_mem);
+  TIMING_LINE("Multiply lockout:", st.stall_mult);
+#undef TIMING_LINE
+  brew_profile_printf(scpu, "\n  Bus:\n");
+  brew_profile_printf(scpu, "  %-34s %14s\n", "Instruction words fetched:", COUNT_STR(b0, st.fetch_beats));
+  brew_profile_printf(scpu, "  %-34s %14s\n", "  thrown away by branches:", COUNT_STR(b0, st.fetch_dropped));
+  brew_profile_printf(scpu, "  %-34s %14s\n", "Data transfers (16-bit):", COUNT_STR(b0, st.mem_beats));
+  brew_profile_printf(scpu, "  %-34s %14s\n", "DRAM refresh cycles:", COUNT_STR(b0, st.refresh));
+  if (st.resyncs != 0)
+    brew_profile_printf(scpu, "  %-34s %14s\n", "Model resynchronisations:", COUNT_STR(b0, st.resyncs));
+  brew_profile_printf(scpu, "\n");
+}
+
+static void
+brew_insn_profile_info(sim_cpu *scpu, bool verbose)
 {
   struct brew_insn_profile *prof = BREW_SIM_CPU (scpu)->insn_profile;
   struct class_count classes[BREW_INSN_CLS_MAX];
@@ -454,7 +498,49 @@ brew_profile_info(sim_cpu *scpu, bool verbose)
   free(forms);
 }
 
+static void
+brew_profile_info(sim_cpu *scpu, bool verbose)
+{
+  brew_insn_profile_info(scpu, verbose);
+  brew_timing_profile_info(scpu);
+}
+
 #endif /* WITH_PROFILE_INSN_P */
+
+/* Feeds an executed instruction to the cycle model (--timing=espresso) and
+   returns the cycle it entered execute.  */
+static uint64_t
+timing_step(sim_cpu *scpu, uint32_t pc, uint16_t insn_code)
+{
+  struct brew_sim_cpu *cpu = BREW_SIM_CPU (scpu);
+  brew_sim_state *sim_state = &cpu->sim_state;
+  espresso_timing_insn insn;
+  uint64_t cycle;
+
+  if (cpu->espresso_timing == NULL)
+    cpu->espresso_timing = espresso_timing_new(brew_timing_read_insn_word, scpu,
+                                               brew_model_has_espresso_map(scpu));
+  insn.pc = pc;
+  insn.len = brew_insn_len(insn_code);
+  // As the core's do_branch: a written PC, even if it is the next instruction's
+  insn.taken = sim_state->pc_written || sim_state->nis_task_mode != sim_state->is_task_mode
+               || sim_state->ecause != BREW_EXCEPTION_NONE;
+  insn.next_pc = sim_state->nis_task_mode ? sim_state->ntpc : sim_state->nspc;
+  // The memory trace holds the instruction's data access, or its fetch.
+  insn.has_mem = cpu->mem_trace.is_valid
+                 && (cpu->mem_trace.addr < pc || cpu->mem_trace.addr >= pc + insn.len);
+  insn.mem_addr = cpu->mem_trace.addr;
+  cycle = espresso_timing_step(cpu->espresso_timing, &insn);
+  {
+    const espresso_timing_stats *st = espresso_timing_get_stats(cpu->espresso_timing);
+    PROFILE_DATA *data = CPU_PROFILE_DATA (scpu);
+
+    PROFILE_MODEL_TOTAL_CYCLES (data) = st->cycles;
+    PROFILE_MODEL_CTI_STALL_CYCLES (data) = st->stall_branch;
+    PROFILE_MODEL_LOAD_STALL_CYCLES (data) = st->stall_mem;
+  }
+  return cycle;
+}
 
 static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t field_e, bool fetched, uint32_t non_branch_tpc, uint32_t non_branch_spc)
 {
@@ -462,8 +548,17 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t field_e
   PROFILE_DATA *profile_data = CPU_PROFILE_DATA(scpu);
 
   uint32_t pc;
+  bool timed = false;
+  uint64_t timed_cycle = 0;
 
   pc = BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? BREW_SIM_CPU (scpu)->sim_state.tpc : BREW_SIM_CPU (scpu)->sim_state.spc;
+
+  // Cycle model (the option is stored on the first CPU)
+  if (fetched && BREW_SIM_CPU (STATE_CPU (sd, 0))->timing_espresso)
+    {
+      timed_cycle = timing_step(scpu, pc, insn_code);
+      timed = true;
+    }
 
   // Handle tracing
   if (TRACE_P(scpu, TRACE_INSN_IDX))
@@ -475,7 +570,10 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t field_e
 
       pc_name = BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? "$tpc": "$spc";
 
-      snprintf(message, sizeof(message), "%s: 0x%x ", pc_name, pc);
+      if (timed)
+        snprintf(message, sizeof(message), "[%" PRIu64 "] %s: 0x%x ", timed_cycle, pc_name, pc);
+      else
+        snprintf(message, sizeof(message), "%s: 0x%x ", pc_name, pc);
       STR_APPEND(message, BREW_SIM_CPU (scpu)->decode_buf);
       for (int i=0; i<sizeof(BREW_SIM_CPU (scpu)->sim_state.reg)/sizeof(BREW_SIM_CPU (scpu)->sim_state.reg[0]); ++i)
         {
@@ -545,6 +643,10 @@ static INLINE void post_exec(sim_cpu *scpu, uint16_t insn_code, uint32_t field_e
         sim_state->csr_eaddr = sim_state->is_task_mode ? sim_state->tpc : sim_state->spc;
       sim_state->ntpc = sim_state->tpc; // Undo any pending changes to $tpc
       sim_state->model_functions.handle_exception(scpu);
+      // The cycle model times an exception as a taken branch to where it went
+      if (timed)
+        espresso_timing_set_next_pc(BREW_SIM_CPU (scpu)->espresso_timing, pc,
+                                    sim_state->nis_task_mode ? sim_state->ntpc : sim_state->nspc);
     }
   // Update PC
   BREW_SIM_CPU (scpu)->sim_state.tpc = BREW_SIM_CPU (scpu)->sim_state.ntpc;
@@ -615,6 +717,7 @@ sim_engine_run(
       if (BREW_SIM_CPU (scpu)->sim_state.ecause == BREW_EXCEPTION_NONE)
         {
           BREW_SIM_CPU (scpu)->sim_state.dirty_map = 0;
+          BREW_SIM_CPU (scpu)->sim_state.pc_written = false;
           BREW_SIM_CPU (scpu)->sim_state.ntpc = BREW_SIM_CPU (scpu)->sim_state.tpc + (BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? insn_length : 0);
           BREW_SIM_CPU (scpu)->sim_state.nspc = BREW_SIM_CPU (scpu)->sim_state.spc + (BREW_SIM_CPU (scpu)->sim_state.is_task_mode ? 0 : insn_length);
           BREW_SIM_CPU (scpu)->sim_state.nis_task_mode = BREW_SIM_CPU (scpu)->sim_state.is_task_mode;
@@ -791,6 +894,9 @@ static void brew_sim_uninstall(SIM_DESC sd)
     BREW_SIM_CPU (scpu)->model_info = NULL;
     free(BREW_SIM_CPU (scpu)->insn_profile);
     BREW_SIM_CPU (scpu)->insn_profile = NULL;
+    if (BREW_SIM_CPU (scpu)->espresso_timing != NULL)
+      espresso_timing_free(BREW_SIM_CPU (scpu)->espresso_timing);
+    BREW_SIM_CPU (scpu)->espresso_timing = NULL;
   }
 }
 

@@ -27,6 +27,7 @@ nodist_%C%_libsim_a_SOURCES = \
 	$(patsubst %,%D%/dv-%.o,$(%C%_SIM_EXTRA_HW_DEVICES)) \
 	%D%/interp.o \
 	%D%/models.o \
+	%D%/espresso-timing.o \
 	%D%/sim-resume.o
 $(%C%_libsim_a_OBJECTS) $(%C%_libsim_a_LIBADD): %D%/hw-config.h
 

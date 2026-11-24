@@ -140,6 +140,7 @@ typedef struct {
   uint32_t nspc;
   uint32_t ntpc;
   uint32_t dirty_map;
+  bool pc_written; // the instruction wrote the current mode's PC (a taken branch, even to the next instruction)
   brew_insn_classes insn_class;
   brew_exception_type ecause; // ecause for the current instruction. Gets reset for every instruction
   brew_exception_type csr_ecause; // csr holding ecause. This is cleared on read

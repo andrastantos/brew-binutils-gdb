@@ -129,6 +129,7 @@ enum {
   OPTION_ESPRESSO_ROM_FILE = OPTION_START,
   OPTION_CONSOLE_BASE,
   OPTION_SIMCTL_BASE,
+  OPTION_TIMING,
 };
 
 
@@ -1422,6 +1423,39 @@ static void espresso_model_v2p_addr(sim_cpu *scpu, uint32_t v_addr, brew_access_
   *p_addr = ((v_addr & ADDR_MASK) + (base & ADDR_MASK & ~1023)) & ADDR_MASK;
 }
 
+static uint32_t espresso_model_read_inst(sim_cpu *scpu, uint32_t vma, int length);
+
+bool brew_model_has_espresso_map(sim_cpu *scpu)
+{
+  return BREW_SIM_CPU (scpu)->sim_state.model_functions.read_inst == espresso_model_read_inst;
+}
+
+uint16_t brew_timing_read_insn_word(void *cpu, uint32_t vaddr)
+{
+  sim_cpu *scpu = cpu;
+  brew_sim_state *sim_state = &BREW_SIM_CPU (scpu)->sim_state;
+  uint32_t paddr = vaddr & ~1;
+  uint8_t buf[2];
+
+  if (brew_model_has_espresso_map(scpu))
+    {
+      // The translation reports access violations in the CPU state: keep those intact.
+      brew_exception_type ecause = sim_state->ecause;
+      uint32_t eaddr = sim_state->csr_eaddr;
+      bool av;
+
+      espresso_model_v2p_addr(scpu, vaddr & ~1, acc_exec, &paddr);
+      av = sim_state->ecause != ecause;
+      sim_state->ecause = ecause;
+      sim_state->csr_eaddr = eaddr;
+      if (av)
+        return 0;
+    }
+  if (sim_core_read_buffer(CPU_STATE(scpu), scpu, exec_map, buf, paddr, 2) != 2)
+    return 0;
+  return buf[0] | (buf[1] << 8);
+}
+
 static void espresso_model_read_mem(sim_cpu *scpu, uint32_t vma, int length, uint32_t *value)
 {
   read_mem(scpu, vma, length, value, espresso_model_v2p_addr);
@@ -1611,6 +1645,18 @@ static SIM_RC brew_option_handler(SIM_DESC sd, sim_cpu *scpu, int opt, char *arg
         return SIM_RC_FAIL;
       return SIM_RC_OK;
 
+    case OPTION_TIMING:
+      if (strcmp(arg, "espresso") == 0)
+        BREW_SIM_CPU (STATE_CPU(sd, 0))->timing_espresso = true;
+      else if (strcmp(arg, "none") == 0)
+        BREW_SIM_CPU (STATE_CPU(sd, 0))->timing_espresso = false;
+      else
+        {
+          sim_io_eprintf(sd, "invalid --timing: `%s' (expected espresso or none)\n", arg);
+          return SIM_RC_FAIL;
+        }
+      return SIM_RC_OK;
+
     case OPTION_ESPRESSO_ROM_FILE:
       if (arg == NULL) {
         sim_io_eprintf(sd, "FIXME: default ROM file is not implemented yet for --rom-file option\n");
@@ -1649,6 +1695,17 @@ static const OPTION brew_options[] =
     "ADDRESS",
     "Base address of the simulator control device in the operating environment (a write ends the simulation with the "
     "written value as exit status). Default 0x20200, where the Anachron RTL test bench ends its simulation.",
+    brew_option_handler,
+    NULL
+  },
+  {
+    {"timing", required_argument, NULL, OPTION_TIMING },
+    '\0',
+    "espresso|none",
+    "Cycle model. 'espresso' times execution as the Espresso core would (a port of its RTL pipeline, fetch and "
+    "bus interface): --profile-model reports the cycles and Brew's profile where they went, --trace-insn each "
+    "instruction's cycle of entry into execute. With --model espresso, memory decodes as on Espresso (8-bit "
+    "non-DRAM bus with wait states below 0x04000000); with the default model, all memory is DRAM. Default none.",
     brew_option_handler,
     NULL
   },

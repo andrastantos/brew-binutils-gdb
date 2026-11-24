@@ -115,8 +115,9 @@ const char * brew_reg_names[16] =
 
 #define SIM_REG_T(idx) sim_state->dirty_map |= (1<<(idx)); sim_state->reg[idx]
 #define SIM_REGD_T SIM_REG_T(FIELD_D)
-#define SIM_PC_T *(sim_state->is_task_mode ? &sim_state->ntpc : &sim_state->nspc)
-#define SIM_TPC_T sim_state->ntpc
+#define SIM_PC_T *(sim_state->pc_written = true, sim_state->is_task_mode ? &sim_state->ntpc : &sim_state->nspc)
+// Writing $tpc is a branch only in TASK mode
+#define SIM_TPC_T *(sim_state->pc_written |= sim_state->is_task_mode, &sim_state->ntpc)
 
 #define SIM(...) { if(scpu != NULL) { __VA_ARGS__; } }
 
