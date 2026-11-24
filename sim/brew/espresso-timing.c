@@ -43,12 +43,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
    with --model espresso --environment operating): the cycle every
    instruction entered execute agrees exactly for the timing
    microbenchmarks, random instruction mixes and compiled C kernels.
-   One known difference, a bug in the RTL of 2026-11-23: an indirect jump
-   through memory ($pc <- mem32[...]) decides whether to branch when its
-   load returns, from execute stage 1's registers (s1_branch_op,
-   s1_exec_unit), which by then normally hold the next instruction; the
-   core then doesn't take the jump.  The model times the jump as taken, as
-   the functional simulator executes it.  */
+   The RTL before anachron 6b5d63b didn't take an indirect jump through
+   memory ($pc <- mem32[...]) once the next instruction had entered execute
+   stage 1: the jump is decided when its load returns, from stage 1's
+   registers, which then held the next instruction.  The fix keeps the next
+   instruction out of stage 1 until the jump is decided
+   (indirect_branch_lockout), and so does this model.  */
 
 #include "espresso-timing.h"
 
@@ -497,10 +497,13 @@ cycle (struct espresso_timing *t)
 
   /* ---- ExecuteStage, stage 1 ---- */
   bool exec_in_valid = rf_rsp_valid;
-  bool fsm1_in_valid = !t->lockout && !t->s1_was_branch && !do_branch && exec_in_valid;
+  /* indirect_branch_lockout: the next instruction stays out of stage 1 until
+     an indirect branch ahead of it is decided.  */
+  bool ind_lockout = (t->s1_buf && s1->d.unit == U_BRANCH_IND) || t->s2_unit == U_BRANCH_IND;
+  bool fsm1_in_valid = !t->lockout && !ind_lockout && !t->s1_was_branch && !do_branch && exec_in_valid;
   bool fsm1_in_ready = !t->s1_buf || stage_2_ready;
-  bool exec_in_ready = !t->lockout && !t->s1_was_branch && fsm1_in_ready;
-  bool stage_1_reg_en = !t->lockout && !t->s1_was_branch && fsm1_in_valid && fsm1_in_ready;
+  bool exec_in_ready = !t->lockout && !ind_lockout && !t->s1_was_branch && fsm1_in_ready;
+  bool stage_1_reg_en = !t->lockout && !ind_lockout && !t->s1_was_branch && fsm1_in_valid && fsm1_in_ready;
 
   /* ---- RegFile ---- */
   bool rf_rsp_ready = exec_in_ready;
@@ -652,7 +655,10 @@ cycle (struct espresso_timing *t)
     bool s2_buf_next = (fsm2_in_valid && fsm2_in_ready) ? true : ((out_ready2 && t->s2_buf) ? false : t->s2_buf);
     bool s1_buf_next = do_branch ? false
                        : ((fsm1_in_valid && fsm1_in_ready) ? true : ((stage_2_ready && t->s1_buf) ? false : t->s1_buf));
-    int s2_unit_next = do_branch ? U_INVALID : (stage_2_reg_en ? s1->d.unit : t->s2_unit);
+    /* An indirect branch leaves stage 2 once decided (its load returned).  */
+    int s2_unit_next = do_branch ? U_INVALID
+                       : (stage_2_reg_en ? s1->d.unit
+                          : ((t->s2_unit == U_BRANCH_IND && mu_out_valid) ? U_INVALID : t->s2_unit));
     if (stage_2_reg_en)
       {
         t->s2_rrv = s1->d.res >= 0;
