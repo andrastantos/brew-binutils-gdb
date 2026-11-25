@@ -55,3 +55,12 @@
 #define TC_FORCE_RELOCATION_SUB_LOCAL(FIX, SEG) 1
 #define TC_FORCE_RELOCATION_LOCAL(FIX) 1
 #define DIFF_EXPR_OK 1
+
+// Alignment in code is filled with NOPs ($r2 <- $r2 | $r2), not zeros: a
+// zero halfword is 'fill' (swi 0), which traps, so code running into an
+// alignment gap (an aligned loop label, -falign-loops) stopped there.
+// An odd byte left before the first NOP (code is 2-byte aligned, so only
+// after data in a code section) is zero.
+#define MAX_MEM_FOR_RS_ALIGN_CODE(p2align, max) (1 + 2)
+#define HANDLE_ALIGN(SEC, FRAGP) brew_handle_align (FRAGP)
+extern void brew_handle_align (fragS *);

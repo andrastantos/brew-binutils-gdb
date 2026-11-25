@@ -6,7 +6,7 @@
 
 Contents of section .text:
  0000 22122212 22122f34 06000000 2f34faff  .*
- 0010 ffff2f34 00000000 2f340000 0000      .*
+ 0010 ffff2f34 00000000 2f340000 00002222  .*
 Contents of section .data:
  0000 04000000 06000000 10000000 02000000  .*
  0010 06000000                             .*
@@ -31,3 +31,4 @@ Disassembly of section .text:
   18:	2f 34 00 00 	\$r3 <- 0 \(0x0\) \+ \$r2
   1c:	00 00 
 			1a: R_BREW_NEG32	ext
+  1e:	22 22       	nop

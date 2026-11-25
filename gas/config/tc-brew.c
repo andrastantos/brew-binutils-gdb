@@ -2277,3 +2277,26 @@ md_done(void)
 {
   brew_parser_done(parser);
 }
+
+// For HANDLE_ALIGN: fill an alignment gap in code with NOPs.
+#define BREW_NOP 0x2222 // $r2 <- $r2 | $r2, the ISA's NOP
+
+void
+brew_handle_align (fragS *fragp)
+{
+  char *dest;
+  valueT count;
+
+  if (fragp->fr_type != rs_align_code)
+    return;
+  dest = fragp->fr_literal + fragp->fr_fix;
+  count = fragp->fr_next->fr_address - fragp->fr_address - fragp->fr_fix;
+  if (count & 1)
+    {
+      fragp->fr_fix++;
+      *dest++ = 0;
+    }
+  // The NOP is the pattern the rest of the gap repeats
+  md_number_to_chars (dest, BREW_NOP, 2);
+  fragp->fr_var = 2;
+}
