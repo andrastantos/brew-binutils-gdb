@@ -2,7 +2,8 @@
 # with other branches - an indirect jump is decided when its load returns, and
 # the instructions behind it wait (the RTL's indirect_branch_lockout). The same
 # program as the RTL test rig's test_branch_ind (anachron/rtl/espresso/test),
-# whose cycles these are (6 later in the rig, which counts from reset). Each
+# whose cycles these are (6 later in the rig, which counts from reset), with
+# the fetch burst hold for loads and stores (anachron cfd2ad2). Each
 # block adds a bit to $r9, so the exit status is 0 only if no wrong path ran.
 # mach: brew
 # sim: --model espresso --environment operating --timing=espresso --trace-insn
@@ -19,7 +20,7 @@
 # output: \[510\] \$spc: 0x800010e *\[525\] \$spc: 0x8000118 *\[528\] \$spc: 0x800011e *
 # output: \[539\] \$spc: 0x800012c *\[541\] \$spc: 0x8000132 *\[569\] \$spc: 0x8000136 *
 # output: \[571\] \$spc: 0x800013c *\[588\] \$spc: 0x8000140 *\[591\] \$spc: 0x8000146 *
-# output: \[602\] \$spc: 0x800014a *\[621\] \$spc: 0x800014e *
+# output: \[592\] \$spc: 0x800014a *\[610\] \$spc: 0x800014e *
 .section .reset,"ax"
         $pc <- 0x08000000
 

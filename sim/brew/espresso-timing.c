@@ -48,7 +48,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
    stage 1: the jump is decided when its load returns, from stage 1's
    registers, which then held the next instruction.  The fix keeps the next
    instruction out of stage 1 until the jump is decided
-   (indirect_branch_lockout), and so does this model.  */
+   (indirect_branch_lockout), and so does this model.  Since anachron
+   cfd2ad2, fetch starts no new burst while a load or store is between
+   decode and the memory unit (mem_pending); before, a burst starting in
+   those cycles made the access wait for all of it.  */
 
 #include "espresso-timing.h"
 
@@ -212,6 +215,10 @@ struct espresso_timing
   void *ctx;
   bool memory_map;
   uint64_t cycle;
+  /* Loads/stores that passed decode but weren't accepted by the memory
+     unit yet (Pipeline's mem_pending, 2 bits); fetch starts no new burst
+     while there are any.  */
+  int mem_pending;
   espresso_timing_stats stats;
 
   /* Instructions from the functional simulator not yet bound.  */
@@ -561,7 +568,10 @@ cycle (struct espresso_timing *t)
   /* ---- InstBuffer ---- */
   bool ib_adv_rsp = bus_fetch_rsp_valid;
   int next_outstanding = t->ib_outstanding + (fetch_req_advance ? 1 : 0) - (ib_adv_rsp ? 1 : 0);
-  bool start_new_request = (t->q_free > FETCH_THRESHOLD + next_outstanding) || t->ib_oopb_d;
+  /* No new burst in the cycle a load/store passes decode (break_burst),
+     nor while one is on its way to the memory unit (fetch_hold).  */
+  bool start_new_request = ((t->q_free > FETCH_THRESHOLD + next_outstanding) || t->ib_oopb_d)
+                           && !break_burst && t->mem_pending == 0;
   bool q_push_valid = ib_adv_rsp && t->ib_drop == 0 && !do_branch_r;
   bool q_push = q_push_valid && !q_full;
 
@@ -594,7 +604,17 @@ cycle (struct espresso_timing *t)
   if (stage_1_reg_en)
     bind (t, &t->dec_tok);
 
-  /* Pipeline.  */
+  /* Pipeline.  A branch or exception flushes the pending loads/stores.  */
+  if (do_branch_r)
+    t->mem_pending = 0;
+  else
+    {
+      bool ldst_issued = mu_input_advance && s1->d.unit == U_LD_ST;
+      if (break_burst && !ldst_issued)
+        t->mem_pending = (t->mem_pending + 1) & 3;
+      else if (ldst_issued && !break_burst && t->mem_pending != 0)
+        t->mem_pending--;
+    }
   t->do_branch_r = do_branch;
   if (do_branch)
     t->target_r = branch_target;
