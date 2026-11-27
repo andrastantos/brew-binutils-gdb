@@ -51,6 +51,9 @@ typedef void (*v2p_addr_ftype)(sim_cpu *scpu, uint32_t v_addr, brew_access_modes
 
 static const uint16_t BREW_CSR_MARCH                   = 0x8000;
 static const uint16_t BREW_CSR_CAPABILITY              = 0x8001;
+// csr_capability bits (brew/docs_src/csrs.rst); FP_SUPPORT is bit 0
+static const uint32_t BREW_CAPABILITY_MUL_SUPPORT        = 1 << 1;
+static const uint32_t BREW_CAPABILITY_SHIFT_SUPPORT      = 1 << 2;
 static const uint16_t BREW_CSR_FPSTAT                  = 0x8010;
 
 static const uint16_t BREW_CSR_ECAUSE                  = 0x0000;
@@ -130,6 +133,8 @@ enum {
   OPTION_CONSOLE_BASE,
   OPTION_SIMCTL_BASE,
   OPTION_TIMING,
+  OPTION_NO_MULTIPLY,
+  OPTION_NO_SHIFT,
 };
 
 
@@ -1062,7 +1067,9 @@ static uint32_t brew_model_read_csr(sim_cpu *scpu, uint16_t addr)
       return 0;
     break;
     case BREW_CSR_CAPABILITY:
-      return 0;
+      // FP_SUPPORT (bit 0) is clear: the toolchain only supports the type-less variant.
+      return (sim_state->no_multiply ? 0 : BREW_CAPABILITY_MUL_SUPPORT)
+             | (sim_state->no_shift ? 0 : BREW_CAPABILITY_SHIFT_SUPPORT);
     break;
     case BREW_CSR_FPSTAT:
       sim_engine_abort(sd, scpu, NULL_CIA, "FIXME: brew model doesn't support CSR read of FPSTAT");
@@ -1657,6 +1664,14 @@ static SIM_RC brew_option_handler(SIM_DESC sd, sim_cpu *scpu, int opt, char *arg
         }
       return SIM_RC_OK;
 
+    case OPTION_NO_MULTIPLY:
+      BREW_SIM_CPU (STATE_CPU(sd, 0))->sim_state.no_multiply = true;
+      return SIM_RC_OK;
+
+    case OPTION_NO_SHIFT:
+      BREW_SIM_CPU (STATE_CPU(sd, 0))->sim_state.no_shift = true;
+      return SIM_RC_OK;
+
     case OPTION_ESPRESSO_ROM_FILE:
       if (arg == NULL) {
         sim_io_eprintf(sd, "FIXME: default ROM file is not implemented yet for --rom-file option\n");
@@ -1706,6 +1721,25 @@ static const OPTION brew_options[] =
     "bus interface): --profile-model reports the cycles and Brew's profile where they went, --trace-insn each "
     "instruction's cycle of entry into execute. With --model espresso, memory decodes as on Espresso (8-bit "
     "non-DRAM bus with wait states below 0x04000000); with the default model, all memory is DRAM. Default none.",
+    brew_option_handler,
+    NULL
+  },
+
+  {
+    {"no-multiply", no_argument, NULL, OPTION_NO_MULTIPLY },
+    '\0',
+    NULL,
+    "The core has no multiplier: the multiply instructions raise exc_unknown_inst (an Espresso built without "
+    "has_multiply). csr_capability reports MUL_SUPPORT accordingly.",
+    brew_option_handler,
+    NULL
+  },
+  {
+    {"no-shift", no_argument, NULL, OPTION_NO_SHIFT },
+    '\0',
+    NULL,
+    "The core has no barrel shifter: the shift instructions raise exc_unknown_inst (an Espresso built without "
+    "has_shift). csr_capability reports SHIFT_SUPPORT accordingly.",
     brew_option_handler,
     NULL
   },

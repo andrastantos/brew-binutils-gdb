@@ -154,6 +154,12 @@ typedef struct {
   bool ll_valid;
   uint32_t ll_addr;
 
+  // Optional instructions not implemented (--no-multiply, --no-shift): the
+  // multiplies (0x.9..) or the shifts (0x.6.. - 0x.8..) raise
+  // exc_unknown_inst, as on a core built without the unit.
+  bool no_multiply;
+  bool no_shift;
+
   fprintf_ftype tracer;
   void *tracer_strm;
 

@@ -1106,10 +1106,11 @@ brew_sim_insn(struct _sim_cpu *scpu, brew_sim_state *sim_state, uint16_t insn_co
         REGULAR_ALU_PATTERN(3, &, and_op, "", LOGIC);
         REGULAR_ALU_PATTERN(4, +, add_op, "", ARITH);
         REGULAR_ALU_PATTERN(5, -, sub_op, "", ARITH);
-        case 0x6: if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, "<<", lsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
-        case 0x7: if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>", rsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
-        case 0x8: if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>>", srsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
-        REGULAR_ALU_PATTERN(9, *, mul_op, "", MUL);
+        /* Shifts and multiplies are optional (--no-shift, --no-multiply).  */
+        case 0x6: if (scpu != NULL && sim_state->no_shift) UNKNOWN; if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, "<<", lsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
+        case 0x7: if (scpu != NULL && sim_state->no_shift) UNKNOWN; if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>", rsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
+        case 0x8: if (scpu != NULL && sim_state->no_shift) UNKNOWN; if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, ">>>", srsh_op, "", CLASS_NAME(SHIFT), true)) break; return;
+        case 0x9: if (scpu != NULL && sim_state->no_multiply) UNKNOWN; if (!binary_op(scpu, sim_state, skip_print ? NULL : fpr, strm_or_buffer, insn_code, field_e, "*", mul_op, "", CLASS_NAME(MUL), false)) break; return;
         case 0xa:
           if (brew_pattern_match(insn_code, ".a..")) { CLASS(TYPE); SIM(SIM_REGD_T = type_conv_op(FIELD_A, SIM_REG(FIELD_B))); INST("%s <- %s %s", REG_D, brew_reg_type_name(FIELD_A), REG_B); }
           UNKNOWN;
